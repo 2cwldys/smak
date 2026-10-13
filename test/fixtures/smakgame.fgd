@@ -1,0 +1,74 @@
+//
+// The entities of SMAK's own made-up game, written for the self-test: starts, beasts that come out of
+// dens, gates to other maps, things to pick up, and the few classes the kit's own maps use. It is ours: no
+// game's definitions are in it.
+//
+@include "SmakBase.fgd"
+
+@PointClass base(Start) studio("models/smak/walker.mdl") = info_player_start : "Where a player starts" []
+@PointClass base(Start) = smak_start : "Where a new player starts" []
+@PointClass base(Start) = smak_arrive : "Where a player from another map arrives"
+[
+	message(string) : "The gate he came by"
+]
+@SolidClass base(Targetname) = smak_gate : "A way to another map"
+[
+	destmap(string) : "The map it leads to"
+]
+
+@PointClass base(Beast) studio("models/smak/beast.mdl") = smak_beast : "A beast" []
+@PointClass base(Beast) size(-32 -32 0, 32 32 64) = smak_bigbeast : "A large beast" []
+@PointClass base(Targetname) iconsprite("sprites/smak/den.spr") = smak_den : "A den: beasts come out of it"
+[
+	whenempty(target_destination) : "What it fires when all its beasts are gone"
+]
+@PointClass base(Targetname) = smak_item : "A thing to pick up"
+[
+	script(string) : "The item's name"
+]
+
+@PointClass base(Targetname) = light : "A light" + " that shines every way"
+[
+	_light(color255) : "Colour and brightness" : "255 255 255 200"
+	style(choices) : "How it shines" : 0 =
+	[
+		0 : "Steady"
+		1 : "Flicker"
+		2 : "Slow pulse"
+	]
+	spawnflags(flags) =
+	[
+		1 : "Starts dark" : 0
+		2 : "Stays on" : 1
+	]
+]
+@SolidClass base(Targetname) = func_wall : "A wall that is an entity"
+[
+	rendermode(choices) : "How it is drawn" : 0 =
+	[
+		0 : "Normal"
+		4 : "Solid, with holes"
+	]
+	renderamt(integer) : "How solid it looks (0 to 255)" : 255
+]
+@SolidClass base(Targetname, Target) = trigger_once : "Fires when it is touched"
+[
+	delay(float) : "Seconds before it fires" : "0"
+]
+@SolidClass base(Targetname) = smak_shutter : "A shutter that opens"
+[
+	speed(integer) : "Speed" : 100
+]
+@PointClass base(Targetname) = multi_manager : "Fires several things"
+[
+	wait(float) : "Seconds before it may fire again"
+]
+@PointClass base(Targetname) studio() = env_thing : "A model that stands"
+[
+	model(studio) : "Its model"
+	glow(sprite) : "A sprite on it"
+]
+@PointClass base(Targetname) = ambient : "A sound"
+[
+	message(sound) : "Its file"
+]

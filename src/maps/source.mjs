@@ -1,0 +1,1225 @@
+// Map source: the text of a `.map` file, built from code. A map's source is a list of entities; the first,
+// `worldspawn`, holds the brushes the world is made of, and the others are things in it (a light, a door, a
+// place to start). A brush is a convex solid, written as the planes that bound it. The compilers (compile.mjs)
+// turn this text into the `.bsp` the game loads.
+//
+// Here a brush is plain data, `{ faces }`, and each face is
+//   { points: [p0, p1, p2], texture, u: [x, y, z, offset], v: [x, y, z, offset], rotation, scale: [x, y] }
+// so that a map can be built, looked over (plan.mjs), changed and written, or read from a file and changed.
+//
+// THE FORMAT is "Valve 220" (`"mapversion" "220"` in worldspawn), what J.A.C.K., Hammer and TrenchBroom write
+// for GoldSrc. A face is one line:
+//
+//   ( x y z ) ( x y z ) ( x y z ) TEXTURE [ ux uy uz offset ] [ vx vy vz offset ] rotation scaleX scaleY
+//
+// THE ONE THING THAT CAN GO WRONG is the order of the three points. The compiler takes the face's normal as
+// cross(p0 - p1, p2 - p1) (Quake's qbsp, which hlcsg inherited) and the brush is what lies BEHIND all its
+// planes. With the points the other way round the normal looks inwards and the brush has no volume. Every
+// builder here turns its planes outwards itself; `shapeOf` works a brush out from its planes the way the
+// compiler does, and says what is wrong with it.
+//
+// Axes and units are the game's: +x east, +y north, +z up; a unit is about an inch (a player is 72 tall).
+// A texture is named, never held: the names are looked up in the .wad files worldspawn's `wad` key lists.
+import { sub, dot, cross, unit } from "../vec.mjs";
+
+// ── constants ───────────────────────────────────────────────────────────────
+/** The format written and read: worldspawn's `mapversion`. */
+export const MAP_VERSION = "220";
+/** A box's plane is written as a corner and two points this far from it along the face. */
+const BOX_SPAN = 64;
+/**
+ * Decimals a number is written with. Six, as some editors write, are too few: a picture fitted exactly to
+ * its face (a window in its opening, at a scale of 2/3) lands on whole texels, and a scale cut to 0.666667
+ * moves it off them by a hair, which changed the size of a face's lightmap in a compiled map. Ten keep such
+ * a fit, and the compilers read any number of them.
+ */
+const DECIMALS = 10;
+/** A point this near a plane is on it (units). */
+const ON_PLANE = 1e-6;
+/** Three points whose cross product is shorter than this are in a line: they give no plane. */
+const NO_PLANE = 1e-9;
+/** A face of less area than this (square units) is no face. */
+const NO_AREA = 1e-6;
+/** Two unit normals whose dot product is over this point the same way. */
+const SAME_WAY = 1 - 1e-9;
+/** Half the side of the sheet a face is cut from when a brush is worked out: far larger than any map. */
+const HUGE = 1 << 20;
+/** A worked-out corner further out than this means the planes do not close the brush. */
+const OPEN = 1 << 18;
+/** Corners of a worked-out brush nearer than this are one corner. */
+const SAME_CORNER = 1e-4;
+/** A number is tidied to this many decimals where arithmetic leaves dust (6.1e-17 for 0). */
+const DUST = 1e9;
+/** The tallest step a player walks up without jumping (the engine's sv_stepsize). */
+export const STEP_HEIGHT = 18;
+/** A player's origin is the middle of its 72 tall box: this far above the floor it stands on. */
+export const PLAYER_ORIGIN_HEIGHT = 36;
+/** The texture that marks an ORIGIN brush: the compiler takes its middle for the entity's origin. */
+const ORIGIN_TEXTURE = "ORIGIN";
+
+const AXIS_NAMES = ["x", "y", "z"];
+/** The texture axes the editors give a face, by the axis its normal looks along most: "align to world". */
+const WORLD_AXES = [
+  { u: [0, 1, 0], v: [0, 0, -1] },
+  { u: [1, 0, 0], v: [0, 0, -1] },
+  { u: [1, 0, 0], v: [0, -1, 0] },
+];
+/** A box's six faces: the outward normal and two directions along the face, with along x across = normal. */
+const BOX_FACES = [
+  { normal: [0, 0, 1], along: [1, 0, 0], across: [0, 1, 0] },
+  { normal: [0, 0, -1], along: [0, 1, 0], across: [1, 0, 0] },
+  { normal: [1, 0, 0], along: [0, 1, 0], across: [0, 0, 1] },
+  { normal: [-1, 0, 0], along: [0, 0, 1], across: [0, 1, 0] },
+  { normal: [0, 1, 0], along: [0, 0, 1], across: [1, 0, 0] },
+  { normal: [0, -1, 0], along: [1, 0, 0], across: [0, 0, 1] },
+];
+/** The sides a wedge or a flight of stairs may rise towards: the axis, and which way along it. */
+const SIDES = {
+  "+x": { axis: 0, sign: 1 },
+  "-x": { axis: 0, sign: -1 },
+  "+y": { axis: 1, sign: 1 },
+  "-y": { axis: 1, sign: -1 },
+};
+
+// ── small arithmetic ────────────────────────────────────────────────────────
+/** `a + b * k`, for points. */
+const plus = (a, b, k = 1) => [a[0] + b[0] * k, a[1] + b[1] * k, a[2] + b[2] * k];
+/** A number with the dust of arithmetic taken off, and never -0. */
+const tidy = (value) => Math.round(value * DUST) / DUST + 0;
+/** A vector turned about a unit axis by an angle in radians (right-handed). */
+const turnAbout = (vector, axis, angle) => {
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  const side = cross(axis, vector);
+  const lift = dot(axis, vector) * (1 - cos);
+  return [0, 1, 2].map((i) => vector[i] * cos + side[i] * sin + axis[i] * lift);
+};
+/** Which axis a normal looks along most (0, 1 or 2); on a tie z, then x, as the editors choose. */
+const dominant = (normal) => {
+  const size = normal.map(Math.abs);
+  if (size[2] >= size[0] && size[2] >= size[1]) return 2;
+  return size[0] >= size[1] ? 0 : 1;
+};
+/** An axis given as "x", "y", "z" or 0, 1, 2, as its number. */
+const axisIndex = (axis, who) => {
+  const index = typeof axis === "string" ? AXIS_NAMES.indexOf(axis) : axis;
+  if (![0, 1, 2].includes(index)) throw new Error(`${who}: the axis is "x", "y" or "z", not ${axis}`);
+  return index;
+};
+/**
+ * A point from its place along an axis and its two other coordinates, in their order: (y, z) for the x axis,
+ * (x, z) for y, (x, y) for z.
+ */
+const placed = (axis, along, [first, second]) => {
+  if (axis === 0) return [along, first, second];
+  if (axis === 1) return [first, along, second];
+  return [first, second, along];
+};
+/** A value rounded to a grid; left as it is when there is none. */
+const toGrid = (value, grid) => (grid ? Math.round(value / grid) * grid + 0 : value);
+/** A list of 2D points with those that repeat the one before (or, at the end, the first) left out. */
+const withoutRepeats = (outline) =>
+  outline.filter((point, index) => {
+    const previous = outline[(index + outline.length - 1) % outline.length];
+    return Math.hypot(point[0] - previous[0], point[1] - previous[1]) > SAME_CORNER;
+  });
+
+// ── numbers and values as text ──────────────────────────────────────────────
+/**
+ * A number as a map holds it: whole numbers with no point, others with at most ten decimals, never an
+ * exponent and never "-0". It throws for what is not a number.
+ */
+export function mapNumber(value) {
+  if (typeof value !== "number" || !Number.isFinite(value))
+    throw new Error(`a number in a map cannot be ${value}`);
+  const text = value.toFixed(DECIMALS).replace(/\.?0+$/, "");
+  return text === "-0" ? "0" : text;
+}
+
+/**
+ * A key's value as text: a string as it is, a number as `mapNumber` writes it, a list with spaces between
+ * (an origin `[0, 0, 36]`, a colour and brightness `[255, 255, 128, 100]`). A value with a quote or a line
+ * break in it would break the file, and is refused.
+ */
+export function valueText(value) {
+  if (Array.isArray(value)) return value.map(valueText).join(" ");
+  if (typeof value === "number") return mapNumber(value);
+  if (typeof value !== "string")
+    throw new Error(`a value in a map is text, a number or a list, not ${value}`);
+  if (/["\r\n]/.test(value))
+    throw new Error(`a value in a map cannot hold a quote or a line break: ${value}`);
+  return value;
+}
+
+// ── a face's texture ────────────────────────────────────────────────────────
+/**
+ * The two texture axes of a face that looks along `normal`: `{ u, v, about }`. `u` is the way the picture's
+ * columns run across the surface, `v` the way its rows run (downwards), and `about` the axis a rotation
+ * turns them round.
+ *
+ *   align: "world"  (the default) as the editors' "align to world": the axes are the world's own, chosen by
+ *                   the axis the face looks along most. Pictures on faces that share a plane line up across
+ *                   brushes, which is what walls and floors want. On a slanted face the picture is stretched
+ *                   down the slope (by 1.41 at 45 degrees).
+ *   align: "face"   the axes lie in the face itself: nothing is stretched on a slope (a ramp, a roof, a
+ *                   chamfer). Pictures no longer line up with the neighbours'.
+ *   rotation        degrees, turning the picture anticlockwise as seen from outside the face.
+ */
+export function textureAxes(normal, { align = "world", rotation = 0 } = {}) {
+  const axis = dominant(normal);
+  let { u, v } = WORLD_AXES[axis];
+  let about = [0, 0, 0];
+  about[axis] = normal[axis] < 0 ? -1 : 1;
+  if (align === "face") {
+    about = unit(normal);
+    const worldV = v;
+    u = unit(plus(u, about, -dot(u, about)));
+    v = unit(cross(about, u));
+    if (dot(v, worldV) < 0) v = v.map((value) => -value);
+  } else if (align !== "world") {
+    throw new Error(`a texture is aligned to the "world" or to the "face", not ${align}`);
+  }
+  if (rotation) {
+    const angle = (rotation * Math.PI) / 180;
+    u = turnAbout(u, about, angle);
+    v = turnAbout(v, about, angle);
+  }
+  return { u: u.map(tidy), v: v.map(tidy), about };
+}
+
+/**
+ * What the face of normal `normal` wears, from what a builder was given as its `texture`:
+ *   "NAME"                                     every face the same
+ *   { name, scale, offset, rotation, align }   the same, with its fit: `scale` a number or [x, y] (units a
+ *                                              texel: 0.5 draws it twice as fine), `offset` [u, v] in texels,
+ *                                              `rotation` in degrees, `align` "world" or "face"
+ *   { top, bottom, sides, east, west, north, south }   by the way the face looks (+z, -z, +x, -x, +y, -y),
+ *                                              each a name or a fit as above; a way not named wears `sides`
+ *   (normal) => any of those                   by a rule of your own
+ * It returns the fit, `{ name, ... }`.
+ */
+export function textureFor(texture, normal) {
+  if (typeof texture === "string") return { name: texture };
+  if (typeof texture === "function") return textureFor(texture(normal), normal);
+  if (!texture || typeof texture !== "object")
+    throw new Error(`a face with no texture (it looks along ${normal.map(tidy).join(" ")})`);
+  if (texture.name) return texture;
+  const axis = dominant(normal);
+  const positive = normal[axis] > 0;
+  let chosen;
+  if (axis === 2) chosen = positive ? texture.top : texture.bottom;
+  else if (axis === 0) chosen = positive ? texture.east : texture.west;
+  else chosen = positive ? texture.north : texture.south;
+  chosen ??= texture.sides;
+  if (!chosen) throw new Error(`a face with no texture (it looks along ${normal.map(tidy).join(" ")})`);
+  return textureFor(chosen, normal);
+}
+
+/** One face: its three points (already in the compiler's order), and the texture its normal picks. */
+function faceOf(points, normal, texture) {
+  const fit = textureFor(texture, normal);
+  if (typeof fit.name !== "string" || !fit.name || /\s/.test(fit.name))
+    throw new Error(`a texture's name is one word, not "${fit.name}"`);
+  const scale = Array.isArray(fit.scale) ? fit.scale : [fit.scale ?? 1, fit.scale ?? 1];
+  if (!(scale[0] && scale[1])) throw new Error(`the texture ${fit.name} has a scale of 0`);
+  const offset = fit.offset ?? [0, 0];
+  const rotation = fit.rotation ?? 0;
+  const axes = textureAxes(normal, { align: fit.align, rotation });
+  return {
+    points: points.map((point) => [...point]),
+    texture: fit.name,
+    u: [...axes.u, offset[0]],
+    v: [...axes.v, offset[1]],
+    rotation,
+    scale: [...scale],
+  };
+}
+
+// ── planes ──────────────────────────────────────────────────────────────────
+/**
+ * The plane three points give, by the compiler's own sum: `{ normal, dist }`, the normal of length 1 and
+ * looking OUT of the brush, with `dot(normal, p) = dist` on the plane. Null when the points are in a line.
+ */
+export function planeOf([p0, p1, p2]) {
+  const normal = cross(sub(p0, p1), sub(p2, p1));
+  const length = Math.hypot(...normal);
+  if (!(length > NO_PLANE)) return null;
+  const outward = normal.map((value) => value / length);
+  return { normal: outward, dist: dot(outward, p1) };
+}
+
+/**
+ * The six planes of the box from `min` to `max`: for each, the outward `normal` and its three `points` in
+ * the compiler's order.
+ */
+export function boxPlanes(min, max) {
+  return BOX_FACES.map(({ normal, along, across }) => {
+    // a point of the plane: the corner at `max` where the normal is positive, at `min` elsewhere
+    const corner = [0, 1, 2].map((i) => (normal[i] > 0 ? max[i] : min[i]));
+    return { normal, points: [plus(corner, along, BOX_SPAN), corner, plus(corner, across, BOX_SPAN)] };
+  });
+}
+
+/**
+ * The planes of a convex solid whose corners are `points`, each face given as three indices into them (in
+ * any order): for each, the outward `normal` and the three `points` in the compiler's order. The planes are
+ * turned outwards by looking where the solid's middle is.
+ *
+ * It throws, in words, for a face whose three points are in a line and for a corner that lies in FRONT of
+ * a face: that is a solid that is not convex, which the compiler would cut down without a word.
+ */
+export function solidPlanes(points, faces) {
+  const centre = [0, 1, 2].map((i) => points.reduce((sum, point) => sum + point[i], 0) / points.length);
+  return faces.map((indices) => {
+    let [p0, p1, p2] = indices.map((index) => points[index]);
+    let plane = planeOf([p0, p1, p2]);
+    if (!plane)
+      throw new Error(`a face with no area: its points ${JSON.stringify([p0, p1, p2])} are in a line`);
+    if (dot(plane.normal, centre) - plane.dist > 0) {
+      [p0, p2] = [p2, p0];
+      plane = planeOf([p0, p1, p2]);
+    }
+    for (const point of points)
+      if (dot(plane.normal, point) - plane.dist > ON_PLANE)
+        throw new Error(
+          `the solid is not convex: the corner ${point.join(" ")} is in front of the face through ${JSON.stringify([p0, p1, p2])}. A brush is convex: make the shape of several`,
+        );
+    return { normal: plane.normal, points: [p0, p1, p2] };
+  });
+}
+
+/**
+ * The faces of the convex solid that has `points` for corners, found from the points alone: one entry a
+ * face, `{ normal, points }` as `solidPlanes` gives. It throws, in words, when the points lie in one plane
+ * (no volume) and when one of them is inside the solid the others make (they are then not the corners of a
+ * convex solid).
+ */
+function hullPlanes(points) {
+  const found = new Map();
+  for (let i = 0; i < points.length; i++)
+    for (let j = i + 1; j < points.length; j++)
+      for (let k = j + 1; k < points.length; k++) {
+        let plane = planeOf([points[i], points[j], points[k]]);
+        if (!plane) continue;
+        const sides = points.map((point) => dot(plane.normal, point) - plane.dist);
+        // a face of the solid has every corner on it or behind it; one way round or the other
+        if (Math.min(...sides) >= -ON_PLANE)
+          plane = { normal: plane.normal.map((value) => -value), dist: -plane.dist };
+        else if (Math.max(...sides) > ON_PLANE) continue;
+        const key = [...plane.normal, plane.dist].map((value) => value.toFixed(5)).join();
+        if (found.has(key)) continue;
+        const onIt = points.filter((point) => Math.abs(dot(plane.normal, point) - plane.dist) <= ON_PLANE);
+        found.set(key, { normal: plane.normal, onIt });
+      }
+  if (found.size < 4)
+    throw new Error(
+      `solid: its ${points.length} points lie in one plane or one line: a solid with no volume`,
+    );
+  const faces = [...found.values()];
+  const inside = points.find((point) => !faces.some((face) => face.onIt.includes(point)));
+  if (inside)
+    throw new Error(
+      `solid: the point ${inside.join(" ")} is inside the solid the other points make, so these are not the corners of a convex solid. A brush is convex: make the shape of several`,
+    );
+  return faces.map(({ normal, onIt }) => {
+    // three of the face's corners, spread as widely as they come, in the compiler's order
+    const first = onIt[0];
+    const farthest = (score) => onIt.reduce((best, point) => (score(point) > score(best) ? point : best));
+    const second = farthest((point) => Math.hypot(...sub(point, first)));
+    const third = farthest((point) => Math.hypot(...cross(sub(second, first), sub(point, first))));
+    const outward = dot(cross(sub(second, first), sub(third, first)), normal) > 0;
+    return { normal, points: outward ? [second, first, third] : [third, first, second] };
+  });
+}
+
+/** The planes of a brush as the compiler works them out: `[{ normal, dist }]`, null for a face in a line. */
+export const planesOf = (brush) => brush.faces.map((face) => planeOf(face.points));
+
+/** Whether a point is inside a brush, or within `margin` of being so. */
+export function holds(brush, point, margin = 0) {
+  return planesOf(brush).every((plane) => plane && dot(plane.normal, point) - plane.dist <= margin);
+}
+
+/** A huge square on a plane, to be cut down to the face. */
+function sheetOn(plane) {
+  const helper = Math.abs(plane.normal[2]) > 0.7 ? [1, 0, 0] : [0, 0, 1];
+  const along = unit(cross(plane.normal, helper));
+  const across = cross(plane.normal, along);
+  const middle = plane.normal.map((value) => value * plane.dist);
+  return [
+    plus(plus(middle, along, HUGE), across, HUGE),
+    plus(plus(middle, along, -HUGE), across, HUGE),
+    plus(plus(middle, along, -HUGE), across, -HUGE),
+    plus(plus(middle, along, HUGE), across, -HUGE),
+  ];
+}
+
+/** What is left of a polygon behind a plane. */
+function cutBehind(polygon, plane) {
+  const kept = [];
+  polygon.forEach((point, index) => {
+    const next = polygon[(index + 1) % polygon.length];
+    const here = dot(plane.normal, point) - plane.dist;
+    const there = dot(plane.normal, next) - plane.dist;
+    if (here <= ON_PLANE) kept.push(point);
+    const crosses = (here > ON_PLANE && there < -ON_PLANE) || (here < -ON_PLANE && there > ON_PLANE);
+    if (crosses) kept.push(plus(point, sub(next, point), here / (here - there)));
+  });
+  return kept;
+}
+
+/** The area of a flat polygon in space. */
+function areaOf(polygon) {
+  let sum = [0, 0, 0];
+  for (let index = 1; index + 1 < polygon.length; index++)
+    sum = plus(sum, cross(sub(polygon[index], polygon[0]), sub(polygon[index + 1], polygon[0])));
+  return Math.hypot(...sum) / 2;
+}
+
+/**
+ * A brush worked out from its planes, as the compiler does it: each face is a huge sheet on its plane, cut
+ * by every other plane. It returns
+ *   { faces: [{ normal, dist, polygon, area, texture }], corners, min, max, volume, faults }
+ * `faults` is a list of sentences, empty for a sound brush: a face whose points are in a line, a plane given
+ * twice, a face the others cut away (it has no area), planes that do not close the brush, no volume. A set
+ * of planes can only ever bound a convex solid, so a brush "that is not convex" shows here as faces with no
+ * area or as no volume at all.
+ */
+export function shapeOf(brush) {
+  const planes = planesOf(brush);
+  const faults = [];
+  const faces = brush.faces.map((face, index) => {
+    const plane = planes[index];
+    const named = `face ${index} (${face.texture})`;
+    if (!plane) {
+      faults.push(`${named} has its three points in a line: they give no plane`);
+      return { normal: null, dist: 0, polygon: [], area: 0, texture: face.texture };
+    }
+    let polygon = sheetOn(plane);
+    planes.forEach((other, otherIndex) => {
+      if (!other || otherIndex === index) return;
+      const sameWay = dot(other.normal, plane.normal) > SAME_WAY;
+      if (sameWay && Math.abs(other.dist - plane.dist) <= ON_PLANE) {
+        if (otherIndex < index) faults.push(`${named} is the same plane as face ${otherIndex}`);
+        return;
+      }
+      polygon = cutBehind(polygon, other);
+    });
+    // the dust the cutting leaves (24.000000000000007) is taken off
+    polygon = polygon.map((point) => point.map(tidy));
+    const area = polygon.length >= 3 ? areaOf(polygon) : 0;
+    return { normal: plane.normal, dist: plane.dist, polygon, area, texture: face.texture };
+  });
+  const corners = [];
+  for (const face of faces)
+    for (const point of face.polygon)
+      if (!corners.some((corner) => Math.hypot(...sub(corner, point)) < SAME_CORNER)) corners.push(point);
+  const open = corners.some((corner) => corner.some((value) => Math.abs(value) > OPEN));
+  const min = [0, 1, 2].map((i) => Math.min(...corners.map((corner) => corner[i])));
+  const max = [0, 1, 2].map((i) => Math.max(...corners.map((corner) => corner[i])));
+  // the volume: a third of each face's area times its plane's distance, summed (the divergence theorem)
+  const volume = open ? Infinity : faces.reduce((sum, face) => sum + (face.area * face.dist) / 3, 0);
+  if (brush.faces.length < 4) faults.push(`it has ${brush.faces.length} faces: a solid has four at least`);
+  else if (!corners.length || !(volume > NO_AREA))
+    faults.push("it has no volume: its planes leave nothing behind them all (its faces are turned inwards)");
+  else if (open)
+    faults.push(
+      "its planes do not close it: it runs on without end (a face is missing, or one is turned inwards)",
+    );
+  else
+    faces.forEach((face, index) => {
+      if (face.normal && !(face.area > NO_AREA))
+        faults.push(`face ${index} (${face.texture}) has no area: the other faces cut it away`);
+    });
+  return { faces, corners, min, max, volume, faults };
+}
+
+// ── brushes ─────────────────────────────────────────────────────────────────
+/**
+ * A brush in the shape of a box, from its least corner to its greatest. `texture`: see `textureFor` (a
+ * name, or `{ top, bottom, sides }` for a floor of one and walls of another, with `east`, `west`, `north`,
+ * `south` for a single face: a door's picture is ONE face of its box).
+ */
+export function box(min, max, texture) {
+  for (let i = 0; i < 3; i++)
+    if (!(max[i] > min[i]))
+      throw new Error(`box: no size along ${AXIS_NAMES[i]}: from ${min.join(" ")} to ${max.join(" ")}`);
+  return { faces: boxPlanes(min, max).map(({ normal, points }) => faceOf(points, normal, texture)) };
+}
+
+/**
+ * Any convex solid, from its corners. With the points alone its faces are found for you; `faces` (a list of
+ * index triples, one a face, in any order) names them yourself, which is faster for many points. Either way
+ * the planes are turned outwards for you, and a set of points that is not the corners of a convex solid is
+ * refused in words: a brush is convex, and a shape that is not has to be made of several.
+ */
+export function solid(points, texture, { faces } = {}) {
+  if (!Array.isArray(points) || points.length < 4)
+    throw new Error(`solid: a solid has four corners at least, not ${points?.length}`);
+  for (const point of points)
+    if (!Array.isArray(point) || point.length !== 3 || !point.every(Number.isFinite))
+      throw new Error(`solid: a corner is [x, y, z], not ${JSON.stringify(point)}`);
+  const planes = faces ? solidPlanes(points, faces) : hullPlanes(points);
+  return { faces: planes.map(({ normal, points: three }) => faceOf(three, normal, texture)) };
+}
+
+/**
+ * A prism: the convex outline `outline` (2D points, either way round) drawn out along `axis` ("x", "y" or
+ * "z") from `from` to `to`. The outline's two coordinates are those of the other two axes, in their order:
+ * (y, z) along x, (x, z) along y, (x, y) along z. A tunnel's chamfer is a three-sided one along the tunnel;
+ * a room's corner cut at 45 degrees is one along z; a beam at a slant is a four-sided one.
+ */
+export function prism(axis, outline, from, to, texture) {
+  const along = axisIndex(axis, "prism");
+  if (!(to > from)) throw new Error(`prism: no length: from ${from} to ${to}`);
+  if (!Array.isArray(outline) || outline.length < 3)
+    throw new Error("prism: an outline has three points at least");
+  const count = outline.length;
+  const points = [
+    ...outline.map((point) => placed(along, from, point)),
+    ...outline.map((point) => placed(along, to, point)),
+  ];
+  // the two ends, then one side for each edge of the outline
+  const faces = [
+    [0, 1, 2],
+    [count, count + 1, count + 2],
+    ...outline.map((_, i) => [i, (i + 1) % count, count + i]),
+  ];
+  return solid(points, texture, { faces });
+}
+
+/**
+ * A wedge: the box from `min` to `max` cut from one bottom edge to the opposite top edge, a ramp. `high` is
+ * the side its top is at: "+x", "-x", "+y" or "-y". With `{ under: true }` it hangs instead: the slope looks
+ * down, for a sloped ceiling. Give the sloped face `align: "face"` so its picture is not stretched.
+ */
+export function wedge(min, max, high, texture, { under = false } = {}) {
+  const side = SIDES[high];
+  if (!side) throw new Error(`wedge: the high side is "+x", "-x", "+y" or "-y", not ${high}`);
+  const tall = side.sign > 0 ? max[side.axis] : min[side.axis];
+  const low = side.sign > 0 ? min[side.axis] : max[side.axis];
+  const outline = under
+    ? [
+        [low, max[2]],
+        [tall, max[2]],
+        [tall, min[2]],
+      ]
+    : [
+        [low, min[2]],
+        [tall, min[2]],
+        [tall, max[2]],
+      ];
+  const across = side.axis === 0 ? 1 : 0;
+  return prism(across, outline, min[across], max[across], texture);
+}
+
+/** The corners of a regular outline of `sides` round `centre`, turned by `turn` degrees, snapped to `snap`. */
+function ring(centre, radius, sides, turn, snap) {
+  const [radiusA, radiusB] = Array.isArray(radius) ? radius : [radius, radius];
+  return Array.from({ length: sides }, (_, index) => {
+    const angle = ((turn + (360 * index) / sides) * Math.PI) / 180;
+    return [
+      toGrid(centre[0] + radiusA * Math.cos(angle), snap),
+      toGrid(centre[1] + radiusB * Math.sin(angle), snap),
+    ];
+  });
+}
+
+/**
+ * A cylinder, as near as flat sides come: a prism of `sides` sides (12 unless told) round `centre` (its two
+ * coordinates across `axis`, as a prism's), from `from` to `to` along the axis. `radius` is a number, or
+ * [a, b] for an oval. `turn` (degrees) turns it about its axis: a corner is at angle 0 unless turned.
+ * `snap: 1` rounds its corners to whole units, which keeps every plane on the grid (see `offGrid`).
+ */
+export function cylinder(axis, centre, radius, from, to, texture, { sides = 12, turn = 0, snap = 0 } = {}) {
+  if (!(sides >= 3)) throw new Error(`cylinder: three sides at least, not ${sides}`);
+  return prism(axis, withoutRepeats(ring(centre, radius, sides, turn, snap)), from, to, texture);
+}
+
+/**
+ * A cone: `sides` sides from a ring of `radius` at `from` to a point at `to` (which may be below `from`:
+ * it then points down). `top` is the radius it is cut off at instead of coming to a point (a tapering
+ * post, a lamp shade). `turn` and `snap` as a cylinder's; with `top`, only the wide ring is snapped.
+ */
+export function cone(
+  axis,
+  centre,
+  radius,
+  from,
+  to,
+  texture,
+  { sides = 12, turn = 0, snap = 0, top = 0 } = {},
+) {
+  const along = axisIndex(axis, "cone");
+  if (!(sides >= 3)) throw new Error(`cone: three sides at least, not ${sides}`);
+  if (from === to) throw new Error(`cone: no height: from ${from} to ${to}`);
+  const wide = withoutRepeats(ring(centre, radius, sides, turn, snap));
+  const count = wide.length;
+  const widest = Math.max(...(Array.isArray(radius) ? radius : [radius]));
+  const points = wide.map((point) => placed(along, from, point));
+  const faces = [[0, 1, 2]];
+  if (top > 0) {
+    // the narrow ring is the wide one drawn in towards the axis, so that every side stays flat
+    const share = top / widest;
+    for (const point of wide)
+      points.push(
+        placed(along, to, [
+          centre[0] + (point[0] - centre[0]) * share,
+          centre[1] + (point[1] - centre[1]) * share,
+        ]),
+      );
+    faces.push([count, count + 1, count + 2]);
+    for (let i = 0; i < count; i++) faces.push([i, (i + 1) % count, count + i]);
+  } else {
+    points.push(placed(along, to, centre));
+    for (let i = 0; i < count; i++) faces.push([i, (i + 1) % count, count]);
+  }
+  return solid(points, texture, { faces });
+}
+
+/** The point at `angle` (degrees) and `radius` from a 2D centre, snapped. */
+const onCircle = (centre, radius, angle, snap) => {
+  const radians = (angle * Math.PI) / 180;
+  return [
+    toGrid(centre[0] + radius * Math.cos(radians), snap),
+    toGrid(centre[1] + radius * Math.sin(radians), snap),
+  ];
+};
+
+/** Where the ray from `centre` at `angle` (degrees) leaves the rectangle `min`..`max`. */
+function leavesAt(centre, angle, min, max) {
+  const radians = (angle * Math.PI) / 180;
+  const way = [tidy(Math.cos(radians)), tidy(Math.sin(radians))];
+  let reach = Infinity;
+  for (let i = 0; i < 2; i++) {
+    if (way[i] > 0) reach = Math.min(reach, (max[i] - centre[i]) / way[i]);
+    if (way[i] < 0) reach = Math.min(reach, (min[i] - centre[i]) / way[i]);
+  }
+  return [tidy(centre[0] + way[0] * reach), tidy(centre[1] + way[1] * reach)];
+}
+
+/**
+ * An arch: a curve made of straight convex pieces, one brush each. Seen along `axis`, the pieces lie between
+ * the circle of `radius` round `centre` and an outer bound, from angle `angles[0]` to `angles[1]` (degrees,
+ * anticlockwise from the first of the two coordinates across the axis; 0 to 180 unless told), and each is
+ * drawn out from `from` to `to` as a prism is.
+ *
+ *   outer: a number          a ring of that outer radius: a vault's stones, a curved wall, a round window's rim
+ *   outer: { min, max }      a rectangle (2D): what is left of it outside the curve. This is the masonry
+ *                            round an arched doorway: set it in a wall's opening of the rectangle's size
+ *   pieces                   how many brushes the curve is made of (8 unless told); the opening is the polygon
+ *                            of their chords, not a true circle
+ *   snap: 1                  rounds every corner to whole units
+ *
+ * The centre has to be inside the rectangle or on its edge. It returns the list of brushes.
+ */
+export function arch(
+  axis,
+  { centre, radius, outer, angles = [0, 180], pieces = 8, snap = 0 },
+  from,
+  to,
+  texture,
+) {
+  const along = axisIndex(axis, "arch");
+  const [start, end] = angles;
+  if (!(pieces >= 1)) throw new Error(`arch: one piece at least, not ${pieces}`);
+  if (!(end > start) || end - start > 360)
+    throw new Error(`arch: angles run upwards, 360 at most: ${angles}`);
+  if ((end - start) / pieces >= 180) throw new Error("arch: a piece cannot span half a turn: more pieces");
+  const ringOuter = typeof outer === "number";
+  if (ringOuter && !(outer > radius))
+    throw new Error(`arch: the outer radius ${outer} is not beyond ${radius}`);
+  if (!ringOuter && !(outer?.min && outer?.max)) throw new Error("arch: outer is a radius or { min, max }");
+  if (!ringOuter && [0, 1].some((i) => centre[i] < outer.min[i] || centre[i] > outer.max[i]))
+    throw new Error("arch: the centre is outside the rectangle");
+  const corners = ringOuter
+    ? []
+    : [
+        [outer.max[0], outer.max[1]],
+        [outer.min[0], outer.max[1]],
+        [outer.min[0], outer.min[1]],
+        [outer.max[0], outer.min[1]],
+      ];
+  /** A corner's angle from the centre, counted on from `after`. */
+  const angleFrom = (corner, after) => {
+    const angle = (Math.atan2(corner[1] - centre[1], corner[0] - centre[0]) * 180) / Math.PI;
+    return after + ((((angle - after) % 360) + 360) % 360);
+  };
+  const brushes = [];
+  for (let piece = 0; piece < pieces; piece++) {
+    const first = start + ((end - start) * piece) / pieces;
+    const second = start + ((end - start) * (piece + 1)) / pieces;
+    const outline = [onCircle(centre, radius, first, snap), onCircle(centre, radius, second, snap)];
+    if (ringOuter) {
+      outline.push(onCircle(centre, outer, second, snap), onCircle(centre, outer, first, snap));
+    } else {
+      // round the rectangle from the second ray back to the first, by way of the corners between them
+      const between = corners
+        .map((corner) => ({ corner, angle: angleFrom(corner, first) }))
+        .filter(({ angle }) => angle > first + ON_PLANE && angle < second - ON_PLANE)
+        .sort((a, b) => b.angle - a.angle);
+      outline.push(leavesAt(centre, second, outer.min, outer.max));
+      for (const { corner } of between) outline.push(corner);
+      outline.push(leavesAt(centre, first, outer.min, outer.max));
+    }
+    const clean = withoutRepeats(outline);
+    // a piece the curve leaves nothing of (the circle touches the rectangle there) is left out
+    if (clean.length >= 3) brushes.push(prism(along, clean, from, to, texture));
+  }
+  return brushes;
+}
+
+/**
+ * A passage that turns: the shell of a corridor bent round `centre` ([x, y]) in plan, as floor, ceiling and
+ * two walls of `pieces` straight pieces each. The walkable space is between the radii `inner` and `outer`,
+ * from `floor` to `ceiling`, over `angles` (degrees, anticlockwise from +x). `wall` is how thick the shell
+ * is (16 unless told). `texture` is `{ floor, ceiling, wall }` or anything a builder takes.
+ *
+ * Its two ends are open and flat: at angles that are multiples of 90 they are square to the axes and meet a
+ * box-shaped room or passage without a gap. `snap: 1` rounds the corners to whole units.
+ * It returns the list of brushes.
+ */
+export function bend(
+  { centre, inner, outer, floor, ceiling, wall = 16, angles, pieces = 6, snap = 0 },
+  texture,
+) {
+  if (!(outer > inner && inner >= 0))
+    throw new Error(`bend: radii ${inner} to ${outer}: outer beyond inner, neither under 0`);
+  if (!(ceiling > floor)) throw new Error(`bend: no height: floor ${floor}, ceiling ${ceiling}`);
+  if (!Array.isArray(angles) || !(angles[1] > angles[0]))
+    throw new Error("bend: angles: [from, to], upwards");
+  const wears = roomTextures(texture);
+  const shell = { centre, angles, pieces, snap };
+  const everywhere = { top: wears.floor, bottom: wears.ceiling, sides: wears.wall };
+  const slab = { ...shell, radius: Math.max(0, inner - wall), outer: outer + wall };
+  const brushes = [
+    ...ringPieces(slab, floor - wall, floor, everywhere),
+    ...ringPieces(slab, ceiling, ceiling + wall, everywhere),
+    ...ringPieces({ ...shell, radius: outer, outer: outer + wall }, floor, ceiling, everywhere),
+  ];
+  if (inner > 0)
+    brushes.push(
+      ...ringPieces(
+        { ...shell, radius: Math.max(0, inner - wall), outer: inner },
+        floor,
+        ceiling,
+        everywhere,
+      ),
+    );
+  return brushes;
+}
+
+/** A ring's pieces along z; one whose inner radius is 0 is a run of three-sided pieces round the centre. */
+function ringPieces({ centre, radius, outer, angles, pieces, snap }, from, to, texture) {
+  if (radius > 0) return arch(2, { centre, radius, outer, angles, pieces, snap }, from, to, texture);
+  const brushes = [];
+  for (let piece = 0; piece < pieces; piece++) {
+    const first = angles[0] + ((angles[1] - angles[0]) * piece) / pieces;
+    const second = angles[0] + ((angles[1] - angles[0]) * (piece + 1)) / pieces;
+    const outline = [
+      [...centre],
+      onCircle(centre, outer, first, snap),
+      onCircle(centre, outer, second, snap),
+    ];
+    brushes.push(prism(2, outline, from, to, texture));
+  }
+  return brushes;
+}
+
+/**
+ * Stairs: the box from `min` to `max` filled with steps that climb towards the side `high` ("+x", "-x",
+ * "+y", "-y"), each a box that stands on the floor of the flight. `steps` is how many; without it there are
+ * as many as keep each no taller than `rise` (16 unless told). A step taller than 18 is refused: a player
+ * walks up 18 at most. It returns the list of brushes.
+ */
+export function stairs(min, max, high, texture, { steps, rise = 16 } = {}) {
+  const side = SIDES[high];
+  if (!side) throw new Error(`stairs: the high side is "+x", "-x", "+y" or "-y", not ${high}`);
+  for (let i = 0; i < 3; i++)
+    if (!(max[i] > min[i])) throw new Error(`stairs: no size along ${AXIS_NAMES[i]}`);
+  const height = max[2] - min[2];
+  const count = steps ?? Math.ceil(height / rise);
+  if (!(count >= 1) || !Number.isInteger(count))
+    throw new Error(`stairs: a whole number of steps, not ${count}`);
+  if (height / count > STEP_HEIGHT)
+    throw new Error(
+      `stairs: ${count} steps of ${mapNumber(height / count)} each: a player walks up ${STEP_HEIGHT} at most, so ${Math.ceil(height / STEP_HEIGHT)} steps or more`,
+    );
+  const run = (max[side.axis] - min[side.axis]) / count;
+  const brushes = [];
+  for (let step = 0; step < count; step++) {
+    const low = [...min];
+    const top = [...max];
+    low[2] = min[2] + (height * step) / count;
+    top[2] = min[2] + (height * (step + 1)) / count;
+    // each step runs from its own front edge to the high end of the flight
+    if (side.sign > 0) low[side.axis] = min[side.axis] + run * step;
+    else top[side.axis] = max[side.axis] - run * step;
+    brushes.push(box(low, top, texture));
+  }
+  return brushes;
+}
+
+/**
+ * Carved rock: a ceiling or a floor that is not flat, the way terrain is made in GoldSrc. A grid of `step`
+ * ([x, y] units) over `min`..`max` (2D, in plan) is cut in triangles, and each triangle is one brush that
+ * runs from the flat `base` to `height(x, y)` at its three corners. With `base` ABOVE the heights it hangs
+ * from a ceiling; below them it is ground.
+ *
+ * The care it takes: every height is rounded to `grid` (1 unless told), so that neighbours share their
+ * corners exactly and no crack opens between them; the diagonal alternates from cell to cell, so that the
+ * rock has no grain; and a height that meets the base, or lies on the other side of it from the rest, is
+ * refused in words, since the brush there would have no thickness. It returns the list of brushes.
+ */
+export function terrain({ min, max, step, base, height, texture, grid = 1 }) {
+  if (!(step?.[0] > 0 && step?.[1] > 0)) throw new Error(`terrain: step is [x, y], both over 0, not ${step}`);
+  if (!(max[0] > min[0] && max[1] > min[1])) throw new Error("terrain: no size: max is not beyond min");
+  const marks = [0, 1].map((i) => {
+    const list = [];
+    for (let at = min[i]; at < max[i]; at += step[i]) list.push(at);
+    list.push(max[i]);
+    return list;
+  });
+  const [xs, ys] = marks;
+  let above;
+  const brushes = [];
+  for (let i = 0; i + 1 < xs.length; i++)
+    for (let j = 0; j + 1 < ys.length; j++) {
+      const cell = [
+        [xs[i], ys[j]],
+        [xs[i + 1], ys[j]],
+        [xs[i + 1], ys[j + 1]],
+        [xs[i], ys[j + 1]],
+      ];
+      const triangles =
+        (i + j) % 2
+          ? [
+              [cell[0], cell[1], cell[2]],
+              [cell[0], cell[2], cell[3]],
+            ]
+          : [
+              [cell[0], cell[1], cell[3]],
+              [cell[1], cell[2], cell[3]],
+            ];
+      for (const triangle of triangles) {
+        const heights = triangle.map(([x, y]) => toGrid(height(x, y), grid));
+        for (const [corner, value] of heights.entries()) {
+          const where = `at ${triangle[corner].join(" ")}`;
+          if (!Number.isFinite(value)) throw new Error(`terrain: the height ${where} is ${value}`);
+          if (value === base)
+            throw new Error(
+              `terrain: the height ${where} meets the base ${base}: the rock would have no thickness there`,
+            );
+          above ??= value > base;
+          if (value > base !== above)
+            throw new Error(
+              `terrain: the height ${where} (${value}) is on the other side of the base ${base} from the rest`,
+            );
+        }
+        const points = [
+          ...triangle.map(([x, y]) => [x, y, base]),
+          ...triangle.map(([x, y], corner) => [x, y, heights[corner]]),
+        ];
+        const faces = [
+          [0, 1, 2],
+          [3, 4, 5],
+          [0, 1, 3],
+          [1, 2, 4],
+          [2, 0, 5],
+        ];
+        brushes.push(solid(points, texture, { faces }));
+      }
+    }
+  return brushes;
+}
+
+// ── rooms ───────────────────────────────────────────────────────────────────
+/** A room's three textures from what was given: `{ floor, ceiling, wall }`, or one thing for all three. */
+function roomTextures(texture) {
+  const named = texture && typeof texture === "object" && !texture.name;
+  if (named && (texture.floor || texture.ceiling || texture.wall)) {
+    const any = texture.wall ?? texture.floor ?? texture.ceiling;
+    return { floor: texture.floor ?? any, ceiling: texture.ceiling ?? any, wall: texture.wall ?? any };
+  }
+  return { floor: texture, ceiling: texture, wall: texture };
+}
+
+/**
+ * A sealed room of six walls: floor, ceiling and four walls of thickness `wall` AROUND the space from `min`
+ * to `max`, so that the space is exactly what was asked for. The walls overlap at the corners on purpose: no
+ * gap is left for the void to get in by (a leak). `texture`: `{ floor, ceiling, wall }`, or one for all.
+ * It returns the six brushes, in that order: floor, ceiling, west, east, south, north.
+ */
+export function hollow(min, max, wall, texture) {
+  if (!(wall > 0)) throw new Error(`hollow: the walls need a thickness, not ${wall}`);
+  const [x0, y0, z0] = min;
+  const [x1, y1, z1] = max;
+  const wears = roomTextures(texture);
+  return [
+    box([x0 - wall, y0 - wall, z0 - wall], [x1 + wall, y1 + wall, z0], wears.floor),
+    box([x0 - wall, y0 - wall, z1], [x1 + wall, y1 + wall, z1 + wall], wears.ceiling),
+    box([x0 - wall, y0 - wall, z0], [x0, y1 + wall, z1], wears.wall),
+    box([x1, y0 - wall, z0], [x1 + wall, y1 + wall, z1], wears.wall),
+    box([x0, y0 - wall, z0], [x1, y0, z1], wears.wall),
+    box([x0, y1, z0], [x1, y1 + wall, z1], wears.wall),
+  ];
+}
+
+/**
+ * What is left of the box `solidBox` (`{ min, max }`) with the box `hole` taken out: up to six boxes that do
+ * not overlap. It is cut along x, then y, then z, each time within what the cut before left touching the
+ * hole. A hole that does not touch the box leaves the box as it was.
+ */
+export function subtract(solidBox, hole) {
+  const touches = [0, 1, 2].every((i) => solidBox.min[i] < hole.max[i] && hole.min[i] < solidBox.max[i]);
+  if (!touches) return [solidBox];
+  const left = [];
+  const min = [...solidBox.min];
+  const max = [...solidBox.max];
+  for (let i = 0; i < 3; i++) {
+    if (min[i] < hole.min[i]) {
+      const upTo = [...max];
+      upTo[i] = hole.min[i];
+      left.push({ min: [...min], max: upTo });
+      min[i] = hole.min[i];
+    }
+    if (max[i] > hole.max[i]) {
+      const from = [...min];
+      from[i] = hole.max[i];
+      left.push({ min: from, max: [...max] });
+      max[i] = hole.max[i];
+    }
+  }
+  return left;
+}
+
+/**
+ * An interior, carved: one solid block that wraps every room of `rooms` (boxes `{ min, max }`) with `wall`
+ * units to spare, and the rooms taken out of it. Rooms that touch or overlap join into one space; a doorway
+ * or a window is one more small room through the rock between two. Nothing has to be thought out about
+ * where each wall goes and no gap can be left: what is not a room is rock, so the map cannot leak.
+ *
+ * `texture`: `{ floor, ceiling, wall }` (or one for all): every piece of rock wears the floor on its top,
+ * the ceiling on its underside and the wall on its sides, which is what is seen from inside a room.
+ * It returns the list of brushes.
+ */
+export function carve(rooms, wall, texture) {
+  if (!Array.isArray(rooms) || !rooms.length) throw new Error("carve: a list of rooms, each { min, max }");
+  if (!(wall > 0)) throw new Error(`carve: the rock round the rooms needs a thickness, not ${wall}`);
+  rooms.forEach((room, index) => {
+    for (let i = 0; i < 3; i++)
+      if (!(room.max?.[i] > room.min?.[i]))
+        throw new Error(`carve: room ${index} has no size along ${AXIS_NAMES[i]}`);
+  });
+  const min = [0, 1, 2].map((i) => Math.min(...rooms.map((room) => room.min[i])) - wall);
+  const max = [0, 1, 2].map((i) => Math.max(...rooms.map((room) => room.max[i])) + wall);
+  let rock = [{ min, max }];
+  for (const room of rooms) rock = rock.flatMap((piece) => subtract(piece, room));
+  const wears = roomTextures(texture);
+  const everywhere = { top: wears.floor, bottom: wears.ceiling, sides: wears.wall };
+  return rock.map((piece) => box(piece.min, piece.max, everywhere));
+}
+
+// ── brushes changed ─────────────────────────────────────────────────────────
+/**
+ * A brush, or a list of them, moved by `by` ([x, y, z]). The pictures move with their faces (the offsets
+ * are shifted to keep them where they were on the surface) unless `lock` is false, which leaves them where
+ * they were in the world.
+ */
+export function moved(brushes, by, { lock = true } = {}) {
+  if (Array.isArray(brushes)) return brushes.map((brush) => moved(brush, by, { lock }));
+  const shifted = (axis, scale) => {
+    const offset = lock ? axis[3] - dot(axis, by) / scale : axis[3];
+    return [axis[0], axis[1], axis[2], tidy(offset)];
+  };
+  return {
+    faces: brushes.faces.map((face) => ({
+      ...face,
+      points: face.points.map((point) => plus(point, by)),
+      u: shifted(face.u, face.scale[0]),
+      v: shifted(face.v, face.scale[1]),
+      scale: [...face.scale],
+    })),
+  };
+}
+
+/**
+ * The points of a brush's planes that are off the grid: those with a coordinate more than `tolerance` from a
+ * multiple of `grid`. Planes written with such points are where compile errors come from: a map holds
+ * decimals, not the number itself, so two brushes that should share a plane may get planes a hair apart.
+ */
+export function offGrid(brush, grid = 1, tolerance = 0.01) {
+  const off = (value) => Math.abs(value - Math.round(value / grid) * grid) > tolerance;
+  return brush.faces.flatMap((face) => face.points.filter((point) => point.some(off)));
+}
+
+/**
+ * A brush with every point of its planes rounded to `grid`. Rounding moves a plane a little, so the result
+ * is worked out again and refused in words if it is no longer a sound brush.
+ */
+export function snapped(brush, grid = 1) {
+  const result = {
+    faces: brush.faces.map((face) => ({
+      ...face,
+      points: face.points.map((point) => point.map((value) => toGrid(value, grid))),
+    })),
+  };
+  const faults = shapeOf(result).faults;
+  if (faults.length)
+    throw new Error(`snapped: rounded to ${grid}, the brush is broken: ${faults.join("; ")}`);
+  return result;
+}
+
+// ── entities ────────────────────────────────────────────────────────────────
+/**
+ * An entity: `{ classname, ...keys }`, with its `brushes` when it is made of some. Every value is turned to
+ * text as a map holds it (`valueText`), so an origin may be given as [x, y, z].
+ */
+export function entity(classname, keys = {}, brushes) {
+  if (typeof classname !== "string" || !classname) throw new Error("entity: it needs a classname");
+  const made = { classname };
+  for (const [key, value] of Object.entries(keys)) {
+    if (key === "brushes" || value === undefined) continue;
+    made[key] = valueText(value);
+  }
+  if (brushes?.length) made.brushes = [...brushes];
+  return made;
+}
+
+/** A point entity: a thing with a place and no shape (a light, a monster, a sound, a place to start). */
+export function pointEntity(classname, origin, keys = {}) {
+  if (!Array.isArray(origin) || origin.length !== 3) throw new Error(`${classname}: its origin is [x, y, z]`);
+  return entity(classname, { origin, ...keys });
+}
+
+/**
+ * A brush entity: a thing made of brushes (func_wall, func_door, func_illusionary, trigger_once...). Its
+ * brushes are no part of the world: they seal nothing, so never close a room with one. One that turns
+ * (func_door_rotating, func_rotating) needs an `originBrush` among them, at its hinge.
+ */
+export function brushEntity(classname, brushes, keys = {}) {
+  const list = Array.isArray(brushes) ? brushes.flat() : [brushes];
+  if (!list.length || !list.every((brush) => brush?.faces))
+    throw new Error(`${classname}: a brush entity needs a brush at least`);
+  return entity(classname, keys, list);
+}
+
+/** The brush that says where a turning entity's hinge is: a small box round `centre` wearing ORIGIN. */
+export function originBrush(centre, size = 8) {
+  const half = size / 2;
+  return box(plus(centre, [1, 1, 1], -half), plus(centre, [1, 1, 1], half), ORIGIN_TEXTURE);
+}
+
+/**
+ * A light that shines every way from a point. `color` is [r, g, b] of 0 to 255 (white unless told),
+ * `brightness` about 200 for a room's lamp. Other keys go as they are (`_fade`, `style`, `targetname`).
+ */
+export function light(origin, { color = [255, 255, 255], brightness = 200, ...keys } = {}) {
+  return pointEntity("light", origin, { _light: [...color, brightness], ...keys });
+}
+
+/** The yaw and pitch (degrees; pitch under 0 looks down) of the way from one point to another. */
+const aimOf = (from, at) => {
+  const way = unit(sub(at, from));
+  const yaw = (Math.atan2(way[1], way[0]) * 180) / Math.PI;
+  const pitch = (Math.asin(Math.max(-1, Math.min(1, way[2]))) * 180) / Math.PI;
+  return { yaw: tidy(yaw), pitch: tidy(pitch) };
+};
+
+/**
+ * A spot light: a cone of light from a point. Aim it `at` a point ([x, y, z]), or give `yaw` and `pitch`
+ * in degrees (pitch -90 is straight down, the default). `cone` is the cone's half angle (45 unless told),
+ * `inner` the half angle of its bright middle.
+ */
+export function spotLight(
+  origin,
+  { color = [255, 255, 255], brightness = 300, at, yaw = 0, pitch = -90, cone = 45, inner, ...keys } = {},
+) {
+  const aim = at ? aimOf(origin, at) : { yaw, pitch };
+  return pointEntity("light_spot", origin, {
+    _light: [...color, brightness],
+    angles: [0, aim.yaw, 0],
+    pitch: aim.pitch,
+    _cone: cone,
+    _cone2: inner,
+    ...keys,
+  });
+}
+
+/**
+ * The sun: light that falls from every face that wears the `sky` texture, all one way. `pitch` is how
+ * steeply it comes down (-90 straight down, -60 unless told), `yaw` the way it travels in plan. A map needs
+ * one at most, anywhere inside it; with no sky faces it lights nothing.
+ */
+export function sunLight(
+  origin,
+  { color = [255, 255, 255], brightness = 200, yaw = 0, pitch = -60, ...keys } = {},
+) {
+  return pointEntity("light_environment", origin, {
+    _light: [...color, brightness],
+    angles: [0, yaw, 0],
+    pitch,
+    ...keys,
+  });
+}
+
+/**
+ * Texture lights: every face that wears one of the named textures shines. `lights` is
+ * `{ TEXTURE: [r, g, b, brightness] }`. It is an `info_texlights` entity, which Vluzacn's compilers read
+ * from the map itself; the older way is a `lights.rad` file beside the compiler.
+ */
+export function textureLights(origin, lights) {
+  return pointEntity("info_texlights", origin, lights);
+}
+
+/**
+ * Where a player starts: `floorPoint` is the point of the floor to stand on, and the entity's origin is
+ * written 36 above it (a player's origin is the middle of its body). `yaw` is the way it faces, in degrees
+ * anticlockwise from +x. `classname` for a mod that names its starts otherwise.
+ */
+export function playerStart(floorPoint, yaw = 0, classname = "info_player_start") {
+  const origin = plus(floorPoint, [0, 0, 1], PLAYER_ORIGIN_HEIGHT);
+  return pointEntity(classname, origin, { angles: [0, yaw, 0] });
+}
+
+// ── the file ────────────────────────────────────────────────────────────────
+const quoted = (text) => `"${text}"`;
+const pointText = (point) => `( ${point.map(mapNumber).join(" ")} )`;
+const axisText = (axis) => `[ ${axis.map(mapNumber).join(" ")} ]`;
+
+/** One face as its line of the file. */
+function faceLine(face) {
+  const numbers = [face.rotation, ...face.scale].map(mapNumber).join(" ");
+  return `${face.points.map(pointText).join(" ")} ${face.texture} ${axisText(face.u)} ${axisText(face.v)} ${numbers}`;
+}
+
+/** One entity as its block of the file: its keys, then its brushes. */
+function entityBlock(keys, brushes = []) {
+  const lines = ["{"];
+  for (const [key, value] of Object.entries(keys)) {
+    if (value === undefined) continue;
+    if (/["\r\n]/.test(key)) throw new Error(`a key in a map cannot hold a quote or a line break: ${key}`);
+    lines.push(`${quoted(key)} ${quoted(valueText(value))}`);
+  }
+  for (const brush of brushes) {
+    if (!brush?.faces)
+      throw new Error(`a brush is { faces }, not ${typeof brush}: was a list of brushes not spread?`);
+    lines.push("{", ...brush.faces.map(faceLine), "}");
+  }
+  lines.push("}");
+  return lines.join("\n");
+}
+
+/**
+ * The whole `.map` as text, in Valve 220: worldspawn with the world's brushes first, as the editors write
+ * it, then the entities.
+ *   worldspawn   its keys: `wad` (the .wad files the textures are in: a list, or text with `;` between),
+ *                `skyname`, `MaxRange` (how far the game draws, 4096 unless told), `light`, a `message`...
+ *   brushes      the world: only these seal the map
+ *   entities     each `{ classname, ...keys }`, with its own `brushes` when it is made of some
+ */
+export function writeMap({ worldspawn = {}, brushes = [], entities = [] }) {
+  const { classname: _ignored, ...keys } = worldspawn;
+  if (Array.isArray(keys.wad)) keys.wad = keys.wad.join(";");
+  const world = entityBlock({ classname: "worldspawn", mapversion: MAP_VERSION, ...keys }, brushes.flat());
+  const others = entities.map(({ brushes: own, ...entityKeys }) => {
+    if (!entityKeys.classname) throw new Error("writeMap: an entity with no classname");
+    return entityBlock(entityKeys, own);
+  });
+  return [world, ...others].join("\n") + "\n";
+}
+
+/** How many words a face's line has in Valve 220, and in the older format that has no texture axes. */
+const FACE_WORDS = 31;
+const OLD_FACE_WORDS = 21;
+
+/** A face from its line's words. */
+function faceFromWords(words, where) {
+  const numbers = (from, count) =>
+    words.slice(from, from + count).map((word) => {
+      const value = Number(word);
+      if (word === "" || !Number.isFinite(value)) throw new Error(`${where}: "${word}" is not a number`);
+      return value;
+    });
+  const brackets = [0, 4, 5, 9, 10, 14].map((at) => words[at]).join("");
+  if (
+    brackets !== "()()()" ||
+    words[16] !== "[" ||
+    words[21] !== "]" ||
+    words[22] !== "[" ||
+    words[27] !== "]"
+  )
+    throw new Error(`${where}: not a face of a Valve 220 map`);
+  return {
+    points: [numbers(1, 3), numbers(6, 3), numbers(11, 3)],
+    texture: words[15],
+    u: numbers(17, 4),
+    v: numbers(23, 4),
+    rotation: numbers(28, 1)[0],
+    scale: numbers(29, 2),
+  };
+}
+
+/**
+ * A `.map`'s text read back into what `writeMap` takes: `{ worldspawn, brushes, entities }`. Change it and
+ * write it again; what `writeMap` wrote comes back from `writeMap(readMap(text))` letter for letter. The
+ * comments an editor leaves (`// entity 3`) are passed over. It reads Valve 220 only, and says so, with the
+ * line, for a file in the older format or one that is broken.
+ */
+export function readMap(text) {
+  if (typeof text !== "string")
+    throw new Error('readMap: the text of a .map file (readFileSync(file, "utf8"))');
+  const entities = [];
+  let current = null;
+  let brush = null;
+  for (const [index, raw] of text.split(/\r?\n/).entries()) {
+    const line = raw.trim();
+    const where = `readMap: line ${index + 1}`;
+    if (!line || line.startsWith("//")) continue;
+    if (line === "{") {
+      if (brush) throw new Error(`${where}: a { inside a brush`);
+      if (current) {
+        brush = { faces: [] };
+        current.brushes.push(brush);
+      } else {
+        current = { keys: {}, brushes: [] };
+        entities.push(current);
+      }
+    } else if (line === "}") {
+      if (brush) brush = null;
+      else if (current) current = null;
+      else throw new Error(`${where}: a } that closes nothing`);
+    } else if (brush) {
+      const words = line.split(/\s+/);
+      if (words.length === OLD_FACE_WORDS)
+        throw new Error(
+          `${where}: this face has no texture axes: the file is in the older format. Open it in an editor and save it as Valve 220`,
+        );
+      if (words.length !== FACE_WORDS) throw new Error(`${where}: not a face of a Valve 220 map`);
+      brush.faces.push(faceFromWords(words, where));
+    } else if (current) {
+      const pair = /^"([^"]*)"\s+"([^"]*)"$/.exec(line);
+      if (!pair) throw new Error(`${where}: neither a "key" "value" nor a brace: ${line.slice(0, 60)}`);
+      current.keys[pair[1]] = pair[2];
+    } else {
+      throw new Error(`${where}: text outside any entity: ${line.slice(0, 60)}`);
+    }
+  }
+  if (current) throw new Error("readMap: the file ends inside an entity: it is cut short");
+  if (!entities.length) throw new Error("readMap: no entity in it: not a .map file");
+  const [world, ...others] = entities;
+  if (world.keys.classname !== "worldspawn")
+    throw new Error(`readMap: the first entity is ${world.keys.classname}, not worldspawn`);
+  if (world.keys.mapversion !== MAP_VERSION)
+    throw new Error(
+      `readMap: mapversion ${world.keys.mapversion ?? "missing"}: only Valve 220 is read. Open it in an editor and save it as Valve 220`,
+    );
+  const { classname: _classname, mapversion: _mapversion, ...worldspawn } = world.keys;
+  return {
+    worldspawn,
+    brushes: world.brushes,
+    entities: others.map((one) =>
+      one.brushes.length ? { ...one.keys, brushes: one.brushes } : { ...one.keys },
+    ),
+  };
+}

@@ -1,0 +1,286 @@
+// A model looked over before it goes into a game: what would crash the engine or draw wrong (errors), and
+// what it will put up with but should be known (warnings). Run it on everything that is written.
+//
+// The two engines read the same file and differ in how much of it they hold:
+//   goldsrc   Half-Life's own engine (Steam), which a GoldSrc mod runs on today
+//   xash      Xash3D FWGS, which holds more
+// A model that passes for goldsrc passes for xash.
+import { readMdl, readMesh, sequences, bones, frameValues, drawnCorners, skinFamilies } from "./mdl.mjs";
+import { sub, dot, cross } from "./vec.mjs";
+import { FRONT } from "./mesh.mjs";
+import { isEngineLayout } from "./layout.mjs";
+
+/** What each engine holds. `verts`: points and normals of one submodel, and the corners it draws. */
+export const LIMITS = {
+  goldsrc: {
+    verts: 2048,
+    bones: 128,
+    textures: 100,
+    bodyparts: 32,
+    models: 32,
+    meshes: 256,
+    sequences: 2048,
+    texture: 512,
+  },
+  xash: {
+    verts: 16384,
+    bones: 128,
+    textures: 256,
+    bodyparts: 32,
+    models: 32,
+    meshes: 256,
+    sequences: 2048,
+    texture: 4096,
+  },
+};
+
+// ── the format: what is read here straight from the file (the engine's studio.h; see mdl.mjs) ──────────────
+/** studiohdr_t.length: how long the file says it is. */
+const HDR_LENGTH = 72;
+/** mstudiomodel_t.vertinfoindex and norminfoindex: where a submodel keeps a bone (one byte) for each of its
+ *  vertices, and for each of its normals. */
+const MODEL_VERTINFOINDEX = 84;
+const MODEL_NORMINFOINDEX = 96;
+/** A texture's palette, which follows its pixels: 256 colours of three bytes. */
+const PALETTE = 256 * 3;
+/** mstudiotexture_t.flags: chrome (STUDIO_NF_CHROME), and the one size older GoldSrc draws it right at. */
+const TEX_CHROME = 2;
+const CHROME_SIZE = 64;
+// A mesh's triangle commands: a 16 bit count (0 ends the list; its sign tells a strip from a fan), then
+// that many corners of four 16 bit numbers (mstudiotrivert_t), the first two a vertex and a normal of the
+// submodel.
+const COMMAND_COUNT = 2;
+const CORNER = { vertex: 0, normal: 2, sizeof: 8 };
+
+/** Near a limit: this share of it. */
+const NEAR_LIMIT = 0.75;
+/** The share of triangles turned from their normals above which it is told. */
+const TURNED_SHARE = 0.05;
+/** How many names a sentence lists before it counts the rest. */
+const NAMES_LISTED = 4;
+
+const pow2 = (n) => n > 0 && (n & (n - 1)) === 0;
+/** The first few of a list of names, and how many more there are. */
+const some = (list) =>
+  `${list.slice(0, NAMES_LISTED).join(", ")}${list.length > NAMES_LISTED ? ` and ${list.length - NAMES_LISTED} more` : ""}`;
+
+/** The textures: each one whole inside the file, and the sizes the engine draws less well. */
+function checkTextures(src, info, engine, { errors, warnings, facts }) {
+  const limits = LIMITS[engine];
+  const tooBig = [];
+  const notPow2 = [];
+  for (const t of info.textures) {
+    if (t.index + t.width * t.height + PALETTE > src.length)
+      errors.push(`the texture ${t.name} runs past the end of the file`);
+    if (t.width > limits.texture || t.height > limits.texture)
+      tooBig.push(`${t.name} ${t.width}x${t.height}`);
+    if (!pow2(t.width) || !pow2(t.height)) notPow2.push(`${t.name} ${t.width}x${t.height}`);
+    if (t.flags & TEX_CHROME && engine === "goldsrc" && (t.width !== CHROME_SIZE || t.height !== CHROME_SIZE))
+      warnings.push(
+        `the chrome texture ${t.name} is ${t.width}x${t.height}: older GoldSrc draws chrome right only at 64x64`,
+      );
+  }
+  if (tooBig.length)
+    warnings.push(
+      engine === "goldsrc"
+        ? `${tooBig.length} textures larger than 512 (${some(tooBig)}): GoldSrc draws nothing finer than gl_max_size (512 by default, 256 in builds before 2023) and shrinks them`
+        : `${tooBig.length} textures larger than ${limits.texture} (${some(tooBig)})`,
+    );
+  if (notPow2.length && engine === "goldsrc")
+    facts.push(
+      `${notPow2.length} textures have a side that is not a power of two (${some(notPow2)}): GoldSrc stretches those to one when it loads them, a little softer`,
+    );
+}
+
+/**
+ * One mesh of a submodel: its skin, and every corner's point and normal, which have to be the submodel's
+ * own, and the normal one of this mesh's turn (`normsBefore`: how many normals the meshes before it have).
+ * Its triangles are counted into `count`: all of them, and those that look the other way from their normals.
+ */
+function checkMesh(src, { info, refs, model, mesh, normsBefore, where }, { errors, warnings }, count) {
+  if (info.textures.length && mesh.skinref >= refs)
+    errors.push(`${where}: wears skin ${mesh.skinref}, and there are ${refs}`);
+  if (!mesh.numtris) return;
+  let outside = 0;
+  let notOwn = 0;
+  for (let at = mesh.triindex; ; ) {
+    const corners = Math.abs(src.readInt16LE(at));
+    at += COMMAND_COUNT;
+    if (!corners) break;
+    for (let i = 0; i < corners; i++, at += CORNER.sizeof) {
+      const vertex = src.readInt16LE(at + CORNER.vertex);
+      const normal = src.readInt16LE(at + CORNER.normal);
+      if (vertex < 0 || vertex >= model.numverts || normal < 0 || normal >= model.numnorms) outside++;
+      else if (normal < normsBefore || normal >= normsBefore + mesh.numnorms) notOwn++;
+    }
+  }
+  if (outside) {
+    errors.push(`${where}: ${outside} corners point outside the submodel's points or normals`);
+    return;
+  }
+  if (notOwn)
+    warnings.push(
+      `${where}: ${notOwn} corners use normals that are not this mesh's own: they are lit with another texture's light`,
+    );
+  for (const tri of readMesh(src, model, mesh)) {
+    count.total++;
+    // told only of a triangle on one bone: its points and its normal are then in one space
+    const oneBone = tri[0].bone === tri[1].bone && tri[0].bone === tri[2].bone;
+    const face = () => cross(sub(tri[1].p, tri[0].p), sub(tri[2].p, tri[0].p));
+    if (oneBone && dot(face(), tri[0].n) * FRONT < 0) count.turned++;
+  }
+}
+
+/** One submodel: how much of it there is against what the engine holds, its bones, and each of its meshes. */
+function checkModel(src, { info, refs, engine, model, corners, where }, report, count) {
+  const { errors, warnings } = report;
+  const limits = LIMITS[engine];
+  const boneCount = info.bones.length;
+  if (model.numverts > limits.verts)
+    errors.push(`${where}: ${model.numverts} points: ${engine} holds ${limits.verts} a submodel`);
+  if (model.numnorms > limits.verts)
+    errors.push(`${where}: ${model.numnorms} normals: ${engine} holds ${limits.verts} a submodel`);
+  if (engine === "xash" && corners > limits.verts)
+    errors.push(`${where}: ${corners} corners to draw: Xash holds ${limits.verts} a submodel`);
+  else if (engine === "xash" && corners > limits.verts * NEAR_LIMIT)
+    warnings.push(`${where}: ${corners} corners to draw, near Xash's ${limits.verts}`);
+  if (model.meshes.length > limits.meshes)
+    errors.push(`${where}: ${model.meshes.length} meshes: the engine holds ${limits.meshes}`);
+  // the first point, and the first normal, on a bone the model has not
+  const vertBones = src.readInt32LE(model.at + MODEL_VERTINFOINDEX);
+  const normBones = src.readInt32LE(model.at + MODEL_NORMINFOINDEX);
+  for (let i = 0; i < model.numverts; i++)
+    if (src[vertBones + i] >= boneCount) {
+      errors.push(`${where}: a point on bone ${src[vertBones + i]}, and there are ${boneCount}`);
+      break;
+    }
+  for (let i = 0; i < model.numnorms; i++)
+    if (src[normBones + i] >= boneCount) {
+      errors.push(`${where}: a normal on bone ${src[normBones + i]}, and there are ${boneCount}`);
+      break;
+    }
+  let normsBefore = 0;
+  model.meshes.forEach((mesh, q) => {
+    checkMesh(src, { info, refs, model, mesh, normsBefore, where: `${where} mesh ${q}` }, report, count);
+    normsBefore += mesh.numnorms;
+  });
+}
+
+/** The animations kept in the file: each has frames, and can be read to its last one in every blend. */
+function checkSequences(src, seqs, { errors }) {
+  for (const [q, s] of seqs.entries()) {
+    if (s.group) continue;
+    if (s.frames < 1) errors.push(`the animation ${s.name} has no frames`);
+    try {
+      for (let blend = 0; blend < s.blends; blend++) frameValues(src, q, Math.max(0, s.frames - 1), blend);
+    } catch {
+      errors.push(`the animation ${s.name} cannot be read to its last frame`);
+    }
+  }
+}
+
+/**
+ * Everything `check` looks at once the file's tables have been read (`info`), written into `report`. It
+ * throws a RangeError when something in the file points past its end.
+ */
+function inspect(src, engine, info, report) {
+  const limits = LIMITS[engine];
+  const { errors, warnings, facts } = report;
+  if (src.readInt32LE(HDR_LENGTH) !== src.length)
+    errors.push(`the file says it is ${src.readInt32LE(HDR_LENGTH)} bytes long and is ${src.length}`);
+  if (!isEngineLayout(src))
+    errors.push(
+      "the texture table does not come before the textures, or they are not in its order: a dedicated server (HLDS, ReHLDS) reads it wrongly and dies on a change of level. Pass the model through engineLayout before writing it",
+    );
+  const boneCount = info.bones.length;
+  const seqs = sequences(src);
+  const families = skinFamilies(src);
+  const refs = families[0]?.length ?? 0;
+  if (boneCount > limits.bones) errors.push(`${boneCount} bones: the engine holds ${limits.bones}`);
+  if (!boneCount) warnings.push("no bones");
+  bones(src).forEach((bone, i) => {
+    if (bone.parent >= i) errors.push(`the bone ${bone.name} hangs from a bone that comes after it`);
+  });
+  // the compiler's own limits, which models in use are known to pass: told, not refused
+  if (info.textures.length > limits.textures)
+    warnings.push(
+      `${info.textures.length} textures: more than the ${limits.textures} ${engine === "goldsrc" ? "GoldSrc's compiler" : "Xash"} allows for; try it in the game`,
+    );
+  if (info.bodyparts.length > limits.bodyparts)
+    errors.push(`${info.bodyparts.length} bodyparts: the engine holds ${limits.bodyparts}`);
+  if (seqs.length > limits.sequences)
+    warnings.push(
+      `${seqs.length} animations: more than the ${limits.sequences} the engine's header allows for; try it in the game`,
+    );
+  if (!seqs.length) warnings.push("no animation: the engine expects one at least");
+  const elsewhere = seqs.filter((s) => s.group);
+  if (elsewhere.length)
+    warnings.push(
+      `${elsewhere.length} animations are kept in other files (name01.mdl...): they cannot be read or changed here`,
+    );
+  if (!info.textures.length && info.bodyparts.some((bp) => bp.models.some((m) => m.meshes.length)))
+    warnings.push(
+      "its textures are kept in another file (the same name with a t before .mdl): put them inside with withTextures before working on it",
+    );
+  checkTextures(src, info, engine, report);
+
+  // the submodels, in the order drawnCorners lists them
+  const drawn = drawnCorners(src);
+  const count = { total: 0, turned: 0 };
+  let nth = 0;
+  for (const bodypart of info.bodyparts) {
+    if (!bodypart.models.length)
+      errors.push(
+        `the bodypart ${bodypart.name} has no submodel: the engine divides a body number by their count, and stops on none`,
+      );
+    if (bodypart.models.length > limits.models)
+      facts.push(
+        `${bodypart.name}: ${bodypart.models.length} submodels, more than the compiler's ${limits.models} (models in use have as many)`,
+      );
+    for (const model of bodypart.models) {
+      const corners = drawn[nth++].corners;
+      const where = `${bodypart.name}/${model.name}`;
+      checkModel(src, { info, refs, engine, model, corners, where }, report, count);
+    }
+  }
+  if (count.total && count.turned / count.total > TURNED_SHARE)
+    warnings.push(
+      `${count.turned} of ${count.total} triangles look the other way from their normals: right for a sheet seen from both sides (a leaf, a cloth), wrong for a solid, which would be seen from inside`,
+    );
+  checkSequences(src, seqs, report);
+  facts.push(
+    `${src.length} bytes, ${boneCount} bones, ${info.textures.length} textures, ${seqs.length} animations, ${info.bodyparts.length} bodyparts, ${count.total} triangles in all`,
+  );
+  const heaviest = [...drawn].sort((a, b) => b.corners - a.corners)[0];
+  if (heaviest) facts.push(`the heaviest submodel is ${heaviest.name}: ${heaviest.corners} corners drawn`);
+}
+
+/** What is said of a file in which something points past its end. */
+const cutShort = (src) =>
+  `the file is cut short or broken: something in it points past its end (it is ${src.length} bytes long)`;
+
+/**
+ * Returns { errors, warnings, facts }, each a list of sentences. A file that is cut short or broken is
+ * reported as an error like any other: nothing is thrown for what is wrong with the model.
+ */
+export function check(src, engine = "goldsrc") {
+  if (!LIMITS[engine]) throw new Error(`engine: goldsrc or xash, not ${engine}`);
+  const errors = [];
+  const warnings = [];
+  const facts = [];
+  const report = { errors, warnings, facts };
+  let info;
+  try {
+    info = readMdl(src);
+  } catch (e) {
+    return { errors: [e instanceof RangeError ? cutShort(src) : e.message], warnings, facts };
+  }
+  try {
+    inspect(src, engine, info, report);
+  } catch (e) {
+    // a read past the end of the file is the file's fault; anything else is the kit's, and is not hidden
+    if (!(e instanceof RangeError)) throw e;
+    errors.push(cutShort(src));
+  }
+  return report;
+}

@@ -1,0 +1,36 @@
+//
+// The base classes of SMAK's own made-up game, written for the self-test. It is ours: no game's
+// definitions are in it. smakgame.fgd includes this file (under a name in other capitals).
+//
+@mapsize(-4096, 4096)
+
+@SolidClass = worldspawn : "The map itself"
+[
+	message(string) : "The map's title"
+	skyname(sky) : "The sky's name"
+	light(integer) : "Least light"
+	MaxRange(string) : "How far is drawn" : "4096"
+]
+
+@BaseClass = Targetname [ targetname(target_source) : "Name" ]
+@BaseClass = Target
+[
+	target(target_destination) : "What it fires"
+]
+@BaseClass = Angles
+[
+	angles(angle) : "Pitch yaw roll" : "0 0 0"
+]
+@BaseClass size(-16 -16 -36, 16 16 36) color(0 255 0) base(Angles) = Start []
+
+// a beast's origin is at its feet. Its strength is written here as a whole number, and the game reads
+// "from;to": the FGD is wrong about it, as mods' FGDs are
+@BaseClass size(-16 -16 0, 16 16 72) color(200 0 0) base(Targetname, Target, Angles) = Beast
+[
+	den(string) : "The den it comes out of"
+	strength(integer) : "The party's strength it comes out for" : 0
+	lives(integer) : "How often it comes back (0: for ever)" : 1
+	script(string) : "Its script"
+	killtarget(target_destination) : "What its death fires"
+	//mood(string) : "A key that was taken out"
+]
