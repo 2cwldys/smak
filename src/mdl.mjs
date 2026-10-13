@@ -8,12 +8,13 @@
 // file left as the appending makes it.
 //
 //   reading     readMdl readMesh textureOf skinFamilies bodyOf bones boneParents sequences readSequence
-//               frameValues events attachments hitboxes drawnCorners
+//               frameValues events attachments hitboxes boneControllers drawnCorners
 //   posing      restPose poseAt poseBetween poseOf boneMatrices
 //               (matrices: 3 rows of 4, bone space -> model space)
 //   meshes      replaceMesh addMesh addModel emptyMesh filterMesh
 //   pictures    retexture replaceTexture withTextures
 //   animations  replaceSequence addSequence setEvents addBones
+//   a monster's setHitboxes autoHitboxes setAttachments setBoneControllers
 //   whole       writeMdl
 
 import { engineLayout } from "./layout.mjs";
@@ -76,14 +77,7 @@ const HDR = {
   sizeof: 244,
 };
 /** The header's tables that writeMdl leaves empty: their `...index` fields. */
-const EMPTY_TABLES = [
-  HDR.bonecontrollerindex,
-  HDR.hitboxindex,
-  HDR.attachmentindex,
-  HDR.soundindex,
-  HDR.soundgroupindex,
-  HDR.transitionindex,
-];
+const EMPTY_TABLES = [HDR.soundindex, HDR.soundgroupindex, HDR.transitionindex];
 
 // mstudiobone_t: `value` is the six rest values (x y z, then the angles about x y z) and `scale` what one
 // step of an animation's stored value is worth on each of the six
@@ -96,6 +90,10 @@ const BONE = {
   scale: 88, // float[6]
   sizeof: 112,
 };
+// mstudiobonecontroller_t: `type` is one of the MOTION bits X to ZR (which of the bone's six values it
+// turns), `start` and `end` the range it reaches (degrees for an angle), `index` which of the entity's
+// controllers drives it (0 to 3; 4 is the mouth)
+const BONECONTROLLER = { bone: 0, type: 4, start: 8, end: 12, rest: 16, index: 20, sizeof: 24 };
 // mstudiobbox_t (a hit box)
 const BBOX = { bone: 0, group: 4, bbmin: 8, bbmax: 20, sizeof: 32 };
 // mstudioattachment_t
@@ -132,8 +130,103 @@ const SEQ = {
   nextseq: 172,
   sizeof: 176,
 };
-/** mstudioseqdesc_t.flags: the animation is marked looping. */
+/** mstudioseqdesc_t.flags: the animation is marked looping. studio.h gives a sequence's flags no other bit. */
 const STUDIO_LOOPING = 1;
+/**
+ * The motion bits of studio.h (STUDIO_X ... STUDIO_RLOOP), which say an axis in two places: a sequence's
+ * `motiontype` and a bone controller's `type`. X Y Z are the three positions and XR YR ZR the three angles;
+ * LX LY LZ mark the axes along which a sequence's travel was taken out of its frames and written as its
+ * `linearmovement` (the QC's "LX" on a $sequence line); AX to AZR the same for motion kept frame by frame
+ * (which this kit does not write); RLOOP a controller that wraps round. The values were read off Half-Life's
+ * own models: its walks have motiontype 64, hgrunt's strafes 192, and its head controller type 8.
+ */
+export const MOTION = {
+  X: 0x0001,
+  Y: 0x0002,
+  Z: 0x0004,
+  XR: 0x0008,
+  YR: 0x0010,
+  ZR: 0x0020,
+  LX: 0x0040,
+  LY: 0x0080,
+  LZ: 0x0100,
+  AX: 0x0200,
+  AY: 0x0400,
+  AZ: 0x0800,
+  AXR: 0x1000,
+  AYR: 0x2000,
+  AZR: 0x4000,
+  RLOOP: 0x8000,
+};
+/** The three bits that say along which axes a sequence travels, in the order of `linearmovement`. */
+const TRAVEL_BITS = [MOTION.LX, MOTION.LY, MOTION.LZ];
+/** The six bits a bone controller's type is one of, in the order of a bone's six values. */
+const CONTROLLED_BITS = [MOTION.X, MOTION.Y, MOTION.Z, MOTION.XR, MOTION.YR, MOTION.ZR];
+/**
+ * A hit box's `group`, as the Half-Life SDK's game code names them (HITGROUP_GENERIC ... in cbase.h): what
+ * was hit, by which a monster's TraceAttack scales the damage. A mod may number its own beyond these
+ * (hgrunt.mdl has an 11).
+ */
+export const HITGROUP = {
+  generic: 0,
+  head: 1,
+  chest: 2,
+  stomach: 3,
+  leftArm: 4,
+  rightArm: 5,
+  leftLeg: 6,
+  rightLeg: 7,
+};
+/**
+ * The names of a sequence's `activity` number (the SDK's activity.h), by which a monster's code asks for
+ * "a walk" without knowing the sequence's name. Only numbers met in Half-Life's own models are here
+ * (zombie.mdl, hgrunt.mdl, headcrab.mdl), each on a sequence that fits it: "walk" has 3, "reload_mp5" 32,
+ * "victorydance" 65, "diegutshot" 68. The spellings are activity.h's as remembered, not read from it, and for
+ * a few the sequence's name bears out only that the number is used (5 is on hgrunt's "repel_shoot", 28 on its
+ * "crouching_mp5", 40 to 43 on "barnacled1" to "barnacled4"). A number that is not here has a name too,
+ * which this kit does not know.
+ */
+export const ACTIVITY = {
+  1: "ACT_IDLE",
+  3: "ACT_WALK",
+  4: "ACT_RUN",
+  5: "ACT_FLY",
+  9: "ACT_FALL",
+  10: "ACT_LAND",
+  11: "ACT_STRAFE_LEFT",
+  12: "ACT_STRAFE_RIGHT",
+  15: "ACT_TURN_LEFT",
+  16: "ACT_TURN_RIGHT",
+  17: "ACT_CROUCH",
+  21: "ACT_SIGNAL1",
+  22: "ACT_SIGNAL2",
+  23: "ACT_SIGNAL3",
+  25: "ACT_COWER",
+  26: "ACT_SMALL_FLINCH",
+  27: "ACT_BIG_FLINCH",
+  28: "ACT_RANGE_ATTACK1",
+  29: "ACT_RANGE_ATTACK2",
+  30: "ACT_MELEE_ATTACK1",
+  31: "ACT_MELEE_ATTACK2",
+  32: "ACT_RELOAD",
+  36: "ACT_DIESIMPLE",
+  37: "ACT_DIEBACKWARD",
+  38: "ACT_DIEFORWARD",
+  40: "ACT_BARNACLE_HIT",
+  41: "ACT_BARNACLE_PULL",
+  42: "ACT_BARNACLE_CHOMP",
+  43: "ACT_BARNACLE_CHEW",
+  47: "ACT_COMBAT_IDLE",
+  48: "ACT_WALK_HURT",
+  49: "ACT_RUN_HURT",
+  65: "ACT_VICTORY_DANCE",
+  66: "ACT_DIE_HEADSHOT",
+  68: "ACT_DIE_GUTSHOT",
+  73: "ACT_FLINCH_LEFTARM",
+  74: "ACT_FLINCH_RIGHTARM",
+  75: "ACT_FLINCH_LEFTLEG",
+  76: "ACT_FLINCH_RIGHTLEG",
+};
 // mstudioevent_t
 const EVENT = { frame: 0, event: 4, type: 8, options: 12, sizeof: 76 }; // options: char[64]
 // mstudioseqgroup_t
@@ -221,6 +314,16 @@ const vec3s = (list) => {
   });
   return bytes;
 };
+/** Three floats of a file, as a point. */
+const vec3At = (buffer, at) => [0, 1, 2].map((axis) => buffer.readFloatLE(at + axis * FLOAT32));
+/** A point written into a buffer as three floats. */
+const writeVec3 = (buffer, at, p) => p.forEach((v, axis) => buffer.writeFloatLE(v, at + axis * FLOAT32));
+/** `value` when it is three numbers; otherwise it throws, saying of `what` that it needs them. */
+function threeNumbers(value, what) {
+  if (!Array.isArray(value) || value.length !== 3 || value.some((v) => !Number.isFinite(v)))
+    throw new Error(`${what} needs three numbers [x, y, z], not ${JSON.stringify(value)}`);
+  return value;
+}
 const boneAt = (mdl, i) => int32(mdl, HDR.boneindex) + i * BONE.sizeof;
 const seqAt = (mdl, i) => int32(mdl, HDR.seqindex) + i * SEQ.sizeof;
 
@@ -686,13 +789,18 @@ export function restPose(mdl) {
   );
 }
 /**
- * The model's animations: [{ name, fps, frames, loops, flags, motion, move, speed, blends, group }]
- * (mstudioseqdesc_t, 176 bytes).
- *  `loops`: the sequence is marked looping (STUDIO_LOOPING). `move`: how far its root travels in one play of
- *  it (linearmovement), and `speed` the ground speed that makes (units a second): the engine plays a
- *  player's legs at the rate its real speed asks of that (StudioProcessGait). `motion`: which of the root's
- *  axes travel (STUDIO_LX 1, LY 2, LZ 4...).
+ * The model's animations: [{ name, fps, frames, loops, flags, activity, actweight, movement, motiontype,
+ * speed, bbmin, bbmax, blends, group }] (mstudioseqdesc_t, 176 bytes).
+ *  `loops`: the sequence is marked looping (STUDIO_LOOPING, the one bit studio.h gives `flags`).
+ *  `activity`: what a monster's code asks for it as (ACTIVITY has the names; 0: only by its name), and
+ *  `actweight` how often it is picked among the sequences of one activity.
+ *  `movement`: how far the model travels in one play of it (linearmovement); the frames themselves stay in
+ *  place. `speed`: the ground speed that makes, in units a second (distance * fps / (frames - 1), what the
+ *  SDK's GetSequenceInfo gives a monster as m_flGroundSpeed; the engine also plays a player's legs by it, in
+ *  StudioProcessGait). `motiontype`: the MOTION bits, LX LY LZ for the axes of `movement`.
+ *  `bbmin`, `bbmax`: the box about the model through the whole sequence, in the model's space.
  *  `group`: not 0 when the animation is kept in another file (poseAt cannot read it).
+ *  `move` and `motion` are `movement` and `motiontype` under their older names.
  */
 export function sequences(mdl) {
   return Array.from({ length: int32(mdl, HDR.numseq) }, (_, i) => {
@@ -700,17 +808,24 @@ export function sequences(mdl) {
     const fps = mdl.readFloatLE(seq + SEQ.fps);
     const frames = int32(mdl, seq + SEQ.numframes);
     const flags = int32(mdl, seq + SEQ.flags);
-    const move = [0, 1, 2].map((axis) => mdl.readFloatLE(seq + SEQ.linearmovement + axis * FLOAT32));
-    const distance = Math.hypot(...move);
+    const movement = vec3At(mdl, seq + SEQ.linearmovement);
+    const distance = Math.hypot(...movement);
+    const motiontype = int32(mdl, seq + SEQ.motiontype);
     return {
       name: textAt(mdl, seq + SEQ.label, SHORT_NAME),
       fps,
       frames,
       loops: Boolean(flags & STUDIO_LOOPING),
       flags,
-      motion: int32(mdl, seq + SEQ.motiontype),
-      move,
+      activity: int32(mdl, seq + SEQ.activity),
+      actweight: int32(mdl, seq + SEQ.actweight),
+      movement,
+      motiontype,
+      motion: motiontype,
+      move: movement,
       speed: frames > 1 && distance ? distance / ((frames - 1) / fps) : 0,
+      bbmin: vec3At(mdl, seq + SEQ.bbmin),
+      bbmax: vec3At(mdl, seq + SEQ.bbmax),
       blends: int32(mdl, seq + SEQ.numblends),
       group: int32(mdl, seq + SEQ.seqgroup),
     };
@@ -933,15 +1048,97 @@ function plainRuns(steps) {
   return Buffer.concat(runs);
 }
 /**
- * writeMdl's animations: each one's values, the table of them, the one sequence group, and the model's box.
+ * The box about a model's points through some frames, in the model's space: { min, max }, or null for a model
+ * of no points. `parents`: each bone's parent; `carried`: its points (see carriedPoints); `blends`: [for each
+ * blend, its frames]. This is how studiomdl fills a sequence's bbmin and bbmax (in SimplifyModel, "find
+ * bounding box for each sequence": every vertex of every submodel, taken through its bone at every frame of
+ * every blend; from memory of its source, and borne out on Half-Life's own files: the boxes this gives for
+ * sequences of zombie.mdl, hgrunt.mdl, headcrab.mdl, houndeye.mdl and bullsquid.mdl are the ones those files
+ * have, to within 0.03 of a unit).
  */
-function writeSequences(file, sequences, rest, scale) {
+function boxThrough(parents, carried, blends) {
+  const min = [Infinity, Infinity, Infinity];
+  const max = [-Infinity, -Infinity, -Infinity];
+  for (const frames of blends)
+    for (const values of frames) {
+      const pose = chain(values, (i) => parents[i]);
+      for (const { verts, vertBones } of carried)
+        verts.forEach((p, k) => {
+          const matrix = pose[vertBones[k]];
+          if (!matrix) return;
+          for (let axis = 0; axis < 3; axis++) {
+            const row = matrix[axis];
+            const v = row[0] * p[0] + row[1] * p[1] + row[2] * p[2] + row[3];
+            if (v < min[axis]) min[axis] = v;
+            if (v > max[axis]) max[axis] = v;
+          }
+        });
+    }
+  return Number.isFinite(min[0]) ? { min, max } : null;
+}
+/**
+ * Every submodel's points with the bone each is on: [{ verts: [[x, y, z]] in their bones' space, vertBones }],
+ * of a file or of what writeMdl is given (its `bodyparts`).
+ */
+function carriedPoints(what) {
+  if (!Buffer.isBuffer(what))
+    return what.bodyparts.flatMap((bodypart) =>
+      bodypart.models.map((model) => ({ verts: model.verts, vertBones: model.vertBones })),
+    );
+  return readMdl(what).bodyparts.flatMap((bodypart) =>
+    bodypart.models.map((model) => {
+      const points = int32(what, model.at + MODEL.vertindex);
+      const theirBones = int32(what, model.at + MODEL.vertinfoindex);
+      return {
+        verts: Array.from({ length: model.numverts }, (_, i) => vec3At(what, points + i * VEC3)),
+        vertBones: Array.from(what.subarray(theirBones, theirBones + model.numverts)),
+      };
+    }),
+  );
+}
+/**
+ * The motiontype of a sequence that travels `movement`: LX, LY and LZ for the axes it travels along, and
+ * whatever else `was` there. studiomdl takes those bits from the QC ("LX" on the $sequence line), measures
+ * the travel of the first bone along them from the first frame to the last, takes it out of the frames and
+ * writes it as linearmovement (ExtractMotion, from memory of its source); here the frames are given in place
+ * already and the travel is told, so the bits are the axes it is not zero on. Half-Life's own files: a walk
+ * forwards has 64 (LX) and a sequence that stays 0; hgrunt's strafes have 192 (LX + LY) for a travel that is
+ * all along y, the QC having named both, which `motiontype` given outright can say here too. Nothing in the
+ * SDK's game code reads these three bits (GetSequenceInfo takes the speed from linearmovement alone).
+ */
+const travelBits = (movement, was = 0) =>
+  TRAVEL_BITS.reduce((bits, bit, axis) => (movement[axis] ? bits | bit : bits & ~bit), was);
+/** A table of events (mstudioevent_t), in the order of their frames, and four bytes of nothing after it. */
+function eventTable(list) {
+  const table = Buffer.alloc(list.length * EVENT.sizeof + 4);
+  [...list]
+    .sort((a, b) => a.frame - b.frame)
+    .forEach((event, i) => {
+      const entry = i * EVENT.sizeof;
+      table.writeInt32LE(event.frame, entry + EVENT.frame);
+      table.writeInt32LE(event.event, entry + EVENT.event);
+      table.writeInt32LE(event.type ?? 0, entry + EVENT.type);
+      writeName(table, entry + EVENT.options, String(event.options ?? ""), LONG_NAME);
+    });
+  return table;
+}
+/**
+ * writeMdl's animations: each one's values, the table of them, the one sequence group, and the boxes: each
+ * sequence's own, and the four of the header (`boxes`: { min, max, bbmin, bbmax }, those that were given).
+ * `parents` and `carried`: the bones' parents and the model's points, for the boxes.
+ */
+function writeSequences(file, sequences, { rest, scale, parents, carried, boxes }) {
   const { head, add } = file;
   const table = Buffer.alloc(sequences.length * SEQ.sizeof);
-  // the box: every position any bone takes in any frame, and LEAST_BOX each way at the least
+  // for a model of no points, the box it had before boxes were measured: every position any bone takes in
+  // any frame, and LEAST_BOX each way at the least
   const allValues = sequences.flatMap((sequence) => sequence.frames.flat());
-  const boxMin = [0, 1, 2].map((axis) => allValues.reduce((v, six) => Math.min(v, six[axis]), -LEAST_BOX));
-  const boxMax = [0, 1, 2].map((axis) => allValues.reduce((v, six) => Math.max(v, six[axis]), LEAST_BOX));
+  const plain = {
+    min: [0, 1, 2].map((axis) => allValues.reduce((v, six) => Math.min(v, six[axis]), -LEAST_BOX)),
+    max: [0, 1, 2].map((axis) => allValues.reduce((v, six) => Math.max(v, six[axis]), LEAST_BOX)),
+  };
+  // every sequence's box together: what the header says when it is not told
+  const whole = { min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] };
   sequences.forEach((sequence, q) => {
     const anim = animTable(rest.length);
     for (let i = 0; i < rest.length; i++)
@@ -951,11 +1148,32 @@ function writeSequences(file, sequences, rest, scale) {
         if (!anim.put(i, j, plainRuns(steps))) throw new Error(`the animation ${sequence.name} is too long`);
       }
     const entry = q * SEQ.sizeof;
+    const said = `${sequence.name}: `;
     writeName(table, entry + SEQ.label, sequence.name, SHORT_NAME);
     table.writeFloatLE(sequence.fps, entry + SEQ.fps);
-    table.writeInt32LE(sequence.loops ? STUDIO_LOOPING : 0, entry + SEQ.flags);
+    table.writeInt32LE((sequence.flags ?? 0) | (sequence.loops ? STUDIO_LOOPING : 0), entry + SEQ.flags);
+    const activity = sequence.activity ?? 0;
+    table.writeInt32LE(activity, entry + SEQ.activity);
+    table.writeInt32LE(sequence.actweight ?? (activity ? 1 : 0), entry + SEQ.actweight);
     table.writeInt32LE(sequence.frames.length, entry + SEQ.numframes);
-    [...boxMin, ...boxMax].forEach((v, k) => table.writeFloatLE(v, entry + SEQ.bbmin + k * FLOAT32));
+    const movement = threeNumbers(sequence.movement ?? [0, 0, 0], `${said}movement`);
+    table.writeInt32LE(sequence.motiontype ?? travelBits(movement), entry + SEQ.motiontype);
+    writeVec3(table, entry + SEQ.linearmovement, movement);
+    // its box: told, or measured about the model's points through its frames
+    const measured =
+      sequence.bbmin && sequence.bbmax ? null : (boxThrough(parents, carried, [sequence.frames]) ?? plain);
+    const bbmin = threeNumbers(sequence.bbmin ?? measured.min, `${said}bbmin`);
+    const bbmax = threeNumbers(sequence.bbmax ?? measured.max, `${said}bbmax`);
+    writeVec3(table, entry + SEQ.bbmin, bbmin);
+    writeVec3(table, entry + SEQ.bbmax, bbmax);
+    for (let axis = 0; axis < 3; axis++) {
+      whole.min[axis] = Math.min(whole.min[axis], bbmin[axis]);
+      whole.max[axis] = Math.max(whole.max[axis], bbmax[axis]);
+    }
+    if (sequence.events?.length) {
+      table.writeInt32LE(sequence.events.length, entry + SEQ.numevents);
+      table.writeInt32LE(add(eventTable(sequence.events)), entry + SEQ.eventindex);
+    }
     table.writeInt32LE(1, entry + SEQ.numblends);
     table.writeInt32LE(add(anim.bytes()), entry + SEQ.animindex);
   });
@@ -965,8 +1183,15 @@ function writeSequences(file, sequences, rest, scale) {
   group.write("default", SEQGROUP.label, "latin1");
   head.writeInt32LE(1, HDR.numseqgroups);
   head.writeInt32LE(add(group), HDR.seqgroupindex);
-  // the header's min, max, bbmin and bbmax
-  [...boxMin, ...boxMax, ...boxMin, ...boxMax].forEach((v, k) => head.writeFloatLE(v, HDR.min + k * FLOAT32));
+  // The header's four: min and max are the box the model moves with (the QC's $bbox) and bbmin and bbmax the
+  // box it is clipped by ($cbox). studiomdl leaves each at zero unless the QC says (zombie.mdl and
+  // hgrunt.mdl have all four at zero; headcrab.mdl has min and max -12 -12 0 to 12 12 24). This kit has
+  // always written the model's own box in all four, and goes on doing so for the ones not told.
+  const own = sequences.length ? whole : plain;
+  writeVec3(head, HDR.min, threeNumbers(boxes.min ?? own.min, "min"));
+  writeVec3(head, HDR.max, threeNumbers(boxes.max ?? own.max, "max"));
+  writeVec3(head, HDR.bbmin, threeNumbers(boxes.bbmin ?? own.min, "bbmin"));
+  writeVec3(head, HDR.bbmax, threeNumbers(boxes.bbmax ?? own.max, "bbmax"));
 }
 /**
  * One submodel of writeMdl's: its meshes' commands, its mesh table, its points and normals. Returns its
@@ -1058,10 +1283,36 @@ function writeTextures(file, textures, skins) {
  *              as numbered)
  *   bodyparts  [{ name, models: [{ name, verts: [[x, y, z]] in their bones' space, vertBones, meshes:
  *              [{ skin, norms, normBones, tris: [[[vert, norm (of this mesh's), s, t] x3]] }] }] }]
- * No hit boxes, bone controllers, attachments or events: what a worn thing drawn on a player's bones needs,
- * and no more. Every bodypart needs one submodel at least (it may have no meshes): one with none is refused.
+ * and, for a thing that lives (a monster), what the rest of the format holds:
+ *   sequences  each may also say activity and actweight, movement [x, y, z] (how far the model travels in
+ *              one play of it, its frames staying in place: see travelBits for the motiontype that sets, or
+ *              give motiontype), events [{ frame, event, options, type }], flags, and bbmin and bbmax (its
+ *              box, which is otherwise measured about the model's points through its frames, as studiomdl
+ *              does: the engine culls by it)
+ *   hitboxes   [{ bone (its number or name), group (HITGROUP; 0 unless told), min, max (in the bone's
+ *              space) }], or "auto", or the options of autoHitboxes ({ groups, least, thin })
+ *   attachments  [{ name, bone, pos [x, y, z] in the bone's space }]
+ *   controllers  [{ bone, type (MOTION.XR ...), start, end, rest, index }]: see setBoneControllers
+ *   eyes       [x, y, z]: where it sees from (eyeposition; the QC's $eyeposition)
+ *   min, max, bbmin, bbmax   the header's boxes: see writeSequences for what they are when not told
+ * Every bodypart needs one submodel at least (it may have no meshes): one with none is refused.
  */
-export function writeMdl({ name, bones, sequences, textures, skins = null, bodyparts }) {
+export function writeMdl({
+  name,
+  bones,
+  sequences,
+  textures,
+  skins = null,
+  bodyparts,
+  hitboxes: boxesAsked = [],
+  attachments: fastened = [],
+  controllers = [],
+  eyes = [0, 0, 0],
+  min,
+  max,
+  bbmin,
+  bbmax,
+}) {
   // the engine picks a bodypart's submodel by dividing by how many it has: none stops it
   for (const bodypart of bodyparts)
     if (!bodypart.models.length)
@@ -1077,15 +1328,30 @@ export function writeMdl({ name, bones, sequences, textures, skins = null, bodyp
   // not be
   const rest = bones.map(restOfNew);
   const scale = scalesFor(rest, sequences);
+  writeVec3(head, HDR.eyeposition, threeNumbers(eyes, `${name}: eyes`));
+  const names = bones.map((bone) => bone.name);
+  const boneTable = Buffer.concat(bones.map((bone, i) => boneEntry({ ...bone, scale: scale[i] })));
   head.writeInt32LE(bones.length, HDR.numbones);
-  head.writeInt32LE(
-    add(Buffer.concat(bones.map((bone, i) => boneEntry({ ...bone, scale: scale[i] })))),
-    HDR.boneindex,
-  );
+  head.writeInt32LE(controllers.length, HDR.numbonecontrollers);
+  head.writeInt32LE(add(controllerTable(controllers, names, boneTable)), HDR.bonecontrollerindex);
+  head.writeInt32LE(add(boneTable), HDR.boneindex);
+  const boxes = Array.isArray(boxesAsked)
+    ? boxesAsked
+    : autoHitboxes({ bones, bodyparts }, boxesAsked === "auto" ? {} : boxesAsked);
+  head.writeInt32LE(boxes.length, HDR.numhitboxes);
+  head.writeInt32LE(add(hitboxTable(boxes, names)), HDR.hitboxindex);
+  head.writeInt32LE(fastened.length, HDR.numattachments);
+  head.writeInt32LE(add(attachmentTable(fastened, names)), HDR.attachmentindex);
   // tables with nothing in them
   const nowhere = add(Buffer.alloc(4));
   for (const index of EMPTY_TABLES) head.writeInt32LE(nowhere, index);
-  writeSequences(file, sequences, rest, scale);
+  writeSequences(file, sequences, {
+    rest,
+    scale,
+    parents: bones.map((bone) => bone.parent),
+    carried: carriedPoints({ bodyparts }),
+    boxes: { min, max, bbmin, bbmax },
+  });
   writeBodyparts(file, bodyparts);
   writeTextures(file, textures, skins);
   return engineLayout(file.whole());
@@ -1433,12 +1699,34 @@ function roomFor(src, blends, name) {
 }
 /**
  * Returns a copy of the file with one animation played from other frames: { frames (see frameValues) or
- * blends: [frames, ...], fps, loops }; what is not given stays. Its place in the list stays, and so does
- * everything else it says (its events, its activity, how far it travels): game code that asks for an
- * animation by its number goes on getting this one.
+ * blends: [frames, ...], fps, loops, activity, actweight, movement, motiontype, bbmin, bbmax }; what is not
+ * given stays. Its place in the list stays, and so does everything else it says (its events, and its
+ * activity and how far it travels unless told): game code that asks for an animation by its number goes on
+ * getting this one.
  * Given `frames`, an animation that had several blends is left with one.
+ *   movement   [x, y, z]: how far the model travels in one play of it (linearmovement), the frames staying
+ *              in place; the motiontype's LX, LY and LZ are set for the axes it is not zero on and cleared
+ *              for the others (see travelBits), unless `motiontype` says the whole of it
+ *   activity   and `actweight` (1 unless told when the sequence had none; 0 with activity 0)
+ *   bbmin, bbmax  its box. With new frames and no box told, it is measured again about the model's points
+ *              through them, as studiomdl does (see boxThrough): the engine culls by it
  */
-export function replaceSequence(src, which, { frames, blends = frames && [frames], fps, loops } = {}) {
+export function replaceSequence(
+  src,
+  which,
+  {
+    frames,
+    blends = frames && [frames],
+    fps,
+    loops,
+    activity,
+    actweight,
+    movement,
+    motiontype,
+    bbmin,
+    bbmax,
+  } = {},
+) {
   const index = sequenceAt(src, which);
   if (index < 0) throw new Error(`no animation ${which}`);
   let out = Buffer.from(src);
@@ -1460,17 +1748,49 @@ export function replaceSequence(src, which, { frames, blends = frames && [frames
     const flags = int32(out, seq + SEQ.flags);
     out.writeInt32LE(loops ? flags | STUDIO_LOOPING : flags & ~STUDIO_LOOPING, seq + SEQ.flags);
   }
+  if (activity !== undefined) {
+    const weight = actweight ?? (activity ? int32(out, seq + SEQ.actweight) || 1 : 0);
+    out.writeInt32LE(activity, seq + SEQ.activity);
+    out.writeInt32LE(weight, seq + SEQ.actweight);
+  } else if (actweight !== undefined) out.writeInt32LE(actweight, seq + SEQ.actweight);
+  if (movement !== undefined) {
+    writeVec3(out, seq + SEQ.linearmovement, threeNumbers(movement, `${name}: movement`));
+    out.writeInt32LE(travelBits(movement, int32(out, seq + SEQ.motiontype)), seq + SEQ.motiontype);
+  }
+  if (motiontype !== undefined) out.writeInt32LE(motiontype, seq + SEQ.motiontype);
+  // the box: told, or measured again when the frames are new (a model of no points keeps the one it had)
+  const measured =
+    blends && !(bbmin && bbmax) ? boxThrough(boneParents(src), carriedPoints(src), blends) : null;
+  const box = { min: bbmin ?? measured?.min, max: bbmax ?? measured?.max };
+  if (box.min) writeVec3(out, seq + SEQ.bbmin, threeNumbers(box.min, `${name}: bbmin`));
+  if (box.max) writeVec3(out, seq + SEQ.bbmax, threeNumbers(box.max, `${name}: bbmax`));
   return engineLayout(out);
 }
 /**
  * Returns a copy of the file with one more animation after the ones it has (its number is the old count, so
- * the ones the game knows by number stay where they were): { name, fps, loops, frames, activity, events }.
- * The box it is drawn within is taken from the animation `like` (0 unless told). The table of animations is
- * written again at the end of the file.
+ * the ones the game knows by number stay where they were): { name, fps, loops, frames, activity, actweight,
+ * movement, motiontype, events, bbmin, bbmax } (see replaceSequence for each).
+ * The box it is drawn within is measured about the model's points through its frames; with `like` (an
+ * animation's number) it is that animation's instead, as it also is for a model of no points (the first's).
+ * The table of animations is written again at the end of the file.
  */
 export function addSequence(
   src,
-  { name, fps = 30, loops = false, frames, blends, activity = 0, events: itsEvents, like = 0 },
+  {
+    name,
+    fps = 30,
+    loops = false,
+    frames,
+    blends,
+    activity = 0,
+    actweight,
+    movement,
+    motiontype,
+    events: itsEvents,
+    bbmin,
+    bbmax,
+    like,
+  },
 ) {
   const file = growing(Buffer.from(src));
   const count = int32(src, HDR.numseq);
@@ -1484,18 +1804,25 @@ export function addSequence(
   writeName(table, entry + SEQ.label, name, SHORT_NAME);
   table.writeFloatLE(fps, entry + SEQ.fps);
   table.writeInt32LE(activity, entry + SEQ.activity);
-  table.writeInt32LE(activity ? 1 : 0, entry + SEQ.actweight);
+  table.writeInt32LE(actweight ?? (activity ? 1 : 0), entry + SEQ.actweight);
   table.writeInt32LE(1, entry + SEQ.numframes);
   table.writeInt32LE(1, entry + SEQ.numblends);
   table.writeInt32LE(at + restingAnim, entry + SEQ.animindex);
-  if (count) {
-    // bbmin and bbmax of the animation it is like
-    const likeIt = oldTable + Math.min(like, count - 1) * SEQ.sizeof;
-    src.copy(table, entry + SEQ.bbmin, likeIt + SEQ.bbmin, likeIt + SEQ.bbmin + 2 * VEC3);
-  }
+  // bbmin and bbmax of the animation it is like: what it keeps when its own are not measured or told
+  const likeIt = count ? oldTable + Math.min(like ?? 0, count - 1) * SEQ.sizeof : -1;
+  if (count) src.copy(table, entry + SEQ.bbmin, likeIt + SEQ.bbmin, likeIt + SEQ.bbmin + 2 * VEC3);
   file.head.writeInt32LE(count + 1, HDR.numseq);
   file.head.writeInt32LE(at, HDR.seqindex);
-  const out = replaceSequence(file.whole(), count, { frames, blends, loops });
+  const copied = count && like !== undefined;
+  const out = replaceSequence(file.whole(), count, {
+    frames,
+    blends,
+    loops,
+    movement,
+    motiontype,
+    bbmin: bbmin ?? (copied ? vec3At(src, likeIt + SEQ.bbmin) : undefined),
+    bbmax: bbmax ?? (copied ? vec3At(src, likeIt + SEQ.bbmax) : undefined),
+  });
   return engineLayout(itsEvents?.length ? setEvents(out, count, itsEvents) : out);
 }
 
@@ -1527,19 +1854,9 @@ export function setEvents(src, which, list) {
   const index = sequenceAt(src, which);
   if (index < 0) throw new Error(`no animation ${which}`);
   const file = growing(Buffer.from(src));
-  const table = Buffer.alloc(list.length * EVENT.sizeof + 4);
   const seq = seqAt(src, index);
-  [...list]
-    .sort((a, b) => a.frame - b.frame)
-    .forEach((event, i) => {
-      const entry = i * EVENT.sizeof;
-      table.writeInt32LE(event.frame, entry + EVENT.frame);
-      table.writeInt32LE(event.event, entry + EVENT.event);
-      table.writeInt32LE(event.type ?? 0, entry + EVENT.type);
-      writeName(table, entry + EVENT.options, String(event.options ?? ""), LONG_NAME);
-    });
   file.head.writeInt32LE(list.length, seq + SEQ.numevents);
-  file.head.writeInt32LE(file.add(table), seq + SEQ.eventindex);
+  file.head.writeInt32LE(file.add(eventTable(list)), seq + SEQ.eventindex);
   return engineLayout(file.whole());
 }
 /**
@@ -1565,10 +1882,199 @@ export function hitboxes(mdl) {
     return {
       bone: int32(mdl, box + BBOX.bone),
       group: int32(mdl, box + BBOX.group),
-      min: [0, 1, 2].map((axis) => mdl.readFloatLE(box + BBOX.bbmin + axis * FLOAT32)),
-      max: [0, 1, 2].map((axis) => mdl.readFloatLE(box + BBOX.bbmax + axis * FLOAT32)),
+      min: vec3At(mdl, box + BBOX.bbmin),
+      max: vec3At(mdl, box + BBOX.bbmax),
     };
   });
+}
+/**
+ * The bone controllers: [{ bone, type, start, end, rest, index }]: the bones the game's code turns by itself
+ * (a head that follows a target, a mouth that opens with a sentence). `type`: which of the bone's six values
+ * (MOTION.X to MOTION.ZR, with MOTION.RLOOP for one that wraps round); `start` and `end`: the range the
+ * entity's controller value (0 to 255) is spread over, in degrees for an angle and units for a position;
+ * `index`: which of the entity's controllers it is (0 to 3; 4 is the mouth).
+ */
+export function boneControllers(mdl) {
+  const table = int32(mdl, HDR.bonecontrollerindex);
+  return Array.from({ length: int32(mdl, HDR.numbonecontrollers) }, (_, i) => {
+    const controller = table + i * BONECONTROLLER.sizeof;
+    return {
+      bone: int32(mdl, controller + BONECONTROLLER.bone),
+      type: int32(mdl, controller + BONECONTROLLER.type),
+      start: mdl.readFloatLE(controller + BONECONTROLLER.start),
+      end: mdl.readFloatLE(controller + BONECONTROLLER.end),
+      rest: int32(mdl, controller + BONECONTROLLER.rest),
+      index: int32(mdl, controller + BONECONTROLLER.index),
+    };
+  });
+}
+
+// ── what a monster has: hit boxes, attachments, bone controllers, written ──
+/** How many of a model's bones a sentence lists. */
+const BONES_NAMED = 6;
+/**
+ * A bone's number from its number or its name, among the bones called `names`. It throws, saying `what`
+ * names it, when the model has no such bone.
+ */
+function boneNumbered(names, which, what) {
+  const i = typeof which === "number" ? which : names.indexOf(which);
+  if (!Number.isInteger(i) || i < 0 || i >= names.length)
+    throw new Error(
+      `${what} is on the bone ${JSON.stringify(which)}, and the model has no such bone: it has ${names.length} (${names.slice(0, BONES_NAMED).join(", ")}${names.length > BONES_NAMED ? "..." : ""})`,
+    );
+  return i;
+}
+/** A table of hit boxes (mstudiobbox_t), and four bytes of nothing after it. */
+function hitboxTable(list, names) {
+  const table = Buffer.alloc(list.length * BBOX.sizeof + 4);
+  list.forEach((box, i) => {
+    const entry = i * BBOX.sizeof;
+    const what = `hit box ${i}`;
+    table.writeInt32LE(boneNumbered(names, box.bone, what), entry + BBOX.bone);
+    table.writeInt32LE(box.group ?? HITGROUP.generic, entry + BBOX.group);
+    writeVec3(table, entry + BBOX.bbmin, threeNumbers(box.min, `${what}: min`));
+    writeVec3(table, entry + BBOX.bbmax, threeNumbers(box.max, `${what}: max`));
+  });
+  return table;
+}
+/**
+ * A table of attachments (mstudioattachment_t), and four bytes of nothing after it. Their `type` and their
+ * three `vectors` are left at zero, as studiomdl leaves them: the engine reads the bone and the point only.
+ */
+function attachmentTable(list, names) {
+  const table = Buffer.alloc(list.length * ATTACHMENT.sizeof + 4);
+  list.forEach((attachment, i) => {
+    const entry = i * ATTACHMENT.sizeof;
+    const what = `attachment ${i}`;
+    writeName(table, entry + ATTACHMENT.name, attachment.name ?? "", SHORT_NAME);
+    table.writeInt32LE(boneNumbered(names, attachment.bone, what), entry + ATTACHMENT.bone);
+    writeVec3(table, entry + ATTACHMENT.org, threeNumbers(attachment.pos ?? [0, 0, 0], `${what}: pos`));
+  });
+  return table;
+}
+/**
+ * A table of bone controllers (mstudiobonecontroller_t), and four bytes of nothing after it. Each bone also
+ * says, for each of its six values, which controller turns it (mstudiobone_t.bonecontroller, -1: none):
+ * those are written into `boneTable` (the bones' entries, one after another), every one first set to none.
+ * That a controller's number goes in the slot of its type's axis is from memory of studiomdl's source
+ * (WriteBoneInfo), and borne out on hgrunt.mdl: its one controller, type XR on bone 27, is in that bone's
+ * fourth slot.
+ */
+function controllerTable(list, names, boneTable) {
+  const table = Buffer.alloc(list.length * BONECONTROLLER.sizeof + 4);
+  for (let i = 0; i < names.length; i++)
+    for (const j of CHANNELS) boneTable.writeInt32LE(-1, i * BONE.sizeof + BONE.bonecontroller + j * INT32);
+  list.forEach((controller, i) => {
+    const entry = i * BONECONTROLLER.sizeof;
+    const what = `bone controller ${i}`;
+    const bone = boneNumbered(names, controller.bone, what);
+    const channel = CONTROLLED_BITS.indexOf(controller.type & ~MOTION.RLOOP);
+    if (channel < 0)
+      throw new Error(
+        `${what} has type ${controller.type}: it turns one of a bone's six values, so its type is one of MOTION.X, Y, Z, XR, YR or ZR (1, 2, 4, 8, 16, 32), with MOTION.RLOOP added for one that wraps round`,
+      );
+    if (![controller.start, controller.end].every(Number.isFinite))
+      throw new Error(`${what} needs a start and an end: the range it turns the bone through`);
+    table.writeInt32LE(bone, entry + BONECONTROLLER.bone);
+    table.writeInt32LE(controller.type, entry + BONECONTROLLER.type);
+    table.writeFloatLE(controller.start, entry + BONECONTROLLER.start);
+    table.writeFloatLE(controller.end, entry + BONECONTROLLER.end);
+    table.writeInt32LE(controller.rest ?? 0, entry + BONECONTROLLER.rest);
+    table.writeInt32LE(controller.index ?? 0, entry + BONECONTROLLER.index);
+    boneTable.writeInt32LE(i, bone * BONE.sizeof + BONE.bonecontroller + channel * INT32);
+  });
+  return table;
+}
+/**
+ * Returns a copy of the file with these hit boxes and no others: [{ bone (its number or name), group
+ * (HITGROUP; 0 unless told), min, max (in the bone's space) }]. Nothing else changes. It throws on a box
+ * whose bone the model has not.
+ */
+export function setHitboxes(src, list) {
+  const file = growing(Buffer.from(src));
+  file.head.writeInt32LE(list.length, HDR.numhitboxes);
+  file.head.writeInt32LE(file.add(hitboxTable(list, readMdl(src).bones)), HDR.hitboxindex);
+  return engineLayout(file.whole());
+}
+/**
+ * Returns a copy of the file with these attachments and no others: [{ name, bone (its number or name), pos
+ * [x, y, z] in the bone's space }]. Game code asks for an attachment by its number, so on a model the game
+ * already uses keep the ones it has in their order and add after them.
+ */
+export function setAttachments(src, list) {
+  const file = growing(Buffer.from(src));
+  file.head.writeInt32LE(list.length, HDR.numattachments);
+  file.head.writeInt32LE(file.add(attachmentTable(list, readMdl(src).bones)), HDR.attachmentindex);
+  return engineLayout(file.whole());
+}
+/**
+ * Returns a copy of the file with these bone controllers and no others: [{ bone (its number or name), type
+ * (MOTION.X ... MOTION.ZR: which of the bone's six values), start, end (degrees for an angle), rest (0),
+ * index (which of the entity's controllers, 0 to 3; 4: the mouth) }]. The bones' own note of which
+ * controller turns them is rewritten to match; nothing else changes.
+ */
+export function setBoneControllers(src, list) {
+  const file = growing(Buffer.from(src));
+  const names = readMdl(src).bones;
+  const bonesAt = int32(src, HDR.boneindex);
+  const boneTable = file.head.subarray(bonesAt, bonesAt + names.length * BONE.sizeof);
+  file.head.writeInt32LE(list.length, HDR.numbonecontrollers);
+  file.head.writeInt32LE(file.add(controllerTable(list, names, boneTable)), HDR.bonecontrollerindex);
+  return engineLayout(file.whole());
+}
+/** The least a hit box measures on every axis for autoHitboxes to keep it: studiomdl's own one unit. */
+const THINNEST_BOX = 1;
+/**
+ * The hit boxes studiomdl makes by itself for a model whose QC names none: [{ bone, group, min, max }], one
+ * for each bone that carries something, about what it carries, in the bone's own space. `what`: a file, or
+ * what writeMdl is given ({ bones, bodyparts }).
+ *   groups   { "a bone's name": group } (HITGROUP): that bone's group, and that of the bones under it that
+ *            say none (the QC's $hgroup); 0 where nothing says
+ *   least    the fewest points a bone carries to get a box (0: studiomdl counts none)
+ *   thin     a box no thicker than this on some axis is left out (1)
+ * As studiomdl does it (SimplifyModel, "automatically build hit boxes", from memory of its source): a
+ * bone's box starts as nothing at the bone's own origin, grows to hold every point the bone carries in any
+ * submodel of any bodypart, then the origin of each bone that hangs from it (so a thigh's box reaches the
+ * knee); a box under one unit on any axis is dropped; a bone's group is its $hgroup's, else its parent's,
+ * else 0. It counts no points, so a bone that carries none still gets a box when the bones under it are spread
+ * widely enough (houndeye.mdl's pelvis has one); `least` is this kit's own, for leaving those out. Borne out
+ * on Half-Life's own files whose boxes are of studiomdl's making: for headcrab.mdl, houndeye.mdl and
+ * bullsquid.mdl this returns the 13, 14 and 39 boxes the files have, each to a hundredth of a unit.
+ */
+export function autoHitboxes(what, { groups = {}, least = 0, thin = THINNEST_BOX } = {}) {
+  const list = Buffer.isBuffer(what) ? bones(what) : what.bones;
+  const boxes = list.map(() => ({ min: [0, 0, 0], max: [0, 0, 0], points: 0 }));
+  const grow = (box, p) => {
+    for (let axis = 0; axis < 3; axis++) {
+      box.min[axis] = Math.min(box.min[axis], p[axis]);
+      box.max[axis] = Math.max(box.max[axis], p[axis]);
+    }
+  };
+  for (const { verts, vertBones } of carriedPoints(what))
+    verts.forEach((p, k) => {
+      const box = boxes[vertBones[k]];
+      if (!box) return;
+      grow(box, p);
+      box.points++;
+    });
+  list.forEach((bone) => {
+    if (bone.parent >= 0) grow(boxes[bone.parent], bone.pos ?? [0, 0, 0]);
+  });
+  for (const name of Object.keys(groups))
+    if (!list.some((bone) => bone.name === name))
+      throw new Error(
+        `autoHitboxes: groups names the bone ${JSON.stringify(name)}, and the model has no such bone`,
+      );
+  // a parent comes before its children, so its group is known when theirs is asked
+  const groupOf = [];
+  list.forEach((bone, i) => {
+    groupOf[i] = groups[bone.name] ?? (bone.parent >= 0 ? groupOf[bone.parent] : HITGROUP.generic);
+  });
+  return boxes.flatMap((box, bone) =>
+    box.points >= least && box.min.every((v, axis) => v < box.max[axis] - thin)
+      ? [{ bone, group: groupOf[bone], min: box.min, max: box.max }]
+      : [],
+  );
 }
 /**
  * Every bone's matrix for a list of bones that is not in a file yet ([{ parent, pos, rot }], a parent before

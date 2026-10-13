@@ -1,6 +1,7 @@
-// The two ways a new shape gets into the game: a whole model written from triangles (buildMdl), and a new
-// piece put in the place of one that an existing model already shows (swapMesh), which keeps that model's
-// bones, animations, events and attachments, so the game goes on using it as it did.
+// The two ways a new shape gets into the game: a whole model written from triangles (buildMdl: a prop, or a
+// monster with its hit boxes, attachments and the travel of its walk), and a new piece put in the place of
+// one that an existing model already shows (swapMesh), which keeps that model's bones, animations, events
+// and attachments, so the game goes on using it as it did.
 //
 // A piece is what the workshop and the kits make: { tris, image }. A triangle is three corners
 // { p: [x, y, z], uv: [u, v] (0..1, from the picture's top left) } and, where the piece hangs from more than
@@ -21,12 +22,21 @@ import { into, out, box, uniq } from "./vec.mjs";
  *              texture: { name, width, height, pixels, palette, flags } (see image.mjs: indexed, masked,
  *              textureFrom); meshes that give a texture of the same name share it
  *   sequences  [{ name, fps, loops, frames: [for each frame, for each bone, [x, y, z, about x, about y,
- *              about z]] }]; one, "idle", holding the bones at rest, unless told
+ *              about z]] }]; one, "idle", holding the bones at rest, unless told. Each may also say
+ *              activity, actweight, movement [x, y, z] (how far the model travels in one play of it, the
+ *              frames staying in place), events, and bbmin and bbmax (measured unless told): see writeMdl
  *   smooth     faces meeting at less than this many degrees share a normal (40)
  *   ownNormals true: a corner that carries `n` (a normal of its own, in the model's space like `p`) keeps
  *              it, in place of the one worked out from the faces: see `meshOf` (false: `n` is not read)
- * It has no hit boxes, attachments or events: enough for a thing that is carried, worn, dropped or stood
- * somewhere. A weapon's first-person model needs those: start from the one the game has and use swapMesh.
+ * With no more than that it has no hit boxes or attachments: enough for a thing that is carried, worn,
+ * dropped or stood somewhere. For a thing that lives (a monster), as writeMdl takes them:
+ *   hitboxes   [{ bone (name or number), group, min, max (in the bone's space) }], or "auto" for the boxes
+ *              studiomdl would make, or autoHitboxes' options ({ groups: { "head": HITGROUP.head }, ... })
+ *   attachments  [{ name, bone, pos (in the bone's space) }]
+ *   controllers  [{ bone, type, start, end, rest, index }]
+ *   eyes       [x, y, z], where it sees from; and min, max, bbmin, bbmax, the header's boxes
+ * A weapon's first-person model is still better begun from the one the game has, with swapMesh: the game's
+ * code knows its animations and attachments by number.
  */
 export function buildMdl({
   name,
@@ -35,6 +45,14 @@ export function buildMdl({
   sequences,
   smooth = 40,
   ownNormals = false,
+  hitboxes,
+  attachments,
+  controllers,
+  eyes,
+  min,
+  max,
+  bbmin,
+  bbmax,
 }) {
   // each bone's matrix at rest, and its inverse: from the model's space into the bone's
   const rest = boneMatrices(bones);
@@ -99,6 +117,14 @@ export function buildMdl({
     sequences: sequences ?? [{ name: "idle", fps: 10, loops: true, frames: [still] }],
     textures,
     bodyparts: parts,
+    hitboxes,
+    attachments,
+    controllers,
+    eyes,
+    min,
+    max,
+    bbmin,
+    bbmax,
   });
 }
 

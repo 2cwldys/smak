@@ -324,6 +324,22 @@ export default function masterSword({ game, folders, scripts = [], cache } = {})
     ],
 
     rules: [
+      // A player who has connected and not yet chosen his character is put at an ms_player_spec, or with
+      // none at any ms_player_spawn; with neither the game finds him no place and drops him (the source,
+      // server/player/player.cpp: SPAWN_SPECTATE, then SPAWN_GENERIC, then "No valid spots, kick player",
+      // which on a listen server is a "disconnect"). A place to begin (ms_player_begin) does not count.
+      // The maps: 38 of 100 have an ms_player_spec, and the rest an ms_player_spawn. Seen 2026-10-13: a yard
+      // with a place to begin and neither of the two ended at "disconnected from server" every time, and
+      // loaded once it was given an ms_player_spec.
+      (live) =>
+        live.some((entity) => entity.classname === "ms_player_spec" || entity.classname === "ms_player_spawn")
+          ? []
+          : [
+              {
+                level: "error",
+                text: "the map has neither an ms_player_spec nor an ms_player_spawn: the game has nowhere to put a player who has connected and not yet chosen a character, and drops him at once (an ms_player_begin does not count)",
+              },
+            ],
       // A spawn area holds 32 monsters. The source, server/msmapents.cpp: class CAreaMonsterSpawn has
       // `monster_data_t mdSpawnMonster[32]`, and every monster that names the area by `spawnarea` takes
       // one place in it.

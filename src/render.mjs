@@ -56,6 +56,17 @@ const NEAR_LEAST = 0.5;
 const FLAT_ON_SCREEN = 1e-9;
 /** The least reach a model is framed by, so that a model of one point is not divided by nothing. */
 const LEAST_REACH = 1e-6;
+/**
+ * The views that have a name beside "orbit" and "first": where the camera of an orbit view stands for each.
+ * "side" is the model's left side, so its front (+x) is to the picture's left.
+ */
+export const NAMED_VIEWS = {
+  side: { yaw: 90, pitch: 0 },
+  front: { yaw: 0, pitch: 0 },
+  top: { yaw: 0, pitch: 90 },
+};
+/** The colour of the ground's line. */
+const GROUND = [240, 200, 70];
 
 /**
  * The model's triangles as it is shown: { seq (a name or a number; null: the bones at rest), frame (may fall
@@ -219,6 +230,10 @@ function cutNear(polygon, near) {
  *               then say nothing
  *   within      orbit: { mid, far } to frame the picture by instead of this pose's own size (see framing):
  *               several pictures to one scale
+ *               "side", "front" or "top": an orbit view from there (NAMED_VIEWS), whatever yaw and pitch say
+ *   ground      true: a line across the picture where z = 0 is, the floor a thing stands on, drawn over the
+ *               model so that a foot under it is seen crossed. Only a level orbit view has such a line
+ *               (pitch 0: "side", "front"); any other is refused
  *   width, height, background [r, g, b], light (false: the texture as it is), cull (false: both sides of
  *   every triangle)
  *   seq, frame, pose, body, skin   as in posed
@@ -226,6 +241,7 @@ function cutNear(polygon, near) {
  * round.
  */
 export function render(src, opts = {}) {
+  if (NAMED_VIEWS[opts.view]) opts = { ...opts, ...NAMED_VIEWS[opts.view], view: "orbit" };
   const first = opts.view === "first";
   const perspective = first || opts.dist > 0;
   const {
@@ -355,6 +371,18 @@ export function render(src, opts = {}) {
   const glows = (t) => (t.tex?.flags ?? 0) & TEXTURE.additive;
   for (const t of tris) if (!glows(t)) draw(t, false);
   for (const t of tris) if (glows(t)) draw(t, true);
+
+  if (opts.ground) {
+    if (perspective || Math.abs(up[2]) < NEARLY_UPRIGHT)
+      throw new Error(
+        'ground: the line of z = 0 is drawn in a level view with no perspective (pitch 0: view "side" or "front"); seen from above or below the ground is not a line',
+      );
+    // a point at z = 0 is mid[2] below what the camera looks at, whatever its x and y: one row of the
+    // picture, and the whole of that row's dots, so that the line is one pixel of its own colour
+    const row = Math.floor((high / 2 + mid[2] * scale) / SUPERSAMPLE) * SUPERSAMPLE;
+    for (let y = Math.max(0, row); y < Math.min(high, row + SUPERSAMPLE); y++)
+      for (let x = 0; x < wide; x++) colour.set(GROUND, (y * wide + x) * 3);
+  }
 
   // each pixel the mean of its dots
   const rgba = new Uint8Array(width * height * 4);
@@ -523,6 +551,9 @@ export function sheet(src, opts = {}) {
  * has no more than that), each with its frame's number. { seq (a name or a number; the first unless told),
  * count (12), cols (4), from, to, view, ... as render }. It throws when the model has no animation, or none
  * of that name.
+ * Every frame is drawn by one camera at one scale, so a thing seen to move in the strip moves in the
+ * animation. For a walk: { view: "side", ground: true }, the feet against the floor's line. (An animation
+ * that travels has its travel taken out of its frames, as `movement`: it walks on the spot here.)
  */
 export function strip(src, opts = {}) {
   const number = sequenceAt(src, opts.seq ?? 0);

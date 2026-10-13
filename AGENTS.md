@@ -36,8 +36,9 @@ It makes a model from nothing and exercises every part of the kit. If every test
 
 | It can | It cannot |
 | --- | --- |
-| Read everything in a `.mdl`: bones, meshes, textures, animations, events, attachments | Read Source engine models (`.mdl` version 44+), or `.smd` / `.qc` source files |
-| Write a whole new model from triangles, with bones and animations | Give a new model hit boxes, attachments or bone controllers |
+| Read everything in a `.mdl`: bones, meshes, textures, animations (with their activity, how far they travel, their box), events, attachments, hit boxes, bone controllers | Read Source engine models (`.mdl` version 44+), or `.smd` / `.qc` source files |
+| Write a whole new model from triangles, with bones and animations | Write an animation of several blends into a new model (one that is there keeps and takes them) |
+| Give a model, new or old, what a monster has: hit boxes (yours, or the ones studiomdl would make), attachments, bone controllers, where it sees from, each animation's activity and travel | Take a walk's travel out of its frames: you give the frames walking on the spot and say the travel. Say what a mod's code does with an activity or a hit group: that is the mod's |
 | Make a model from a Wavefront `.obj` file (Blender, a script, any tool), with its `.mtl` and PNG or BMP pictures | Read `.fbx`, `.gltf` or `.blend`, or JPG or TGA pictures |
 | Replace a mesh inside an existing model, keeping its skeleton and animations | Weight one vertex to several bones (the format has one bone a vertex) |
 | Replace or add textures; recolour by palette; export and import PNG / BMP | Edit animations kept in separate `name01.mdl` files |
@@ -80,11 +81,12 @@ old data unused inside it, so stacking runs makes it grow. Keep the originals un
 ## The command line
 
 ```
-node bin/smak.mjs info <mdl> [--json]              bones, bodyparts with their body numbers, textures, animations, events
+node bin/smak.mjs info <mdl> [--json] [--hitboxes] [--boxes]   bones, bodyparts with their body numbers, textures, animations
+                                                   (activity, travel and speed), events, attachments, hit boxes
 node bin/smak.mjs check <mdl> [--engine xash]      errors and warnings; exit code 1 on an error
 node bin/smak.mjs sheet <mdl> -o s.png             six views in one picture
-node bin/smak.mjs render <mdl> -o r.png --yaw 30 --pitch 15 [--view first]
-node bin/smak.mjs strip <mdl> -o a.png --seq reload --count 12 [--view first]
+node bin/smak.mjs render <mdl> -o r.png --yaw 30 --pitch 15 [--view first|side|front|top] [--ground]
+node bin/smak.mjs strip <mdl> -o a.png --seq reload --count 12 [--view first]   (a walk: --view side --ground)
 node bin/smak.mjs textures <mdl> -o dir [--bmp]    every texture as a file
 node bin/smak.mjs uv <mdl> -o dir                  every texture with the triangles that wear it drawn over it
 node bin/smak.mjs islands <mdl> [-o dir] [--body n]  the islands each picture is cut into, listed; with -o, drawn tinted and numbered
@@ -149,7 +151,9 @@ it when they are done. It is for them to look and compare; your own checking is 
 `strip`, whose pictures you can read.
 
 `render`, `sheet` and `strip` take `--seq <name|number|rest>`, `--frame`, `--body`, `--skin`, `--width`,
-`--height`, `--no-light` (the texture as it is) and `--no-cull` (both sides of every triangle).
+`--height`, `--no-light` (the texture as it is) and `--no-cull` (both sides of every triangle). `--view side`,
+`front` and `top` look from there with no perspective (`side` is the left side: the front is to the picture's
+left), and with `side` or `front`, `--ground` draws the floor (z = 0) as a line across the picture.
 
 **If a picture comes out empty**, the body number shows an empty submodel. Many models keep a blank submodel at
 body 0. `info` lists the body number of each submodel; pass it with `--body`.
@@ -177,6 +181,14 @@ You need this model in your head; the API mirrors it exactly.
 - **Animations (sequences)** hold, for each frame and each bone, six numbers: position x, y, z from the parent and
   rotation about x, y, z in radians. Events (a sound, a muzzle flash) are fastened to frames.
 - **Attachments** are named points on bones: where a muzzle flash or a shell appears.
+- **Hit boxes** are boxes on bones, each in its bone's space and each with a **group** (head, chest, a leg):
+  what a shot or a blow is traced against, and by the group, how much it hurts. A model with none is traced
+  as its entity's one box.
+- **An animation also says** an **activity** (the number a monster's code asks for "a walk" by, whatever
+  the animation is called), **how far the model travels** in one play of it (`movement`; the frames
+  themselves stay on the spot, and the game moves the monster at the speed that makes), and a **box** about
+  the model through its frames, by which the engine decides whether it is in view.
+- **Bone controllers** are bones the game's code turns by itself: a head that follows, a mouth that talks.
 
 ### Conventions
 
@@ -272,8 +284,9 @@ in the world). Do all of them, the world ones with a smaller texture (`shrink(im
 ### A whole new model: `examples/01-new-model.mjs`
 
 For a prop, a pickup, a thrown thing, something worn. `buildMdl` takes bones, triangles, textures and
-animations and returns the file. It writes no hit boxes or attachments, so do not use it for a first-person
-weapon the game expects to have a muzzle attachment: swap a mesh in an existing one instead.
+animations and returns the file. Unless told (see "A monster from nothing") it has no hit boxes or
+attachments. For a first-person weapon, whose animations and attachments the game's code knows by number,
+swap a mesh in an existing one instead.
 
 ### From an .obj file: `examples/06-from-obj.mjs`
 
@@ -348,6 +361,81 @@ mdl = addSequence(mdl, { name: "inspect", fps: 30, frames, events: [{ frame: 10,
   `info` and follow what it already does.
 - A bone that has to move further than the file's scale for it allows is given a wider scale automatically, and
   the model's other animations are rewritten to match (same motion, very slightly coarser for that bone).
+
+### A monster from nothing
+
+A thing that walks, is hit and dies needs more of the format than a prop: `buildMdl` takes it all, and the
+setters give it to a model that is there.
+
+```js
+import { buildMdl, HITGROUP, MOTION, check, strip, png } from "./smak/src/index.mjs";
+
+const mdl = buildMdl({
+  name: "beast.mdl", bones, bodyparts,                // as for any model; corners say their `bone`
+  sequences: [
+    { name: "idle", fps: 15, loops: true, frames: idle, activity: 1 },                       // ACT_IDLE
+    { name: "walk", fps: 20, loops: true, frames: walk, activity: 3, movement: [48, 0, 0],   // ACT_WALK
+      events: [{ frame: 4, event: 1004, options: "common/npc_step1.wav" }] },
+    { name: "bite", fps: 20, frames: bite, activity: 30 },                                   // ACT_MELEE_ATTACK1
+  ],
+  hitboxes: { groups: { head: HITGROUP.head, spine: HITGROUP.chest } },   // or "auto", or your own list
+  attachments: [{ name: "mouth", bone: "head", pos: [6, 0, -1] }],
+  controllers: [{ bone: "head", type: MOTION.ZR, start: -60, end: 60 }],
+  eyes: [0, 0, 30],
+});
+```
+
+- **A walk is given walking on the spot**, and `movement` says how far one play of it carries the model:
+  measure it off your own frames (how far a planted foot slides back is how far the body goes forward).
+  `info` prints the speed it makes, `distance * fps / (frames - 1)`, in units a second: that is the speed the
+  game moves the monster at while it plays, so a wrong `movement` is feet that slide. Half-Life's zombie walks
+  at 72, its grunt runs at 304.
+- **A looping animation's last frame is its first again.** The engine plays from the first frame up to the
+  last and starts over at the first, taking the two for one moment: a walk of 20 steps has 21 frames, the
+  21st a copy of the 1st. Every looping animation in the games' own files is made so; `check` warns of one
+  that is not, naming the bone.
+- **Write the animations as poses, not as numbers** (`src/animate.mjs`, exported as `animate`). A frame is
+  six numbers a bone in the bone's own axes, which is no way to make a walk. Say the pose in the MODEL's axes
+  and let the kit work the numbers out:
+
+  ```js
+  import { animate as A } from "./smak/src/index.mjs";
+  const rig = A.rigOf(bones);                                              // a model's bytes, or a bone list
+  const stand = A.poseOf(rig, { spine: { turn: { y: 8 } }, "arm.L": { turn: { x: -25 } } });
+  const step = A.reach(rig, stand, { bones: ["thigh.L", "calf.L", "foot.L"], to: [10, 5, 2], level: true });
+  const frames = A.animate(rig, { frames: 25, loops: true, keys: [{ at: 0, pose: stand }],
+    each: (pose, frame, part) => /* the pose of this frame: put the feet with reach */ pose });
+  const { speed, slide } = A.stride(rig, frames, { feet: ["foot.L", "foot.R"], fps: 20 });
+  ```
+
+  A `turn` is in degrees about the model's `x`, `y`, `z` (for a limb that hangs: `y` over 0 swings it back,
+  `x` over 0 out to the left, `z` turns it about the upright), from where the bone rests and carried by its
+  parent, whatever the bone's own axes are. `reach` bends a limb of two bones so that its end is at a place
+  (a foot on the ground, by arithmetic). `mirror` changes left and right over. `animate` joins key poses by
+  the shortest turn, eased, and closes a loop; `each` makes every frame from a formula, which is how a cycle
+  is made to close by itself. Then MEASURE: `stride` gives the speed the planted feet ask for (set the
+  sequence's `movement` to `speed * (frames - 1) / fps`) and how much they slide; `seam` a loop's gap;
+  `track` where a joint goes. And LOOK: `strip(mdl, { seq, view: "side", ground: true })`, the feet against
+  the line. Make the skeleton with every bone unturned at rest when it is yours to make: the numbers in the
+  file are then the model's axes too. A stand-in body of a box a bone is enough to judge motion by, before
+  the real body exists.
+- **Hit boxes.** `"auto"` makes the ones studiomdl makes for a model whose source names none: for each bone a
+  box about what it carries, reaching to the bones that hang from it. Give `groups` by bone (the bones under
+  one take its group), or a list of your own boxes, each in its bone's space. `autoHitboxes(mdl)` returns
+  the list without writing it; `setHitboxes(mdl, list)` writes one into a model that is there.
+  `smak info --hitboxes` lists them with their sizes.
+- **Activities** are the game's own numbers (`ACTIVITY` names the ones this kit knows; `info` on a monster of
+  the game shows what its animations use). Several animations may share one, picked by `actweight`. A mod
+  that plays animations by name (as Master Sword's scripts do) needs none: look at how its own monsters'
+  files are made, and follow them.
+- **Each animation's box** is measured for you from the model's points through its frames, as studiomdl does:
+  nothing to do, unless you change frames by some way of your own.
+- **Look at it from the side**: `strip(mdl, { seq: "walk", view: "side", ground: true })` (`smak strip ...
+  --view side --ground`) draws every frame by one camera with the floor as a line: feet that sink, float or
+  slide show there. It is still only a picture: how it moves in the game shows in the game.
+- What the game does with all this is the mod's: its code or scripts name the model (rule 8), choose its
+  size and its hull, and decide what a hit group or an attachment means. Ask the person, and read one of the
+  mod's own monsters with `info` first.
 
 ### Wear, damage and markings by place: `examples/05-by-place.mjs`
 
@@ -921,6 +1009,10 @@ or `smak wad-make my_stone.png "{my_bars.png" -o mine.wad`, each texture named a
 | A model from an .obj is a speck, or fills the room | The file's units: `scale` (39.37 for metres). `smak obj` prints its size in units. |
 | `readObj: line n: the face names point ...` | The .obj is cut short or broken: export it again. |
 | The piece is in the right place and huge or tiny | `size: "old"` against `size: "own"`. |
+| `the looping animation X does not come back to where it starts` | Its last frame is not its first again. Make the last frame a copy of the first (see "A monster from nothing"). |
+| `N animations have a box of no size` | A file made elsewhere, or a box told as zero: `replaceSequence(mdl, name, { frames: readSequence(mdl, name).frames })` measures it again. |
+| `hit box N is on bone M, and the model has ...` | A hit box (or an attachment, or a bone controller) names a bone that is not there: `setHitboxes` with a right list. |
+| `it has no hit boxes: traces against it use the entity's box` | A note: a thing that is shot at usually has them. `hitboxes: "auto"`, or `setHitboxes(mdl, autoHitboxes(mdl))`. |
 | `moves further than its scale holds` | Should not happen: `replaceSequence` and `addSequence` widen a bone's scale themselves. Tell the person; it is a fault in the kit. |
 | `too long for one animation` | Over 64 KB of values. Fewer frames, or split it in two. |
 | Texture looks blurry in the game but not in the picture | Larger than `gl_max_size`, or not a power of two. See `docs/ENGINES.md`. |

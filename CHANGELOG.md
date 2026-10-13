@@ -3,6 +3,46 @@
 The newest first. A version that changes what a model's file looks like, or that a model made before needs
 mending for, says so under **Mind**.
 
+## 0.12.0 (2026-10-13)
+
+A monster made from nothing. Until now the kit made things that are carried, worn or stood somewhere; the
+first monster made with it was a scarecrow for Master Sword Classic: 17 bones, a body of 857 triangles and
+five animations, every one written in code. In the game it came to the player on feet that did not slide,
+struck him, took a blow (so its hit boxes are where a blade goes) and fell dead on its back. Two things the
+game would not have forgiven were learned from its code before a frame was made: a model with no hit boxes
+cannot be hit at all, and a walk whose sequence says it travels nowhere moves the monster nowhere.
+
+- **Animations written as poses** (`src/animate.mjs`, exported as `animate`). A frame in the file is six
+  numbers a bone in the bone's own axes: arithmetic on them nudges an animation that exists and makes none.
+  `rigOf`, `poseOf` (a `turn` in degrees about the MODEL's axes, from rest and carried by the parent, the
+  same on a skeleton whose bones are turned as a Biped's), `reach` (a limb of two bones bent to put its end
+  at a place: feet planted by arithmetic), `mirror`, `between`, `animate` (key poses joined by the shortest
+  turn, eased; a loop closed; `each` for a frame made by a formula), `valuesOf`, `worldOf`, `matricesOf`
+  (a pose drawn by `render` without being an animation). And the measures: `seam` (a loop's gap), `track`
+  (where a joint goes), `stride` (the speed the planted feet ask for, and how much they slide). The
+  scarecrow's walk asks for 33.3 units a second and its sequence travels exactly that; the game's own
+  skeleton and boar slide.
+- **A monster's parts, read and written** (`src/mdl.mjs`, `src/build.mjs`): hit boxes (`setHitboxes`,
+  `autoHitboxes`: the boxes studiomdl makes, which match Valve's own files box for box where those were
+  made so), attachments (`setAttachments`), bone controllers (`boneControllers`, `setBoneControllers`), and
+  for a sequence its travel (`movement`, with the motion bits), `activity`, `actweight` and its box, measured
+  from the posed vertices as studiomdl measures it (within 0.024 units of the files' own). `writeMdl` and
+  `buildMdl` take them all, with `eyes` and the header's boxes; `MOTION`, `HITGROUP`, `ACTIVITY` name the
+  numbers. Written back through the setters, Half-Life's zombie and grunt and Master Sword's skeleton and
+  rat read the same.
+- **`info`** prints each animation's travel and the speed it makes, its activity, the hit boxes
+  (`--hitboxes` lists them), attachments, controllers and eyes. **`check`** tells of a hit box on a bone that
+  is not there, an animation with a box of no size, a loop that does not come back to where it starts, and,
+  as a fact, a model that travels and has no hit boxes.
+- **`render` and `strip` take `--view side|front|top` and `--ground`**: an animation from the side, every
+  frame from one camera, over the line of z = 0. A walk is judged by its feet against that line.
+- **The Master Sword profile's `play` and one more rule**: a map with neither an `ms_player_spec` nor an
+  `ms_player_spawn` drops a player as he connects (found by making a yard to try the monster in, then read
+  in the game's code; all 100 of the game's maps have one or the other).
+
+**Mind**: `replaceSequence` with new frames, and `addSequence`, now measure the animation's box where they
+kept or copied one; `addSequence`'s `like` copies a box only when given.
+
 ## 0.11.0 (2026-10-13)
 
 What the first map made with the kit still had to be done by hand for: seeing it in the game itself, naming

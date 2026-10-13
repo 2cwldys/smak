@@ -23,13 +23,14 @@ Words used below: `which` is a texture's or an animation's number or its name. `
 | `bodyOf(b, body)` | For a body number, the submodel shown of each bodypart: `[index]`. The body number of submodel `k` of a bodypart is `k * base`; add one from each bodypart. |
 | `skinFamilies(b)` | `[[texture number for each skinref]]`, one list a family. A model shown with skin `n` wears family `n`. |
 | `textureOf(b, which)` | `{ name, flags, width, height, pixels, palette }`, copied out. |
-| `sequences(b)` | `[{ name, fps, frames, loops, flags, motion, move, speed, blends, group }]`. `group` is not 0 for an animation kept in another file. |
+| `sequences(b)` | `[{ name, fps, frames, loops, flags, activity, actweight, movement, motiontype, speed, bbmin, bbmax, blends, group }]`. `activity`: what a monster's code asks for it as (`ACTIVITY[n]` is its name, for those known), `actweight` how often it is picked among its activity's. `movement` `[x, y, z]`: how far the model travels in one play of it (the frames stay in place); `speed`: that in units a second, `distance * fps / (frames - 1)`; `motiontype`: the `MOTION` bits (`LX` 64, `LY` 128, `LZ` 256 for the axes of the travel). `bbmin`, `bbmax`: the box about the model through the animation, which the engine culls by. `group` is not 0 for an animation kept in another file. (`move` and `motion` are `movement` and `motiontype` under their older names.) |
 | `sequenceAt(b, which)` | The animation's number, or -1. |
 | `readSequence(b, which, blend = 0)` | What `sequences` tells, plus `index` and `frames[frame][bone] = [x, y, z, rx, ry, rz]`. |
 | `frameValues(b, seq, frame, blend = 0)` | One frame of that. Throws, naming the bone, when the file's values for a bone end before that frame (a broken file). |
 | `events(b, which)` | `[{ frame, event, type, options }]` of one animation. |
-| `attachments(b)` | `[{ name, bone, pos }]`. |
-| `hitboxes(b)` | `[{ bone, group, min, max }]`. |
+| `attachments(b)` | `[{ name, bone, pos }]`: `bone` a number, `pos` in that bone's space. |
+| `hitboxes(b)` | `[{ bone, group, min, max }]`: `bone` a number, the box in that bone's space, `group` what was hit (`HITGROUP`: generic 0, head 1, chest 2, stomach 3, leftArm 4, rightArm 5, leftLeg 6, rightLeg 7; a mod may have more). |
+| `boneControllers(b)` | `[{ bone, type, start, end, rest, index }]`: the bones the game's code turns itself (a head that follows). `type`: which of the bone's six values (`MOTION.X` ... `MOTION.ZR`, with `MOTION.RLOOP`); `start`, `end`: its range, degrees for an angle; `index`: which of the entity's controllers (0 to 3; 4 the mouth). |
 | `drawnCorners(b)` | `[{ name, corners }]` for each submodel: how many corners the engine draws for it. |
 
 ## Poses
@@ -71,21 +72,55 @@ For a whole body made from triangles, `putBody` (under "Working by place") does 
 
 | Function | Does |
 | --- | --- |
-| `replaceSequence(src, which, { frames, blends, fps, loops })` | Other frames for an animation, in the place it had. What is not given stays (its events too). `frames[frame][bone][6]`; every frame lists every bone. |
-| `addSequence(src, { name, fps = 30, loops = false, frames, activity = 0, events, like = 0 })` | A new animation after the others. Its bounding box is copied from animation `like`. |
+| `replaceSequence(src, which, { frames, blends, fps, loops, activity, actweight, movement, motiontype, bbmin, bbmax })` | Other frames for an animation, in the place it had. What is not given stays (its events too). `frames[frame][bone][6]`; every frame lists every bone. `movement: [x, y, z]` says how far the model travels in one play (the frames are given in place) and sets the motion type's `LX`, `LY`, `LZ` for the axes it is not zero on (`motiontype` says the whole of it instead). With new frames the animation's box is measured again about the model's points through them, as studiomdl does, unless `bbmin` and `bbmax` say it. |
+| `addSequence(src, { name, fps = 30, loops = false, frames, activity = 0, actweight, movement, motiontype, events, bbmin, bbmax, like })` | A new animation after the others. Its box is measured from its frames; with `like` (an animation's number) it is that animation's. |
 | `setEvents(src, which, [{ frame, event, options, type }])` | Replaces an animation's events. |
 
 A bone whose new motion goes beyond what the file's 16-bit scale for it can hold gets a wider scale, and every
 animation of the file is written again by it. Animations kept in other files (`group` not 0) make that fail.
 
+## A monster's parts
+
+| Function | Does |
+| --- | --- |
+| `setHitboxes(src, [{ bone, group = 0, min, max }])` | These hit boxes and no others. `bone`: a number or a name; `min`, `max` in the bone's space. Throws on a bone the model has not. |
+| `autoHitboxes(what, { groups = {}, least = 0, thin = 1 })` | The boxes studiomdl makes by itself, as a list for `setHitboxes`: for each bone, a box about its own origin, every point it carries in any submodel, and the origins of the bones that hang from it; one no thicker than `thin` on some axis is left out. `groups`: `{ "Bip01 Head": HITGROUP.head }`, a bone's group and that of the bones under it that say none. `least`: the fewest points a bone must carry (studiomdl counts none). `what`: a file, or what `writeMdl` takes. Changes nothing. |
+| `setAttachments(src, [{ name, bone, pos }])` | These attachments and no others. Game code knows them by number: keep the ones a model has, in order, and add after. |
+| `setBoneControllers(src, [{ bone, type, start, end, rest = 0, index = 0 }])` | These bone controllers and no others; the bones' own note of which controller turns them is rewritten to match. |
+
+Each returns a new file in which nothing else has changed. `MOTION`, `HITGROUP` and `ACTIVITY` hold the
+format's numbers by name (`ACTIVITY` only those read off Half-Life's own models: 1 `ACT_IDLE`, 3 `ACT_WALK`,
+4 `ACT_RUN`, 30 `ACT_MELEE_ATTACK1`, 36 `ACT_DIESIMPLE`...).
+
+## Animations written as poses (`src/animate.mjs`, exported as `animate`)
+
+A pose is `{ q, p }`: for each bone a turn and a place, plain data that no call changes.
+
+| Function | Does |
+| --- | --- |
+| `rigOf(bones)` | A skeleton ready to be posed, from a model's bytes or a bone list: `{ bones, names, index(name), rest }` |
+| `poseOf(rig, { bone: { turn, move } }, base = rig.rest)` | A pose from another. `turn`: `{ x, y, z }` in degrees about the MODEL's axes (applied x, y, z), or a list `[[axis, degrees]]` in the order written; from where the bone is in `base`, carried by its parent. `move`: `[x, y, z]` in the model's axes |
+| `reach(rig, pose, { bones: [upper, lower, end], to, bend = [1, 0, 0], level })` | The limb bent so that `end` is at `to` (a place in the model). `bend`: where the middle joint points. `level`: true keeps the end bone's turn of rest, a `turn` gives it that one. The pose comes back with `reached` and `short` |
+| `mirror(rig, pose, { pairs })` | Left and right changed over, by the bones' names (` L `/` R `, `.L`/`.R`, `Left`/`Right`) or `pairs` |
+| `between(a, b, t)` | The pose a part of the way from one to another, each bone by its shortest turn |
+| `animate(rig, { frames, loops, keys: [{ at, pose, ease }], each })` | Frames for `addSequence`, `replaceSequence`, `writeMdl`. `ease`: `smooth`, `linear`, `in`, `out`, how a key is arrived at. `loops`: the last frame is the first again. `each(pose, frame, part)` returns the frame's pose |
+| `valuesOf(rig, pose)` | One frame: `[x, y, z, about x, about y, about z]` a bone |
+| `worldOf(rig, pose)` | Each bone's turn and place in the model |
+| `matricesOf(rig, pose)` | The pose as bone matrices: `render(mdl, { pose: matricesOf(rig, pose) })` draws it |
+| `track(rig, frames, bone, at)` | Where a point of a bone is, frame by frame |
+| `seam(rig, frames)` | `{ degrees, units, bone }`: how far the last frame is from the first |
+| `stride(rig, frames, { feet, fps, ground = 1 })` | `{ speed, slide, low, feet }`: the speed the planted feet ask for (units a second), how far off it they are at the worst, the lowest a foot goes |
+
 ## Whole models
 
-`writeMdl({ name, bones, sequences, textures, skins, bodyparts })` writes a file from tables that are already in
-the format's own terms (points in bone space, normals indexed per mesh). Prefer `buildMdl`, which takes triangles.
+`writeMdl({ name, bones, sequences, textures, skins, bodyparts, hitboxes, attachments, controllers, eyes, min, max, bbmin, bbmax })`
+writes a file from tables that are already in the format's own terms (points in bone space, normals indexed per
+mesh). Prefer `buildMdl`, which takes triangles and passes the rest on.
 A bodypart needs one submodel at least (the engine divides a body number by how many it has): one with none is
 refused. A submodel with no meshes is what shows nothing.
 
-`buildMdl({ name, bones, bodyparts, sequences, smooth = 40, ownNormals = false })` (`src/build.mjs`):
+`buildMdl({ name, bones, bodyparts, sequences, smooth = 40, ownNormals = false, hitboxes, attachments, controllers, eyes, min, max, bbmin, bbmax })`
+(`src/build.mjs`):
 
 ```js
 buildMdl({
@@ -100,7 +135,16 @@ buildMdl({
   number (the first bone when left out).
 - Meshes that give a texture of the same name share it.
 - With no `bones`: one, called `root`. With no `sequences`: one, `idle`, holding the rest pose.
-- No hit boxes, attachments, bone controllers or events.
+- A sequence may also say `activity`, `actweight`, `movement: [x, y, z]` (how far the model travels in one play,
+  its frames given in place; sets the motion type as `replaceSequence` does), `motiontype`, `flags`,
+  `events: [{ frame, event, options, type }]`, and `bbmin` and `bbmax`. Its box, when not told, is measured about
+  the model's points through its frames, as studiomdl does.
+- `hitboxes`: `[{ bone, group, min, max }]` (in the bone's space), or `"auto"`, or `autoHitboxes`' options.
+  `attachments`: `[{ name, bone, pos }]`. `controllers`: as `setBoneControllers`. A bone is a name or a number.
+- `eyes: [x, y, z]`: where it sees from (the header's `eyeposition`). `min`, `max` (the box it moves with) and
+  `bbmin`, `bbmax` (the box it is clipped by): the header's four; each is the model's own box through its
+  animations unless told (studiomdl leaves them at zero unless the QC says: pass zeros for that).
+- Without those: no hit boxes, attachments or bone controllers. One blend an animation.
 
 ## From an .obj file (`src/obj.mjs`)
 
@@ -457,7 +501,7 @@ All return `{ width, height, rgba }`; write with `png(img.width, img.height, img
 | --- | --- |
 | `render(src, options)` | One view. |
 | `sheet(src, options)` | Six views: front, left side, back, right side, top, three quarter. `size` (384) is each one's side. |
-| `strip(src, { seq, count = 12, cols = 4, from, to, ... })` | An animation (the first unless told), `count` frames from first to last, each numbered. Throws when the model has no animation, or none of that name. |
+| `strip(src, { seq, count = 12, cols = 4, from, to, ... })` | An animation (the first unless told), `count` frames from first to last, each numbered, all by one camera at one scale. Throws when the model has no animation, or none of that name. A walk: `{ view: "side", ground: true }`. |
 | `uvMap(src, which, { scale })` | A texture enlarged with the triangles that wear it drawn over it. Also returns `scale`, `meshes`, `triangles`. |
 | `tile(images, cols, names)` | Pictures of one size side by side, named. For before and after. |
 | `lineup([[name, model], ...], { yaws = [20, 200], pitch, zoom, width, height, cols, target, seq, frame })` | Several models to one scale, each from the same sides. |
@@ -470,7 +514,8 @@ Options of `render` (and the others pass them on):
 
 | Option | Default | |
 | --- | --- | --- |
-| `view` | `"orbit"` | `"orbit"`: from outside, no perspective. `"first"`: the eye at the origin looking along +x. |
+| `view` | `"orbit"` | `"orbit"`: from outside, no perspective. `"first"`: the eye at the origin looking along +x. `"side"` (the left side: the front is to the picture's left), `"front"`, `"top"`: orbit from there, whatever `yaw` and `pitch` say (`NAMED_VIEWS`). |
+| `ground` | false | A line across the picture where z = 0 is, over the model: the floor. Only in a level orbit view (`pitch: 0`, `"side"`, `"front"`); any other throws. |
 | `yaw`, `pitch` | 30, 15 | Degrees. Yaw 0 looks at the front, 90 at the left side, 180 at the back. Pitch 90 looks down. |
 | `zoom`, `target`, `within` | 1 | Closer or farther; the point looked at; a shared framing. |
 | `fov` | 90 | First person: degrees across. |
@@ -491,6 +536,11 @@ Options of `render` (and the others pass them on):
 or `"xash"`. `LIMITS` holds the numbers. An error is something that crashes the engine or cannot be drawn; a
 warning is something it will put up with. See `docs/ENGINES.md`. It throws for nothing that is wrong with the
 file: one that is cut short or broken comes back with that as an error, and a bodypart with no submodel is one too.
+Of a monster's parts: a hit box, an attachment or a bone controller on a bone the model has not is an error; an
+animation whose box has no size is a warning (the engine culls by it); a looping animation whose last frame is
+not its first again, by more than 1 unit or 2 degrees on some bone, is a warning naming the bone (the engine
+takes the two frames for one moment: a jerk every time round); a model with animations that travel and no hit
+boxes is a fact.
 
 `engineLayout(src)` → the same model with its textures at the file's end in their table's order, as a dedicated
 server reads them (`src/layout.mjs`); `isEngineLayout(src)` says whether it is so already. The functions that

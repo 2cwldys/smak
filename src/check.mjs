@@ -5,7 +5,19 @@
 //   goldsrc   Half-Life's own engine (Steam), which a GoldSrc mod runs on today
 //   xash      Xash3D FWGS, which holds more
 // A model that passes for goldsrc passes for xash.
-import { readMdl, readMesh, sequences, bones, frameValues, drawnCorners, skinFamilies } from "./mdl.mjs";
+import {
+  readMdl,
+  readMesh,
+  sequences,
+  bones,
+  frameValues,
+  drawnCorners,
+  skinFamilies,
+  hitboxes,
+  attachments,
+  boneControllers,
+  boneMatrices,
+} from "./mdl.mjs";
 import { sub, dot, cross } from "./vec.mjs";
 import { FRONT } from "./mesh.mjs";
 import { isEngineLayout } from "./layout.mjs";
@@ -58,6 +70,15 @@ const NEAR_LIMIT = 0.75;
 const TURNED_SHARE = 0.05;
 /** How many names a sentence lists before it counts the rest. */
 const NAMES_LISTED = 4;
+/**
+ * How far a bone may be, in a looping animation's last frame, from where it is in the first before it is
+ * told: this many units, or this many degrees. This kit's own choice, set above what the games' own files
+ * show: in every looping animation of Half-Life's zombie, hgrunt, headcrab, houndeye and bullsquid the last
+ * frame is the first again, to 0.0 degrees and at most 0.31 of a unit (the root's, left over where a walk's
+ * travel was taken out).
+ */
+const SEAM_UNITS = 1;
+const SEAM_DEGREES = 2;
 
 const pow2 = (n) => n > 0 && (n & (n - 1)) === 0;
 /** The first few of a list of names, and how many more there are. */
@@ -179,6 +200,92 @@ function checkSequences(src, seqs, { errors }) {
   }
 }
 
+/** The angle between two bones' turns (the 3 by 3 of their matrices), in degrees. */
+function degreesBetween(a, b) {
+  let trace = 0;
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) trace += a[r][c] * b[r][c];
+  return (Math.acos(Math.max(-1, Math.min(1, (trace - 1) / 2))) * 180) / Math.PI;
+}
+/**
+ * The looping animations that do not come back to where they start: a bone that is somewhere else in the
+ * last frame than in the first.
+ * How the engine plays one is in the Half-Life SDK's renderer (StudioEstimateFrame, StudioModelRenderer.cpp,
+ * from memory of it): the frame it draws runs from 0 up to frames - 1 and, for a looping sequence, is taken
+ * modulo frames - 1. So the last frame is the same moment as the first: it is blended towards and never
+ * rested on, and the next thing drawn is the first frame. A last frame that is not the first again is a
+ * jump once a turn. The compiler does nothing about it (studiomdl writes the frames it is given, as far as
+ * its source is remembered), and the games' own files bear the rule out: see SEAM_UNITS.
+ */
+function checkLoops(src, seqs, names, { warnings }) {
+  // each bone as a root of its own: boneMatrices then gives its own matrix, not the chain's
+  const alone = names.map(() => ({ parent: -1 }));
+  for (const [q, s] of seqs.entries()) {
+    if (!s.loops || s.group || s.frames < 2) continue;
+    let worst = null;
+    try {
+      for (let blend = 0; blend < s.blends; blend++) {
+        const first = frameValues(src, q, 0, blend);
+        const last = frameValues(src, q, s.frames - 1, blend);
+        const turnsFirst = boneMatrices(alone, first);
+        const turnsLast = boneMatrices(alone, last);
+        first.forEach((values, i) => {
+          const units = Math.hypot(...[0, 1, 2].map((axis) => values[axis] - last[i][axis]));
+          const degrees = degreesBetween(turnsFirst[i], turnsLast[i]);
+          const over = Math.max(units / SEAM_UNITS, degrees / SEAM_DEGREES);
+          if (over > 1 && over > (worst?.over ?? 0)) worst = { over, units, degrees, bone: names[i] };
+        });
+      }
+    } catch {
+      // an animation that cannot be read is checkSequences' to tell
+      continue;
+    }
+    if (worst)
+      warnings.push(
+        `the looping animation ${s.name} does not come back to where it starts: in its last frame ${worst.bone} is ${worst.units.toFixed(2)} units and ${worst.degrees.toFixed(1)} degrees from where it is in the first. The engine plays a looping animation up to its last frame and begins again at the first, taking the two for the same moment, so the difference shows as a jerk every time round: make the last frame a copy of the first`,
+      );
+  }
+}
+
+/**
+ * What a monster has beyond a prop: hit boxes, attachments and bone controllers on bones the model has, and
+ * each animation's box. `drawn`: whether the model has any triangle to draw.
+ */
+function checkParts(src, seqs, names, drawn, { errors, warnings, facts }) {
+  const boneCount = names.length;
+  // each of these names a bone by its number, and the engine takes that bone's matrix without asking
+  // whether it has one
+  const onBones = [
+    ["hit box", hitboxes(src)],
+    ["attachment", attachments(src)],
+    ["bone controller", boneControllers(src)],
+  ];
+  for (const [what, list] of onBones)
+    list.forEach((item, i) => {
+      if (item.bone < 0 || item.bone >= boneCount)
+        errors.push(
+          `${what} ${i} is on bone ${item.bone}, and the model has ${boneCount}: the engine would read a bone that is not there`,
+        );
+    });
+  // That a shot is traced against the entity's own box when there are no hit boxes is from memory of the
+  // engine (SV_HullForStudioModel falls back to the entity's hull), not tried in the game: a note, no more.
+  const travelling = seqs
+    .filter((sequence) => sequence.movement.some((v) => v))
+    .map((sequence) => sequence.name);
+  if (!onBones[0][1].length && travelling.length)
+    facts.push(
+      `it has no hit boxes: traces against it use the entity's box (and ${travelling.length} of its animations travel, ${some(travelling)}: a thing that walks is usually a thing that is shot at; autoHitboxes makes them)`,
+    );
+  // The engine decides whether a model is in view by the box of the animation it is playing (from memory
+  // of the renderer's R_StudioCheckBBox, which Xash's source also has); studiomdl always fills it.
+  const boxless = seqs
+    .filter((sequence) => sequence.bbmin.every((v, axis) => v === sequence.bbmax[axis]))
+    .map((sequence) => sequence.name);
+  if (drawn && boxless.length)
+    warnings.push(
+      `${boxless.length} animations have a box of no size (${some(boxless)}): their bbmin and bbmax are the same point, and the engine decides by that box whether the model is in view, so it can vanish while part of it is still on the screen. replaceSequence with an animation's own frames measures its box again`,
+    );
+}
+
 /**
  * Everything `check` looks at once the file's tables have been read (`info`), written into `report`. It
  * throws a RangeError when something in the file points past its end.
@@ -248,6 +355,8 @@ function inspect(src, engine, info, report) {
       `${count.turned} of ${count.total} triangles look the other way from their normals: right for a sheet seen from both sides (a leaf, a cloth), wrong for a solid, which would be seen from inside`,
     );
   checkSequences(src, seqs, report);
+  checkLoops(src, seqs, info.bones, report);
+  checkParts(src, seqs, info.bones, count.total > 0, report);
   facts.push(
     `${src.length} bytes, ${boneCount} bones, ${info.textures.length} textures, ${seqs.length} animations, ${info.bodyparts.length} bodyparts, ${count.total} triangles in all`,
   );

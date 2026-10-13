@@ -22,6 +22,8 @@ const TEXTURE_COUNT_AT = 180;
 // the name the model gives itself: 64 bytes of the header, from byte 8
 const NAME_AT = 8;
 const NAME_END = 72;
+// where the model sees from (eyeposition), three floats; its four boxes follow
+const HDR_EYES_AT = 76;
 // pieces, islands and regions smaller than this are counted and not listed, unless told with --min
 const PIECES_MIN_TRIANGLES = 6;
 const ISLANDS_MIN_TRIANGLES = 1;
@@ -114,7 +116,7 @@ const MARKS_PRINTED = 40;
 const LIGHTS = ["steady", "all"];
 const MARKED = ["all", "models", "game", "none"];
 const DOORS = ["open", "closed"];
-const VIEWS = ["orbit", "first"];
+const VIEWS = ["orbit", "first", ...Object.keys(smak.NAMED_VIEWS)];
 const ENGINES = ["goldsrc", "xash"];
 
 // ── the arguments ──────────────────────────────────────────────────────────
@@ -245,6 +247,7 @@ function viewOptions(src, flags) {
     to: numberOf(flags, "to"),
     light: flags.light !== false,
     cull: flags.cull !== false,
+    ground: flags.ground ? true : undefined,
   };
 }
 
@@ -253,6 +256,20 @@ function viewOptions(src, flags) {
 function describe(src, file) {
   const mdl = smak.readMdl(src);
   const bones = smak.bones(src);
+  const boneName = (number) => bones[number]?.name ?? number;
+  const boxes = smak.hitboxes(src);
+  // studiohdr_t's eyeposition and its four boxes (min and max: the box it moves with; bbmin and bbmax: the
+  // box it is clipped by), which follow its name and length: floats from byte 76 (studio.h)
+  const floats = (at) => [0, 1, 2].map((axis) => round2(src.readFloatLE(at + axis * 4)));
+  const header = {
+    eyes: floats(HDR_EYES_AT),
+    box: {
+      min: floats(HDR_EYES_AT + 12),
+      max: floats(HDR_EYES_AT + 24),
+      bbmin: floats(HDR_EYES_AT + 36),
+      bbmax: floats(HDR_EYES_AT + 48),
+    },
+  };
   return {
     file,
     bytes: src.length,
@@ -282,6 +299,8 @@ function describe(src, file) {
       flags: texture.flags,
     })),
     skinFamilies: smak.skinFamilies(src).length,
+    eyes: header.eyes,
+    box: header.box,
     sequences: smak.sequences(src).map((seq, i) => ({
       i,
       name: seq.name,
@@ -290,12 +309,42 @@ function describe(src, file) {
       loops: seq.loops,
       blends: seq.blends,
       external: Boolean(seq.group),
+      activity: seq.activity,
+      activityName: smak.ACTIVITY[seq.activity] ?? null,
+      actweight: seq.actweight,
+      movement: seq.movement.map(round2),
+      speed: round2(seq.speed),
+      motiontype: seq.motiontype,
+      bbmin: seq.bbmin.map(round2),
+      bbmax: seq.bbmax.map(round2),
       events: smak.events(src, i),
     })),
-    attachments: smak.attachments(src).map((a) => ({ ...a, bone: bones[a.bone]?.name ?? a.bone })),
-    hitboxes: smak.hitboxes(src).length,
+    attachments: smak.attachments(src).map((a) => ({ ...a, bone: boneName(a.bone) })),
+    hitboxes: boxes.length,
+    hitboxList: boxes.map((box, i) => ({
+      i,
+      bone: boneName(box.bone),
+      group: box.group,
+      groupName: HITGROUP_NAMES[box.group] ?? null,
+      min: box.min.map(round2),
+      max: box.max.map(round2),
+      size: box.max.map((v, axis) => round2(v - box.min[axis])),
+    })),
+    boneControllers: smak.boneControllers(src).map((c) => ({ ...c, bone: boneName(c.bone) })),
   };
 }
+/** A length as `info` prints it: to a hundredth of a unit. */
+const round2 = (v) => +v.toFixed(2);
+/** The names of the hit groups, by their numbers. */
+const HITGROUP_NAMES = Object.fromEntries(
+  Object.entries(smak.HITGROUP).map(([name, group]) => [group, name]),
+);
+/** The names of the bits of a motion type, joined with +. */
+const motionNames = (motiontype) =>
+  Object.entries(smak.MOTION)
+    .filter(([, bit]) => motiontype & bit)
+    .map(([name]) => name)
+    .join("+");
 /** The names of a texture's flags, joined with +. */
 const flagNames = (flags) =>
   Object.entries(smak.TEXTURE)
@@ -345,10 +394,17 @@ function info({ file, src, flags }) {
 
   console.log(`\nANIMATIONS (${data.sequences.length})   the game asks for them by number: keep their order`);
   for (const seq of data.sequences) {
-    const notes = `${seq.loops ? ", loops" : ""}${seq.blends > 1 ? `, ${seq.blends} blends` : ""}${seq.external ? ", KEPT IN ANOTHER FILE" : ""}`;
+    const activity = seq.activity
+      ? `, activity ${seq.activity}${seq.activityName ? ` ${seq.activityName}` : ""}${seq.actweight !== 1 ? ` (weight ${seq.actweight})` : ""}`
+      : "";
+    const travel = seq.movement.some((v) => v)
+      ? `, moves ${seq.movement.join(" ")} (${motionNames(seq.motiontype) || "no motion type"}): ${seq.speed} units a second`
+      : "";
+    const notes = `${seq.loops ? ", loops" : ""}${seq.blends > 1 ? `, ${seq.blends} blends` : ""}${activity}${travel}${seq.external ? ", KEPT IN ANOTHER FILE" : ""}`;
     console.log(
       `  ${pad(seq.i, 3)} ${seq.name.padEnd(28)} ${pad(seq.frames, 4)} frames at ${seq.fps} fps${notes}`,
     );
+    if (flags.boxes) console.log(`        box ${seq.bbmin.join(" ")} to ${seq.bbmax.join(" ")}`);
     for (const event of seq.events)
       console.log(
         `        frame ${event.frame}: event ${event.event}${event.options ? ` "${event.options}"` : ""}`,
@@ -358,10 +414,35 @@ function info({ file, src, flags }) {
   if (data.attachments.length) {
     console.log(`\nATTACHMENTS (${data.attachments.length})`);
     data.attachments.forEach((a, i) =>
-      console.log(`  ${i} on ${a.bone} at ${a.pos.map((v) => v.toFixed(2)).join(" ")}`),
+      console.log(
+        `  ${i}${a.name ? ` "${a.name}"` : ""} on ${a.bone} at ${a.pos.map((v) => v.toFixed(2)).join(" ")}`,
+      ),
     );
   }
-  console.log(`\n${data.hitboxes} hit boxes`);
+  if (data.boneControllers.length) {
+    console.log(`\nBONE CONTROLLERS (${data.boneControllers.length})`);
+    data.boneControllers.forEach((c, i) =>
+      console.log(
+        `  ${i} turns ${c.bone} on ${motionNames(c.type) || c.type} from ${c.start} to ${c.end}, the entity's controller ${c.index}`,
+      ),
+    );
+  }
+  if (data.eyes.some((v) => v)) console.log(`\nEYES at ${data.eyes.join(" ")}`);
+
+  // the hit boxes: how many, on how many bones and in which groups; each one with --hitboxes
+  const groups = [...new Set(data.hitboxList.map((box) => box.group))].sort((a, b) => a - b);
+  const inGroups = groups
+    .map((group) => `${group}${HITGROUP_NAMES[group] ? ` ${HITGROUP_NAMES[group]}` : ""}`)
+    .join(", ");
+  const summary = data.hitboxes
+    ? ` on ${new Set(data.hitboxList.map((box) => box.bone)).size} bones, in the groups ${inGroups}${flags.hitboxes ? "" : "   (--hitboxes lists them)"}`
+    : "";
+  console.log(`\n${data.hitboxes} hit boxes${summary}`);
+  if (flags.hitboxes)
+    for (const box of data.hitboxList)
+      console.log(
+        `  ${pad(box.i, 3)} ${String(box.bone).padEnd(28)} group ${box.group}${box.groupName ? ` ${box.groupName}` : ""}  ${box.size.join(" x ")}  from ${box.min.join(" ")} to ${box.max.join(" ")}`,
+      );
 }
 
 // ── check ──────────────────────────────────────────────────────────────────
@@ -386,6 +467,14 @@ function draw({ command, src, flags }) {
   // the arguments first: a picture is not drawn to find that it has nowhere to go
   const to = need(command, flags.o, "-o out.png");
   const options = defined(viewOptions(src, flags));
+  // the ground is a line only in a level view: said before anything is drawn
+  const level = smak.NAMED_VIEWS[options.view]
+    ? smak.NAMED_VIEWS[options.view].pitch === 0
+    : options.view !== "first" && options.pitch === 0;
+  if (options.ground && (command === "sheet" || !level))
+    fail(
+      "--ground draws the line of z = 0 across a level view of render or strip: give --view side or --view front (or --pitch 0)",
+    );
   for (const name of ["count", "cols"])
     if (name in options && !(Number.isInteger(options[name]) && options[name] >= 1))
       fail(`--${name}: a whole number from 1, not ${options[name]}`);
@@ -1574,7 +1663,9 @@ async function playMap({ command, file: url, flags, listed }) {
 const COMMANDS = {
   info: {
     run: info,
-    help: `  info <mdl> [--json]                       what is in it: bones, bodyparts and their body numbers, textures, animations, events`,
+    help: `  info <mdl> [--json] [--hitboxes] [--boxes]  what is in it: bones, bodyparts and their body numbers, textures, animations (with their
+                                            activity, and how far and how fast each travels), events, attachments, hit boxes
+                                            (--hitboxes: each with its bone, group and size; --boxes: each animation's box)`,
   },
   check: {
     run: check,
@@ -1582,7 +1673,8 @@ const COMMANDS = {
   },
   render: {
     run: draw,
-    help: `  render <mdl> -o out.png                   one picture       [--view orbit|first] [--yaw 30] [--pitch 15] [--zoom 1]`,
+    help: `  render <mdl> -o out.png                   one picture       [--view orbit|first|side|front|top] [--yaw 30] [--pitch 15] [--zoom 1]
+                                            [--ground]: with --view side or front, a line where z = 0 is (the floor)`,
   },
   sheet: {
     run: draw,
@@ -1591,6 +1683,7 @@ const COMMANDS = {
   strip: {
     run: draw,
     help: `  strip <mdl> -o out.png --seq <name|n>     an animation, frame by frame   [--count 12] [--cols 4] [--from f] [--to f] [--view first]
+                                            a walk judged by its feet: --view side --ground (one camera for every frame, the floor a line)
         (render, sheet and strip all take --seq --frame --body --skin --width --height --no-light --no-cull)`,
   },
   textures: {

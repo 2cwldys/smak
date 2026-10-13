@@ -4,7 +4,7 @@ Tools for making and changing GoldSrc models (`.mdl`: Half-Life and its mods), b
 coding agent such as Claude Code. You say what you want; the agent writes small scripts with this kit, draws the
 result into pictures to check its own work, and hands you a `.mdl` to try in the game.
 
-Version 0.11.0. An early release, made for an agent to work. For the person it has two pages in the browser: a
+Version 0.12.0. An early release, made for an agent to work. For the person it has two pages in the browser: a
 **viewer** that shows any two models side by side, turning and playing their animations together, and an
 **editor** for touching up a model by hand (its animations, events and textures; not its shape), on a project
 file the agent can work on too (`editor/README.md`).
@@ -109,6 +109,19 @@ body 0: `info` shows the body numbers, and `--body N` picks one.
   the game is the real test.
 - Many models give the left and right side of the body the same pixels of a texture. A mark painted on one side
   then shows on the other; the kit reports how much of each texture is shared.
+
+## What changed in 0.12.0
+
+A monster made from nothing: the first was a scarecrow for Master Sword, its skeleton, body and five
+animations written in code, and it walked, struck, was struck and died in the game.
+
+- **Animations written as poses** (`src/animate.mjs`, exported as `animate`): a turn said in the model's
+  axes whatever a bone's own are, a leg bent to put its foot at a place (`reach`), a pose mirrored, keys
+  joined into frames, and the result measured: a loop's seam, the speed a walk's planted feet ask for.
+- **A monster's parts of the format**: hit boxes (`"auto"`, as studiomdl makes them), attachments, bone
+  controllers, and a sequence's travel, activity and box, read and written; `info` prints them.
+- **Motion judged by the feet**: `strip --view side --ground` draws an animation from the side over the
+  line of the floor.
 
 ## What changed in 0.11.0
 

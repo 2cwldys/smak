@@ -36,6 +36,8 @@ const areas = [
   "26-maps-play", // the walk test playing more: jumps across gaps, one-way places, slopes too steep to stand on
   "28-maps-profile", // a profile's ways out and the model it gives an entity; --mod on the picture commands
   "27-play", // the play driver: steps made actions, a map played through a fake driver, `smak play`'s refusals
+  "29-monster-parts", // a monster's parts: hit boxes, attachments, controllers, an animation's travel and box, the floor's line
+  "30-animate", // animations written as poses: turns in the model's axes, a leg bent to its foot, keys, the walk's measures
   "19-example-and-kit-faults", // the examples' wrong arguments and refused models; the kits' fittings and rings
 ];
 

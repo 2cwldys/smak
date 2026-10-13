@@ -117,7 +117,10 @@ test("smak answers a wrong argument with a sentence and exit code 1", () => {
     [["strip", modelFile, "-o", out, "--count", "0"], /--count: a whole number from 1, not 0/],
     [["islands", modelFile, "--min", "few"], /--min: a number, not few/],
     [["pieces", modelFile, "--body", "knife"], /--body: a number, not knife/],
-    [["render", modelFile, "-o", out, "--view", "sideways"], /--view: orbit or first, not sideways/],
+    [
+      ["render", modelFile, "-o", out, "--view", "sideways"],
+      /--view: orbit or first or side or front or top, not sideways/,
+    ],
     [["check", modelFile, "--engine", "quake"], /--engine: goldsrc or xash, not quake/],
     // a flag with nothing after it
     [["render", modelFile, "-o"], /-o needs a file or a folder after it/],
