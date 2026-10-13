@@ -126,6 +126,9 @@ node bin/smak.mjs map-textures <bsp> -o dir        every texture of a map as a P
 node bin/smak.mjs wad <file.wad> [-o dir]          a .wad's textures listed; with -o, each as a PNG
 node bin/smak.mjs wad-make <pictures...> -o out.wad   a .wad from PNG or BMP pictures, each named after its file
 node bin/smak.mjs map-compile <file.map> -o out.bsp --wad a.wad [--wadinclude] [--fast] [--vhlt <folder>]
+node bin/smak.mjs play <url> --map <name> [--steps steps.json] -o dir [--mod <profile>] --playwright <folder>
+                                                   the map in the game itself, where the person has a browser build of it and Playwright:
+                                                   entered, walked, spoken in, pictures taken (docs/MAPS-MAKING.md, "Seeing it in the game")
 ```
 
 The three that draw take `--width`, `--height`, `--game <folder>` (the mod's folder, then `valve`: where the map's
@@ -135,7 +138,11 @@ written on it), `--legend` (the entities listed beside it) and `--reach` (the wa
 entity that stands is drawn as the box it moves with: `--body <class|targetname>=large` says which box;
 `--models` draws the models that are named, from the `--game` folders, and `--model <class|targetname|scriptfile>=models/x.mdl`
 names one. With `--game` the sky is its own picture and each sprite its first frame (`--no-sky`, `--sky r,g,b`,
-`--no-sprites` say otherwise); `--no-model-scale` draws models at their own size.
+`--no-sprites` say otherwise); `--no-model-scale` draws models at their own size. Every one of these commands
+takes `--mod <profile>` as `map-check` does (with `--game`, and `--scripts <folder>` for scripts not in the
+game yet): the mod's folders, the box each of its classes moves with, its ways out for the walk test and, with
+`--models`, the model the mod gives an entity that names none: a monster is then drawn as the model its
+script picks, with nothing named by hand.
 
 `view` keeps running until stopped: start it in the background, give the person the address it prints, and stop
 it when they are done. It is for them to look and compare; your own checking is still `render`, `sheet` and
@@ -762,7 +769,8 @@ node bin/smak.mjs map-view gatecity.bsp -o v.png --from -191,-802,-433 --yaw 90
   over it or goes into it; on a plan its outline. `--models` (with `--game`) draws a prop that names its
   `.mdl` as that model, with its textures, in the `body`, `skin`, `sequence`, `scale` and `angles` its
   entity gives; a masked texture's holes are open, so a tree's crown hides what the game's hides and no
-  more. `--model name=models/x.mdl` names one for a monster, whose own comes from its script. A door is
+  more. A monster's own comes from its script: `--mod <profile>` with `--models` draws it where the
+  profile can read it (`modelOf`), and `--model name=models/x.mdl` names one by hand. A door is
   drawn shut.
 - **With `--game`, the sky is the map's own** (`skyname`: the six pictures of `gfx/env`) **and a sprite is
   drawn** (`env_sprite`, `env_glow`: its first frame at its `scale`, blended by its render mode; a small

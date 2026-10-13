@@ -506,6 +506,39 @@ the walk test: `reachOf`, `spaceOf`, `restOf`, `storeyCuts`, and a map's entitie
 mod: `checkEntities`, `definitionsOf`, `learnEntities`, `classesOfDll`, `GOLDSRC`, `loadMod`) and
 `docs/MAPS-MAKING.md` (brushes, entities, the `.map` file, the plan check, a mod's profile and the compile).
 
+## Playing a map in the game (`src/play.mjs`, exported as `play`)
+
+`import { play } from "smak"` (or `"smak/play"`). What it needs and the steps' format: `docs/MAPS-MAKING.md`,
+"Seeing it in the game".
+
+`play.playOf(steps, { mod, pause = 1000 })` → the steps checked and made plain actions, each `{ kind, wait,
+shot, step }` with its own fields: `"command"` `commands`; `"button"` `button`, `ms` (a `walk`, a `turn` and a
+`button` step); `"hold"` `key`, `ms`; `"press"` `key`; `"click"` `x`, `y`; `"wait"`. A wrong step throws a
+sentence that names it. A step is `{ command }`, `{ say }`, `{ walk, to }`, `{ turn }`, `{ button, ms }`,
+`{ hold, ms }`, `{ press }` or `{ click: [x, y] }`, each with `wait` and `shot` if it likes, or those two alone.
+
+`await play.play({ driver, map, steps, out, mod, loads, pause, tell })` → `{ map, out, pictures, steps, log,
+logFile }`: the engine waited for, `map <name>`, the profile's steps to enter, then yours. `pictures` are the
+PNG files in the order taken (`00_loaded.png`, `01_entered.png` when the profile has steps to enter, then
+each `shot`); `steps` is what was done, each `{ part: "load" | "enter" | "steps", index, kind, step, at, took,
+picture }` with its times in milliseconds; `log` is the game's console as lines, also written to
+`<out>/log.txt`. `tell` is handed a line as each thing is done. Everything is checked before the driver is
+touched; when a driver fails, it is closed, the log is written, and the error carries `pictures` and `logFile`.
+
+A **driver** is a plain object, `{ ready(), command(text), keyDown(key), keyUp(key), press(key), click(x, y),
+wait(ms), shot(file), log(), close() }`, each of which may be async: write one to play the game another way
+(a native engine, a test's fake).
+
+`play.browserDriver({ url, playwright, width = 1024, height = 768, readyWithin = 120000, engine = "xash",
+readyFlag = "xashReady", args = play.SOFTWARE_GL })` → the kit's own driver: a headless Chromium on the page
+that runs a browser build of Xash3D. `playwright` is the Playwright module (`{ chromium }`) or a folder that
+holds its `node_modules`; `engine` and `readyFlag` are the page's names for the engine's Emscripten module and
+for the flag it sets when the engine takes commands. Nothing is opened before `ready()`.
+
+`play.playwrightFrom(folder)` → the Playwright module of that folder's `node_modules`, looked for there and
+nowhere else; it throws a sentence when it is not there. `play.playPartOf(mod)` → the profile's `play` field
+made whole from `GOLDSRC`'s: `{ enter, say, loads, yawspeed, screen }`.
+
 ## The viewer (`viewer/serve.mjs`)
 
 `view(roots, port = 8098)` starts it over folders or single files and resolves to the Node server (`.close()` stops

@@ -89,6 +89,10 @@ const VALUE_FLAGS = [
   "speed",
   "gravity",
   "sky",
+  "map",
+  "steps",
+  "playwright",
+  "loads",
 ];
 // the flags of the map commands that may be given more than once: each time adds to a list
 const LISTED_FLAGS = [
@@ -1218,12 +1222,13 @@ function mapSet({ command, file, rest, flags }) {
 }
 
 // ── pictures of a map ──────────────────────────────────────────────────────
-function mapPlan({ command, file, flags, listed }) {
+async function mapPlan({ command, file, flags, listed }) {
   const to = need(command, flags.o, "-o out.png");
   const area = numbersOf(flags, "area", 4, "four numbers x0,y0,x1,y1");
   const options = {
     ...pictureOptions(file, flags, listed),
     ...figureOptions(flags, listed),
+    ...defined({ mod: await profileOf(flags, listed) }),
     ...defined({
       z: numberOf(flags, "z"),
       scale: numberOf(flags, "scale"),
@@ -1269,9 +1274,13 @@ function standOf(flags, map) {
     }),
   };
 }
-function mapView({ command, file, flags, listed }) {
+async function mapView({ command, file, flags, listed }) {
   const to = need(command, flags.o, "-o out.png");
-  const options = { ...pictureOptions(file, flags, listed), ...figureOptions(flags, listed) };
+  const options = {
+    ...pictureOptions(file, flags, listed),
+    ...figureOptions(flags, listed),
+    ...defined({ mod: await profileOf(flags, listed) }),
+  };
   const source = isSource(file);
   const map = readEither(file);
   const stand = standOf(flags, map);
@@ -1289,11 +1298,13 @@ function mapView({ command, file, flags, listed }) {
       `      marked: ${mark.number} ${mark.classname} at pixel ${mark.at.join(",")}${mark.drawn === "mark" ? "" : `, its ${mark.drawn} ${mark.size}`}`,
     );
 }
-function mapViews({ command, file, flags, listed }) {
+async function mapViews({ command, file, flags, listed }) {
   const to = need(command, flags.o, "-o out.png");
   if (isSource(file)) fail(`${command}: a compiled map (.bsp): of source, map-view and map-plan draw`);
   const options = {
     ...pictureOptions(file, flags, listed),
+    ...figureOptions(flags, listed),
+    ...defined({ mod: await profileOf(flags, listed) }),
     ...defined({ count: numberOf(flags, "count"), cols: numberOf(flags, "cols") }),
   };
   for (const name of ["count", "cols"])
@@ -1335,7 +1346,7 @@ async function mapReach({ file, flags, listed }) {
     const options = {
       ...pictureOptions(file, flags, listed),
       ...figureOptions(flags, listed),
-      ...defined({ z: numberOf(flags, "z") }),
+      ...defined({ z: numberOf(flags, "z"), mod }),
       reach,
       heights: true,
       legend: true,
@@ -1346,7 +1357,7 @@ async function mapReach({ file, flags, listed }) {
   }
   process.exit(reach.unreached.length || reach.stuck.length ? 1 : 0);
 }
-function mapSection({ command, file, flags, listed }) {
+async function mapSection({ command, file, flags, listed }) {
   const to = need(command, flags.o, "-o out.png");
   const ends = `${command}: --from x,y and --to x,y, the two ends of the line`;
   const from = numbersOf(flags, "from", 2, "two numbers x,y") ?? fail(ends);
@@ -1357,6 +1368,7 @@ function mapSection({ command, file, flags, listed }) {
     from,
     to: end,
     ...figureOptions(flags, listed),
+    ...defined({ mod: await profileOf(flags, listed) }),
     ...defined({
       scale: numberOf(flags, "scale"),
       width: numberOf(flags, "width"),
@@ -1381,7 +1393,7 @@ function mapSection({ command, file, flags, listed }) {
       `${String(mark.number).padStart(4)}  ${mark.classname.padEnd(22)} ${mark.along} along the line, z ${mark.z}`,
     );
 }
-function mapStoreys({ command, file, flags, listed }) {
+async function mapStoreys({ command, file, flags, listed }) {
   const to = need(command, flags.o, "-o out.png");
   const map = readEither(file);
   const cuts = flags.z === undefined ? undefined : String(flags.z).split(",").map(Number);
@@ -1389,6 +1401,7 @@ function mapStoreys({ command, file, flags, listed }) {
   const options = {
     ...pictureOptions(file, flags, listed),
     ...figureOptions(flags, listed),
+    ...defined({ mod: await profileOf(flags, listed) }),
     ...defined({ z: cuts, cols: numberOf(flags, "cols"), doors: flags.doors }),
   };
   if (flags.reach === true) options.reach = maps.reachOf(map, reachOptions(flags, listed));
@@ -1399,13 +1412,14 @@ function mapStoreys({ command, file, flags, listed }) {
       `      cut at z ${storey.z}${storey.floors ? `: floors from ${storey.floors[0]} to ${storey.floors[1]}, about ${storey.area} square units` : ""}; ${storey.marks.length} entities`,
     );
 }
-function mapOpenings({ command, file, flags, listed }) {
+async function mapOpenings({ command, file, flags, listed }) {
   const to = need(command, flags.o, "-o out.png");
   const map = readEither(file);
   const reach = maps.reachOf(map, reachOptions(flags, listed));
   const picture = maps.openingViews(map, {
     ...pictureOptions(file, flags, listed),
     ...figureOptions(flags, listed),
+    ...defined({ mod: await profileOf(flags, listed) }),
     ...defined({
       count: numberOf(flags, "count"),
       cols: numberOf(flags, "cols"),
@@ -1511,6 +1525,47 @@ function mapCompile({ command, file, flags, listed }) {
   for (const error of result.errors) console.log(`ERROR ${error}`);
   console.log(result.bsp ? `${result.bsp}: compiled` : "not compiled");
   process.exit(result.bsp ? 0 : 1);
+}
+
+// ── play ───────────────────────────────────────────────────────────────────
+/**
+ * play: a map seen in the game itself, in a browser build of the engine at an address. The steps are checked
+ * and Playwright looked for before any browser is opened; each thing done is printed as it is done, and the
+ * pictures' paths at the end.
+ */
+async function playMap({ command, file: url, flags, listed }) {
+  const { playOf, playPartOf, playwrightFrom, browserDriver, play } = smak.play;
+  try {
+    if (!/^https?:\/\//i.test(url))
+      fail(`${command}: the address of the page that runs the game comes first (http://...), not ${url}`);
+    const map = need(command, flags.map, "--map <name>: the map to load, as the console's `map` takes it");
+    let steps = [];
+    try {
+      if (flags.steps !== undefined) steps = JSON.parse(readFileSync(existing(flags.steps), "utf8"));
+    } catch (error) {
+      fail(`${command}: --steps is a JSON file that holds a list of steps, and ${flags.steps} does not read as JSON (${error.message})`); // prettier-ignore
+    }
+    const mod = await profileOf(flags, listed);
+    playOf(steps, { mod });
+    const [wide, high] = playPartOf(mod).screen ?? [];
+    const width = numberOf(flags, "width") ?? wide;
+    const height = numberOf(flags, "height") ?? high;
+    const playwright = playwrightFrom(flags.playwright ?? process.env.PLAYWRIGHT_DIR);
+    const driver = browserDriver(defined({ url, playwright, width, height }));
+    if (wide && (width !== wide || height !== high))
+      console.log(`WARN  the profile's clicks were measured on a page of ${wide} by ${high}, and this one is ${width} by ${height}`); // prettier-ignore
+    console.log(`${url}: map ${map}, ${steps.length} steps      (from the start, it took, what)`);
+    const run = await play({
+      ...defined({ mod, loads: numberOf(flags, "loads") }),
+      ...{ driver, map, steps, out: flags.o ?? "play", tell: (line) => console.log(line) },
+    });
+    console.log(`${run.pictures.length} pictures in ${run.out}, to open and look at:`);
+    for (const picture of run.pictures) console.log(`  ${picture}`);
+    console.log(`the game's console: ${run.logFile} (${run.log.length} lines)`);
+  } catch (error) {
+    if (error.logFile) console.error(`the game's console up to there: ${error.logFile}`);
+    fail(/^play: /.test(error.message) ? error.message : `${command}: ${sayOf(error)}`);
+  }
 }
 
 // ── the commands ───────────────────────────────────────────────────────────
@@ -1675,7 +1730,10 @@ const COMMANDS = {
          an entity that stands is drawn as the box it moves with: --body <class|targetname>=large|standing|crouching says which;
          --models draws the models that are named, from the --game folders, textured, in the body, skin, sequence, scale and
          angles their entities give (--no-model-scale: at their own size); --model <class|targetname|scriptfile>=models/x.mdl names one;
-         with --game the sky is its own picture (skyname) and a sprite its first frame: --no-sky or --sky r,g,b, and --no-sprites, say otherwise)`,
+         with --game the sky is its own picture (skyname) and a sprite its first frame: --no-sky or --sky r,g,b, and --no-sprites, say otherwise;
+         --mod <profile.mjs|.json|goldsrc> (with --game, --scripts <folder>): the mod's folders, the box each of its classes moves with and,
+         with --models, the model the mod gives an entity that names none, a monster's from its script; map-section, map-storeys
+         and map-openings take it too)`,
   },
   "map-reach": {
     run: mapReach,
@@ -1732,7 +1790,21 @@ const COMMANDS = {
     own: true,
     help: `  map-compile <file.map> -o out.bsp [--wad <file.wad> ...] [--wadinclude] [--fast] [--no-vis] [--no-light] [--vhlt <folder>]
                                             compiles brush source with VHLT (an outside program: VHLT_DIR, the PATH or --vhlt);
-                                            a leak and every error in a sentence, exit code 1 unless it compiled
+                                            a leak and every error in a sentence, exit code 1 unless it compiled`,
+  },
+  play: {
+    run: playMap,
+    own: true,
+    address: true,
+    help: `  play <url> --map <name> [--steps steps.json] [-o <folder>] [--mod <profile>] [--game <folder> ...] [--playwright <folder>]
+                              [--width 1024] [--height 768] [--loads ms]
+                                            the map seen in the game itself: a browser build of Xash3D at that address is opened,
+                                            the map loaded, the game entered as the mod's profile says, and the steps done
+                                            (steps.json: a list such as [{ "walk": 3000, "shot": "gate" }, { "turn": 90 },
+                                            { "say": "hail", "wait": 3000, "shot": "spoken" }, { "command": "noclip" }]; docs/MAPS-MAKING.md,
+                                            "Seeing it in the game"). The pictures go to the folder as PNG files, with the game's
+                                            console in log.txt. It needs Playwright, an outside program: --playwright names the
+                                            folder that holds its node_modules (or PLAYWRIGHT_DIR)
 `,
   },
   mcp: {
@@ -1759,10 +1831,11 @@ if (!command || command === "help" || flags.help) {
 // the MCP server is given folders by flags, not a file
 if (command === "mcp") await mcp({ flags });
 if (!file) fail(HELP);
-if (!existsSync(file)) fail(`no such file: ${file}`);
 const entry = Object.hasOwn(COMMANDS, command) ? COMMANDS[command] : null;
+// `address: true`: what follows the command is a page's address, not a file
+if (!entry?.address && !existsSync(file)) fail(`no such file: ${file}`);
 // a page is handed a folder as readily as a model; every other command reads a file
-if (!entry?.page && !entry?.folder) existing(file);
+if (!entry?.page && !entry?.folder && !entry?.address) existing(file);
 checkFlags(flags);
 // whatever a command throws is said in a sentence, with the command's name before it
 try {

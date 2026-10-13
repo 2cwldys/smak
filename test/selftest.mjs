@@ -34,6 +34,8 @@ const areas = [
   "24-maps-mods", // entity definitions from an FGD and learned from maps, a mod's profile and rules, the files entities name
   "25-maps-seen", // a map's pictures with the game's files: models textured and posed, sprites, the sky, `{` holes
   "26-maps-play", // the walk test playing more: jumps across gaps, one-way places, slopes too steep to stand on
+  "28-maps-profile", // a profile's ways out and the model it gives an entity; --mod on the picture commands
+  "27-play", // the play driver: steps made actions, a map played through a fake driver, `smak play`'s refusals
   "19-example-and-kit-faults", // the examples' wrong arguments and refused models; the kits' fittings and rings
 ];
 

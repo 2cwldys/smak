@@ -224,6 +224,10 @@ written over it: read it as the example.
 4. **The starts.** Which classes does a player start at? The `mpentity` line of `liblist.gam`, and in what
    was learned the classes every map has (`info_player_deathmatch` in 28 of The Specialists' 29 maps).
    `starts` in the profile.
+   Beside them: `exits`, the classes a player leaves a map by (the walk test then knows a way out from a
+   dead end), and `modelOf(keys)`, the model the game gives an entity whose keys name none, when the mod
+   keeps that somewhere you can read (a script, a table by class): the pictures then show a monster as
+   itself and not as a box.
 5. **Run it on the mod's own maps first**: `smak map-check <Half-Life>/ts/maps/<name>.bsp --mod work/ts.json
    --game <Half-Life>/ts --game <Half-Life>/valve`, on three or four. The game's own maps must come out
    nearly clean. What they are told of is one of three things: a real slip of that map (a name nothing answers
@@ -348,6 +352,59 @@ bright.
 - **The sun**: faces wearing `sky`, and one `sunLight`. No sky faces, no sun.
 - `checkPlan` warns when nothing lights the map, and when a texture light names a texture no face wears.
 
+## Seeing it in the game
+
+Every picture above is the kit's own drawing. `src/play.mjs` shows the map in the game itself: it loads the
+map in a running engine, gets through the game's menu, walks, turns, speaks, and takes pictures of what the
+player sees. A door that opens, an NPC that answers and a monster that appears are seen here and nowhere
+else.
+
+**What it needs**, beside the kit: a browser build of the Xash3D engine with the game in it, served at an
+address (the person has one or has not; ask), and Playwright, which drives the browser. Neither is part of
+this kit, which has no dependencies: Playwright is installed in a folder of the person's own (`npm install
+playwright`, `npx playwright install chromium`) and that folder is named with `--playwright`, or in the
+`PLAYWRIGHT_DIR` environment variable. Without it the command says so in one sentence.
+
+```
+smak play http://127.0.0.1:8097/?args= --map orchard --steps steps.json -o work/seen \
+     --mod smak/profiles/mastersword.mjs --game <Half-Life>/msc --game <Half-Life>/valve --playwright <folder>
+```
+
+`steps.json` is a list. A step does one thing, and any step may also `wait` (milliseconds, after it) and take
+a `shot` (a picture, after the wait):
+
+| A step | What it does |
+| --- | --- |
+| `{ "command": "noclip" }` | A console command, or a list of them |
+| `{ "say": "hail" }` | The words said as the mod's profile says a thing is said |
+| `{ "walk": 3000 }` | Forward for 3 seconds; `"to": "back"`, `"left"` or `"right"` |
+| `{ "turn": 90 }` | A quarter turn to the left (under 0: to the right). By time, and only about right |
+| `{ "button": "jump", "ms": 200 }` | One of the game's buttons held: `jump`, `duck`, `use`, `attack`, `moveup`... |
+| `{ "hold": "w", "ms": 2000 }`, `{ "press": "Enter" }` | A key of the keyboard held, or pressed once |
+| `{ "click": [512, 330] }` | A click at that place of the page, in pixels |
+| `{ "wait": 5000 }`, `{ "shot": "gate" }` | Only a wait; only a picture |
+
+After a step that does something and gives no `wait`, a second is waited. The pictures are written to the
+folder as `00_loaded.png`, `01_...png`, numbered in the order taken, with the game's console in `log.txt`.
+Two are taken unasked: `loaded`, when the map has loaded, and `entered`, after the menu. **Open them**: a run
+that never got into the game shows in those two at once. From a script it is `play.play({ driver, map, steps,
+out, mod })` with `play.browserDriver({ url, playwright })`, which resolves to `{ pictures, steps, log }`.
+
+- **The game's own part is in the profile**, as its `play` field: `enter` (the steps that get through the
+  menu once the map has loaded), `say` (the console commands that say a thing, with `{text}` for the words),
+  `loads` (milliseconds a map is given to load) and `screen` (the page's size the clicks were measured on).
+  Half-Life's has no menu and says with `say`. Master Sword's clicks the character's card twice and says with
+  `setsay` and then `say`, since its NPCs hear local speech only: `profiles/mastersword.mjs`.
+- **Waits are fixed times**, not events: nothing tells the kit that a map has finished loading. When
+  `00_loaded.png` still shows the loading screen, give more with `--loads`.
+- **A turn is not exact.** No command sets where the player looks; `turn` holds the game's `+left` for the
+  time `cl_yawspeed` (210 degrees a second) takes, and is out by a frame's worth or more. Take a picture
+  after a turn and judge from it.
+- **There is no "go to x, y, z".** The engine has no such command (no `setpos`). To see a far place, walk
+  there, or `{ "command": ["sv_cheats 1", "noclip"] }` and fly: `walk` then goes where the player looks.
+- **It sees; it does not measure.** Nothing reads the player's place or what an NPC answered: you look at the
+  pictures and read `log.txt`. Say to the person what you saw and what you did not try.
+
 ## The limits of this way of making maps
 
 - **Convex brushes only.** That is the format, not the kit: an L-shaped block is two boxes. `solid` and
@@ -369,8 +426,9 @@ bright.
   and hlbsp, 15 for hlvis and hlrad; `timeout` changes them).
 - **`readMap` reads Valve 220** and nothing older, and keeps an entity's keys in an object: a key that is a
   whole number (rare) is listed first when written again.
-- **Nothing here runs the game.** Doors that open, triggers that fire, a monster that finds its way: say to
-  the person what you could not verify. The walk test is geometry (the box of a player moved over the map,
+- **Nothing here runs the game**, unless the person has a browser build of it ("Seeing it in the game").
+  Doors that open, triggers that fire, a monster that finds its way: say to the person what you could not
+  verify. The walk test is geometry (the box of a player moved over the map,
   with the engine's numbers for a step, a jump, a run and a slope): it was never measured against the game's
   own movement, and where a monster's origin is (its feet, the kit takes it) and whether it is dropped to the
   floor are the mod's to say.

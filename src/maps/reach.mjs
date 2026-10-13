@@ -977,13 +977,17 @@ export function reachOf(map, options = {}) {
   if (taken.size) facts.push(`${taken.size} teleports were walked into and followed to where they lead`);
 
   // ── the entities a player goes to ──
+  // a way out is one of them whatever its class: a mod's own (a profile's `exits`) is no trigger_ by name
+  const exitNames = [...EXIT_CLASSES, ...(Array.isArray(exits) ? exits : [exits])];
+  const isExit = (thing) =>
+    [thing.number, thing.classname, thing.targetname].some((name) => exitNames.includes(name));
   const entities = [];
   for (const thing of things) {
     if (thing.number === 0 && isCompiled(map)) continue;
     const area = thing.brush ? areaOf.get(thing.number) : null;
     if (
       thing.brush
-        ? !area || !GONE_TO.test(thing.classname)
+        ? !area || !(GONE_TO.test(thing.classname) || isExit(thing))
         : !thing.origin || NOT_GONE_TO.test(thing.classname)
     )
       continue;
@@ -1081,12 +1085,7 @@ export function reachOf(map, options = {}) {
   }
 
   // ── one-way places: floor that is walked to and has no way back ──
-  const names = [...EXIT_CLASSES, ...(Array.isArray(exits) ? exits : [exits])];
-  const ways = entities.filter(
-    (entity) =>
-      entity.reached &&
-      names.some((name) => [entity.number, entity.classname, entity.targetname].includes(name)),
-  );
+  const ways = entities.filter((entity) => entity.reached && isExit(entity));
   const trap = begun.length
     ? oneWayOf({
         space,

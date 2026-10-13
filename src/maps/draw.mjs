@@ -1443,6 +1443,7 @@ function figuredFor(scene, options) {
   const key = JSON.stringify([
     options.bodies ?? {},
     options.models ?? false,
+    options.modelsBy ?? {},
     options.folders ?? [],
     options.modelScale ?? true,
     options.sprites ?? true,

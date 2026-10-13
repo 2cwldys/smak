@@ -21,6 +21,10 @@
 //     bodies        { classname: "large" | "standing" | "crouching" | { half, height, feet } }: which box a
 //                   class moves with, where neither its FGD `size(...)` nor the standing hull is right
 //     doors         the brush classes that open: taken as open by the walk test
+//     exits         the classes a player leaves the map by, besides `trigger_changelevel`: floor from which
+//                   one is reached is no one-way place (the walk test's `exits`)
+//     modelOf       (keys) => "models/x.mdl" | null: the model the game gives an entity that names none in
+//                   its own keys (a monster's, from its script); asked when a picture is drawn with `models`
 //     off           classnames that are a way of switching an entity off (`disabled_*`): not looked up
 //     targets       the keys that name another entity: { keys: [...], others: [classes whose every other
 //                   key is a name they fire] }
@@ -58,6 +62,7 @@ import { valueOf } from "./entities.mjs";
  *   named       the names the game's rules fire by themselves (dlls/multiplay_gamerules.cpp, player.cpp)
  *   engineKeys  the fields of an entity the engine fills from a map's keys whatever the class: the table
  *               gEntvarsDescription of the SDK's dlls/util.cpp
+ *   play        how the game is played by src/play.mjs, which has each field: no menu, `say`, cl_yawspeed 210
  */
 export const GOLDSRC = deepFrozen({
   name: "goldsrc",
@@ -85,6 +90,7 @@ export const GOLDSRC = deepFrozen({
     monster_alien_controller: "large",
   },
   doors: ["func_door", "func_door_rotating", "momentary_door"],
+  exits: [],
   off: [],
   targets: { keys: ["target", "killtarget", "master"], others: ["multi_manager"] },
   named: ["game_playerdie", "game_playerkill", "game_playerspawn", "game_playerjoin", "game_playerleave"],
@@ -102,10 +108,11 @@ export const GOLDSRC = deepFrozen({
   ], // prettier-ignore
   files: [],
   rules: [],
+  play: { enter: [], say: ["say {text}"], loads: 45000, yawspeed: 210, screen: [1024, 768] },
 });
 
 /** The fields of a profile that are lists or objects of their own, by which a wrong one is told. */
-const LISTS = ["folders", "wads", "dlls", "fgd", "starts", "walkers", "doors", "off", "named", "engineKeys", "files", "rules"]; // prettier-ignore
+const LISTS = ["folders", "wads", "dlls", "fgd", "starts", "walkers", "doors", "exits", "off", "named", "engineKeys", "files", "rules"]; // prettier-ignore
 /** What each profile's definitions came to, so that an FGD is read and a hundred maps are learned once. */
 const definitionsKept = new WeakMap();
 /** The profiles made whole, by the object they were made from. */
@@ -146,6 +153,8 @@ export function modOf(mod) {
   for (const field of LISTS)
     if (mod[field] !== undefined && !Array.isArray(mod[field]))
       throw new Error(`mod: ${field} is a list, not ${JSON.stringify(mod[field])}`);
+  if (mod.modelOf !== undefined && typeof mod.modelOf !== "function")
+    throw new Error(`mod: modelOf is a function of an entity's keys, not ${JSON.stringify(mod.modelOf)}`);
   const whole = { ...GOLDSRC, ...mod };
   whole.origin = { ...GOLDSRC.origin, ...mod.origin };
   whole.hulls = { ...GOLDSRC.hulls, ...mod.hulls };
@@ -244,6 +253,35 @@ function classesIn(map) {
   return [...names];
 }
 
+/**
+ * A map's entities, each as `[its number, its keys in a plain object]`: of a compiled map (the world is 0)
+ * or of brush source (the first entity is 1), numbered as the pictures and the lists number them.
+ */
+function keysIn(map) {
+  if (isCompiled(map)) return map.entities.map((entity, number) => [number, Object.fromEntries(entity)]);
+  return (map?.entities ?? []).map((entity, index) => [
+    index + 1,
+    Object.fromEntries(Object.entries(entity ?? {}).filter(([, value]) => typeof value === "string")),
+  ]);
+}
+
+/**
+ * The models a profile gives the entities of a map that name none: `{ number: "models/x.mdl" }`, by the
+ * entity's number, as the `modelsBy` option of `figuresOf` takes it. An entity whose own `model` key is
+ * set is left to that key.
+ */
+export function modelsOf(mod, map) {
+  const whole = modOf(mod);
+  const given = {};
+  if (typeof whole?.modelOf !== "function") return given;
+  for (const [number, keys] of keysIn(map)) {
+    if (!keys.classname || keys.model) continue;
+    const model = whole.modelOf(keys);
+    if (typeof model === "string" && model) given[number] = model;
+  }
+  return given;
+}
+
 /** A class's `size(...)` as the box a thing moves with: half its width, its height, how far down its feet. */
 function boxOfSize(size) {
   const half = Math.max(...[0, 1].flatMap((axis) => [Math.abs(size.mins[axis]), Math.abs(size.maxs[axis])]));
@@ -288,6 +326,9 @@ export function bodiesOf(mod, classnames, definitions = definitionsFor(mod)) {
  *   bodies    the box of every class of the map that starts or walks (`bodiesOf`), under the caller's own
  *   open      the profile's `doors` that the kit does not take for doors by itself, unless `doors` is "closed"
  *   folders   the profile's, when it has any
+ *   exits     the profile's, and the caller's with them (for `reachOf`)
+ *   modelsBy  when the caller asks for models: those the profile's `modelOf` gives the map's entities,
+ *             by number (`modelsOf`); a model the caller names stands over them
  * Options with no `mod` come back as they are.
  */
 export function withMod(options = {}, map) {
@@ -300,6 +341,10 @@ export function withMod(options = {}, map) {
   const more = whole.doors.filter((classname) => !DOORS.test(classname));
   if (more.length && own.doors !== "closed")
     settled.open = [...more, ...(own.open === undefined ? [] : [own.open].flat())];
+  if (whole.exits.length)
+    settled.exits = [...whole.exits, ...(own.exits === undefined ? [] : [own.exits].flat())];
+  if (own.models && own.modelsBy === undefined && typeof whole.modelOf === "function")
+    settled.modelsBy = modelsOf(whole, map);
   return settled;
 }
 

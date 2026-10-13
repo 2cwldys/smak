@@ -580,13 +580,16 @@ leaves out is `GOLDSRC`'s. `profiles/mastersword.mjs` is one mod's, as an exampl
 | `starts` | The classes that are a place to start: what `checkPlan` asks for and `reachOf` walks from |
 | `walkers`, `origin`, `hulls`, `bodies` | The classes that walk (`"monster_*"`); where a thing's origin is in its box (`{ starts: "middle", walkers: "feet" }`); the engine's boxes; and a class's box where its size does not say (`{ monster_bigmomma: "large" }`). A class's FGD `size(...)` is its box: `bodiesOf(mod, classnames)` gives `{ classname: { half, height, feet } }`, and a box of exactly a hull's size is walked as that hull |
 | `doors` | The brush classes that open: the walk test takes them as open |
+| `exits` | The classes a player leaves the map by, besides `trigger_changelevel` (Master Sword's `msarea_transition`): the walk test takes each for a way out, so floor one is reached from is no one-way place. What the caller names with `exits` is added to them |
+| `modelOf` | `(keys) => "models/x.mdl"` or null: the model the game gives an entity that names none in its own keys, from whatever the mod keeps it in (Master Sword: the `setmodel` of the monster's script, `scriptModel` in its profile). Asked only when a picture is drawn with `models`; `modelsOf(mod, map)` gives `{ number: model }` for a map |
 | `off` | Classnames that switch an entity off on purpose (`"disabled_*"`): counted in a fact, not looked up |
 | `targets`, `named` | `{ keys, others }`: the keys that name another entity, and the classes whose every other key is a name they fire; the names the game itself fires |
 | `files` | More keys that name a file: `{ classes, key, keys, folders, unless, what }` (`keys: "*.mp3"` for a class whose keys are themselves file names) |
 | `rules` | The mod's own rules |
 
 `withMod(options, map)` is what the walk test and the pictures do with `mod`: the profile's `starts`,
-`folders`, each class's box (under the caller's own `bodies`) and its doors (as `open`). `definitionsFor(mod)`
+`folders`, each class's box (under the caller's own `bodies`), its doors (as `open`), its `exits` and, when
+`models` is asked for, the models its `modelOf` gives (as `modelsBy`, under any the caller names). `definitionsFor(mod)`
 gives the definitions a profile comes to; `modOf(mod)` the profile made whole.
 
 **Rules** are a mod's quirks as data, each with `why`, which is put into its sentence, `classes` and `level`:

@@ -3,6 +3,33 @@
 The newest first. A version that changes what a model's file looks like, or that a model made before needs
 mending for, says so under **Mind**.
 
+## 0.11.0 (2026-10-13)
+
+What the first map made with the kit still had to be done by hand for: seeing it in the game itself, naming
+each monster's model for a picture, and telling the walk test where the mod's maps end.
+
+- **A map played in the game** (`play.play`, `play.playOf`, `play.browserDriver`, in `src/play.mjs`;
+  `smak play <url> --map <name> --steps steps.json -o <folder>`): a list of steps (`command`, `say`, `walk`,
+  `turn`, `button`, `hold`, `press`, `click`, `wait`, `shot`) run through a driver, and what happened
+  given back: the pictures in order, each step with its time, the console's lines. The one driver shipped
+  is for an Xash3D build in a browser, through Playwright, which is the caller's and never the kit's
+  (`--playwright <folder>`). What is the game's own is in its profile's `play`: the steps that get a player
+  in after the map has loaded, how a thing is said, how long a load takes. Tried on Master Sword's browser
+  build: it chose the character, walked, turned, spoke to an NPC and was answered. No step places the
+  player: the engine has no command for it. Turns are by time and inexact; loads are waited for by the clock.
+- **A profile says what an entity looks like** (`modelOf(keys)` in a profile; `maps.modelsOf(mod, map)`):
+  with `models`, the pictures draw an entity whose keys name no model as the one its mod gives it.
+  `profiles/mastersword.mjs` reads it from the monster's script (`scriptModel`, `packScripts`): the
+  `setmodel` line, a word given its value with `const` or `setvard`, and the scripts taken in with
+  `#include`; 670 of the game's 875 monster and NPC scripts give a model this way, the rest being bases and
+  the players' side. Not read: `setmodelbody`, and a model chosen while the game runs.
+- **A profile names the ways out of its maps** (`exits`; Master Sword's `msarea_transition`): floor one is
+  reached from is no one-way place, with no `--exit` given each time. A way out is now an entity a player
+  goes to whatever its class: before, one that was no `trigger_` or `msarea_` by name was never reached.
+- **Every picture command takes `--mod`** (`map-view`, `map-views`, `map-plan`, `map-section`,
+  `map-storeys`, `map-openings`; `map-views` also takes `--body`, `--models` and `--model` now): the mod's
+  folders, its classes' boxes and its models, as `map-check` and `map-reach` took its rules and starts.
+
 ## 0.10.0 (2026-10-13)
 
 A map's entities held against the game that will read them. The first draft of the first map made with the

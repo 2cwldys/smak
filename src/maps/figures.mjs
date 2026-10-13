@@ -197,6 +197,8 @@ const numberFrom = (value, otherwise) => (Number.isFinite(Number(value ?? NaN)) 
  *   models      false (unless told): boxes only. true: an entity whose `model` key names a `.mdl` is drawn as
  *               it. `{ name: "models/monsters/boar1.mdl" }`: these too, the name a targetname, a
  *               `scriptfile` or a classname (looked for in that order)
+ *   modelsBy    `{ number: "models/x.mdl" }`: the model of an entity by its number, where nothing above
+ *               names one (what a mod's profile gives, `modelsOf`); only with `models`
  *   folders     the game's folders, the mod's own first (`.../msc`, `.../valve`): where the models are
  *   modelScale  false: a model is drawn at its own size whatever the entity's `scale` says. The engine's own
  *               drawing does not scale a model; a mod's may (Master Sword's does), which is why `scale` is
@@ -215,7 +217,10 @@ const numberFrom = (value, otherwise) => (Number.isFinite(Number(value ?? NaN)) 
  * An entity with neither a body nor a model has no figure. `notes`: sentences on the models not found, and
  * on the keys a model could not follow.
  */
-export function figuresOf(things, { bodies = {}, models = false, folders = [], modelScale = true } = {}) {
+export function figuresOf(
+  things,
+  { bodies = {}, models = false, modelsBy = {}, folders = [], modelScale = true } = {},
+) {
   const figures = new Map();
   const notes = [];
   const missing = new Set();
@@ -227,6 +232,7 @@ export function figuresOf(things, { bodies = {}, models = false, folders = [], m
     let name = null;
     if (models) {
       name = names[thing.targetname] ?? names[thing.script] ?? names[thing.classname] ?? null;
+      name ??= modelsBy?.[thing.number] ?? null;
       if (!name && /\.mdl$/i.test(thing.modelFile ?? "")) name = thing.modelFile;
     }
     const model = name ? modelOf(name, folders) : null;

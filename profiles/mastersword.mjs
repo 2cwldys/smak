@@ -17,7 +17,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { GOLDSRC, definitionsOf, entitiesOfFile } from "../src/maps/index.mjs";
+import { GOLDSRC, definitionsOf, entitiesOfFile, isNamed } from "../src/maps/index.mjs";
 
 /** The mod's folder in a Half-Life folder, its script pack and its FGDs, as the game ships them. */
 const MOD_FOLDER = "msc";
@@ -74,6 +74,99 @@ export function packScriptNames(bytes) {
   return names;
 }
 
+/** Every script of a pack's bytes: a Map from its name (`scriptName`) to its text. */
+export function packScripts(bytes) {
+  const length = bytes.length - PACK.checksum;
+  const plain = Buffer.from(bytes.subarray(0, length));
+  for (let i = length - 1; i >= 0; i--) {
+    const j = (i + 7) % length;
+    const kept = plain[i];
+    plain[i] = plain[j];
+    plain[j] = kept;
+  }
+  for (let at = 0; at < length; at++) plain[at] = (plain[at] - ((at * 4) % 128)) & 0xff;
+  const count = plain.readInt32LE(0);
+  if (!(count > 0 && 4 + count * PACK.entry <= length))
+    throw new Error("the script pack is not one this profile reads (its table of names runs past its end)");
+  const texts = new Map();
+  for (let entry = 0; entry < count; entry++) {
+    const at = 4 + entry * PACK.entry;
+    const end = plain.indexOf(0, at);
+    const name = plain.toString("latin1", at, Math.min(end < 0 ? at + PACK.name : end, at + PACK.name));
+    const from = plain.readUInt32LE(at + PACK.name);
+    const size = plain.readUInt32LE(at + PACK.name + 4);
+    if (from + size <= length) texts.set(scriptName(name), plain.toString("latin1", from, from + size));
+  }
+  return texts;
+}
+
+/** The loose scripts of a folder (and of its folders): a Map from each one's name to its file. */
+function looseScriptFiles(folder, under = "", files = new Map()) {
+  for (const name of existsSync(folder) ? readdirSync(folder) : []) {
+    const path = join(folder, name);
+    if (statSync(path).isDirectory()) looseScriptFiles(path, `${under}${name}/`, files);
+    else if (name.toLowerCase().endsWith(SCRIPT_END)) files.set(scriptName(`${under}${name}`), path);
+  }
+  return files;
+}
+
+// ── the model a script gives its entity ─────────────────────────────────────
+// A monster, an NPC or a chest names no model in the map: its script does, with `setmodel`, by a path under
+// models/ ("setmodel monsters/skeleton.mdl"; the source, shared/script/scriptcmds.cpp, puts "models/" before
+// it). Of the 900 `setmodel` lines of the game's scripts some 650 name the file there and the rest a word
+// the script, or a script it includes, gives a value with `const` or `setvard` (MONSTER_MODEL, NPC_MODEL);
+// a script with no `setmodel` of its own has it from a script it takes in with `#include`
+// (monsters/skeleton_base). "none" is no model. What is NOT read: `setmodelbody` (which of the model's
+// parts are shown) and a model chosen while the game runs, by a parameter or at random.
+const MODELS = "models/";
+/** How deep `#include` is followed: the game's own scripts go four deep. */
+const INCLUDES_DEEP = 6;
+
+/** The words of a script's lines that begin with a command, comments left out. */
+function linesOf(text, command) {
+  const lines = [];
+  for (const line of text.split(/\r?\n/)) {
+    const words = line
+      .replace(/\/\/.*$/, "")
+      .trim()
+      .split(/\s+/);
+    if (words[0]?.toLowerCase() === command && words.length > 1) lines.push(words.slice(1));
+  }
+  return lines;
+}
+
+/**
+ * The model a script gives its entity, as a path from the game's folder ("models/monsters/skeleton.mdl"),
+ * or null where it names none that can be read. `textOf(name)` is a script's text, or undefined.
+ */
+export function scriptModel(script, textOf) {
+  const taken = [];
+  const take = (name, deep) => {
+    const text = textOf(scriptName(name));
+    if (text === undefined || deep > INCLUDES_DEEP || taken.some((each) => each.name === scriptName(name)))
+      return;
+    taken.push({ name: scriptName(name), text });
+    // "#include [server] monsters/wolf_base": the script is the line's last word
+    for (const words of linesOf(text, "#include")) take(words[words.length - 1], deep + 1);
+  };
+  take(script, 0);
+  const valueOfWord = (word) => {
+    for (const { text } of taken)
+      for (const command of ["const", "setvard", "setvar"])
+        for (const [name, value] of linesOf(text, command))
+          if (name === word && value !== undefined) return value.replace(/^"|"$/g, "");
+    return null;
+  };
+  for (const { text } of taken)
+    for (const [word] of linesOf(text, "setmodel")) {
+      const said = word.replace(/^"|"$/g, "");
+      const file = /\.mdl$/i.test(said) ? said : valueOfWord(said);
+      if (file && /\.mdl$/i.test(file)) return `${MODELS}${file.replace(/\\/g, "/").replace(/^\/+/, "")}`;
+      if (said.toLowerCase() === "none") return null;
+    }
+  return null;
+}
+
 /** The scripts of a folder of loose scripts (and of its folders), named as the pack names them. */
 function looseScriptNames(folder, under = "") {
   const names = [];
@@ -113,6 +206,20 @@ export default function masterSword({ game, folders, scripts = [], cache } = {})
   const known = new Set(scripts.flatMap((folder) => looseScriptNames(folder)));
   if (existsSync(pack)) for (const name of packScriptNames(readFileSync(pack))) known.add(name);
   const haveScripts = known.size > 0;
+
+  // the scripts' texts, read when a picture first asks for a model: the loose ones stand over the pack's,
+  // as they do in a pack made from them
+  let texts = null;
+  const models = new Map();
+  const textOf = (name) => {
+    if (!texts) {
+      texts = existsSync(pack) ? packScripts(readFileSync(pack)) : new Map();
+      for (const folder of scripts)
+        for (const [script, file] of looseScriptFiles(folder))
+          texts.set(script, readFileSync(file, "latin1"));
+    }
+    return texts.get(name);
+  };
   const items = new Set(
     [...known].filter((name) => name.startsWith(ITEMS)).map((name) => name.slice(ITEMS.length)),
   );
@@ -162,10 +269,36 @@ export default function masterSword({ game, folders, scripts = [], cache } = {})
     walkers: ["msmonster_*", "ms_npc", "msnpc_*"],
     origin: { starts: "middle", walkers: "feet" },
 
+    // a player leaves a map by an msarea_transition (the source, server/msmapents.cpp, CAreaTransition);
+    // one switched off (`disabled_msarea_transition`) is another class, and no way out
+    exits: ["msarea_transition"],
+
+    // what a monster, an NPC or a chest looks like is in its script (`scriptModel`, above)
+    modelOf: (keys) => {
+      const script = keys.scriptfile ?? keys.defscriptfile;
+      if (!script || !isNamed(TEMPLATES, keys.classname)) return null;
+      if (!models.has(script)) models.set(script, scriptModel(script, textOf));
+      return models.get(script);
+    },
+
     // a classname the game does not have is an entity switched off, and the mappers do it on purpose:
     // the maps have 20 classes written `disabled_<class>`, 5 `disable_<class>` and 5 `<class>_disabled`;
     // and 28 entities in 9 maps are a mapper's note to the next, `remark_<name>`
     off: ["disabled_*", "disable_*", "*_disabled", "remark_*"],
+
+    // playing it (src/play.mjs), as seen in the game on 2026-10-13, in a local browser build with one saved
+    // character and a page of 1024 by 768: a loaded map shows the character cards, and the first card, at
+    // (512, 330), is clicked once to choose it and once more to enter; the game is there some 20 seconds
+    // later. An NPC hears local speech only: `setsay` and then `say <text>` (`say_text` opens the chat line
+    // instead, which then swallows the keys that follow). The orchard map took about 45 seconds to load.
+    // Tried through `smak play` the same day: an NPC answered a `say` 9 to 27 seconds after it (the build
+    // draws in software), so a say wants a long `wait` before its picture
+    play: {
+      enter: [{ click: [512, 330], wait: 1500, shot: "chosen" }, { click: [512, 330], wait: 20000 }], // prettier-ignore
+      say: ["setsay", "say {text}"],
+      loads: 45000,
+      screen: [1024, 768],
+    },
 
     targets: {
       // perishtarget: fired on a monster's last death (the source, server/monsters/msmonsterserver.cpp,
