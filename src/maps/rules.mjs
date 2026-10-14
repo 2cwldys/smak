@@ -49,6 +49,14 @@ const COMPILER_CLASSES = [
 ]; // prettier-ignore
 /** Keys the compilers and the editors read on any entity, which no game's definitions need list. */
 const COMPILER_KEYS = /^(zhlt_|_)|^(light_origin|model_center|angle|mapversion|wad|compiler)$/;
+/**
+ * Brush classes, as Half-Life's FGD writes them, that work as well with no brush: the game's code never asks
+ * for their model. `trigger_counter`: the SDK's dlls/triggers.cpp, CTriggerCounter::Spawn, sets how many
+ * times it is to be fired and its Use and nothing else (no InitTrigger, no SET_MODEL), and Master Sword's
+ * triggers.cpp has the same lines; seen counting in that game as a point entity, 2026-10-13. One without a
+ * brush is not said to have "no shape to be touched": it is never touched.
+ */
+const NEEDS_NO_BRUSH = new Set(["trigger_counter"]);
 /** What a map learned from fewer maps than this says of a class's kind or keys is not held against a map. */
 const LEARNED_LEAST = 8;
 /** A class the maps have in no more maps than this, and no FGD defines, is told as rare. */
@@ -286,7 +294,7 @@ function checkDefined(entities, definitions, mod, gathered) {
         "entities of a point class are made of brushes",
         `${entity.named}: a point entity ${basis}`,
       );
-    if (sure && known.kind === "solid" && !entity.brush)
+    if (sure && known.kind === "solid" && !entity.brush && !NEEDS_NO_BRUSH.has(classname))
       gathered.add(
         "warning",
         "entities of a brush class have no brush, and so no shape to be touched, seen or stood on",

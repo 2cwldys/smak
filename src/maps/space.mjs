@@ -53,6 +53,27 @@ const NEVER_SOLID =
   /^(trigger_|msarea_|mstrig_|func_illusionary$|func_ladder$|func_water$|func_monsterclip$|func_buyzone$|func_bomb_target$|func_friction$|func_mortar_field$|env_)/;
 /** Brush entities that open: taken as open unless told. */
 export const DOORS = /^(func_door|func_door_rotating|momentary_door)$/;
+
+/**
+ * Whether a classname is one of a list of names, each the whole name or with `*` for any letters; and, when
+ * it is, what stood where the first `*` is (the name itself for one with no `*`). Null when it is none.
+ * A mod's way of switching an entity off is such a name: `disabled_*` makes of an `msarea_transition` a
+ * `disabled_msarea_transition`, a class the game does not have, and what stands for the `*` is the class it
+ * would be.
+ */
+export function classUnder(list, classname) {
+  for (const each of list ?? []) {
+    if (typeof each !== "string") continue;
+    if (!each.includes("*")) {
+      if (each === classname) return classname;
+      continue;
+    }
+    const parts = each.split("*").map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&"));
+    const found = new RegExp(`^${parts.join("(.*)")}$`).exec(classname);
+    if (found) return found[1];
+  }
+  return null;
+}
 /** Brush entities a body climbs or swims up through: a ladder, and water that is an entity. */
 const LADDERS = /^func_ladder$/;
 const WATERS = /^func_water$/;
@@ -222,7 +243,7 @@ function lineCrosses(solid, from, to) {
 }
 
 /** The space of brush source. */
-function sourceSpace(map, { doors, open, shut }) {
+function sourceSpace(map, { doors, open, shut, off }) {
   if (!Array.isArray(map?.brushes))
     throw new Error(
       "the map's source is { worldspawn, brushes, entities }: what `writeMap` takes and `readMap` gives",
@@ -249,6 +270,11 @@ function sourceSpace(map, { doors, open, shut }) {
     const min = [0, 1, 2].map((axis) => Math.min(...boxed.map((shape) => shape.min[axis])));
     const max = [0, 1, 2].map((axis) => Math.max(...boxed.map((shape) => shape.max[axis])));
     const named = [number, classname, entity.targetname].filter((name) => name !== undefined);
+    // a class the game does not have is never made: its brushes are not there, whatever they would be
+    if (classUnder(off, classname) !== null) {
+      areas.push({ number, classname, targetname: entity.targetname, min, max, door: false, open: true, off: true }); // prettier-ignore
+      return;
+    }
     const isDoor = DOORS.test(classname);
     const held = named.some((name) => open.includes(name));
     const kept = named.some((name) => shut.includes(name));
@@ -404,7 +430,7 @@ function eitherSide(front, back, strict) {
 }
 
 /** The space of a compiled map. */
-function compiledSpace(bsp, { doors, open, shut }) {
+function compiledSpace(bsp, { doors, open, shut, off }) {
   const { mins, maxs } = worldBounds(bsp);
   const low = mins[2] - 128;
   const high = maxs[2] + 128;
@@ -422,6 +448,11 @@ function compiledSpace(bsp, { doors, open, shut }) {
     const min = bsp.models[model].mins.map((value, axis) => value + origin[axis]);
     const max = bsp.models[model].maxs.map((value, axis) => value + origin[axis]);
     const named = [number, classname, targetname].filter((name) => name !== undefined);
+    // a class the game does not have is never made: its brushes are not there, whatever they would be
+    if (classUnder(off, classname) !== null) {
+      areas.push({ number, classname, targetname, min, max, door: false, open: true, off: true });
+      return;
+    }
     const isDoor = DOORS.test(classname);
     const held = named.some((name) => open.includes(name));
     const kept = named.some((name) => shut.includes(name));
@@ -558,10 +589,13 @@ const listOf = (value) => (value === undefined ? [] : Array.isArray(value) ? val
  *   open      more brush entities to take as not there, by number, classname or targetname (a wall that
  *             breaks, a gate a script lifts)
  *   shut      doors to take as closed all the same, named the same way (a door that needs a key)
+ *   off       classnames that are an entity switched off, each a name or with `*` for any letters (a mod's
+ *             `disabled_*`): the engine makes no entity of a class the game does not have, so a brush
+ *             entity of such a class stops nothing. Its box is still among `areas`, with `off: true`
  *
  * It returns
  *   { compiled, min, max, doors: [{ number, classname, targetname, min, max, open }],
- *     areas: [{ number, classname, targetname, min, max, door, open }]   every brush entity's box,
+ *     areas: [{ number, classname, targetname, min, max, door, open, off }]   every brush entity's box,
  *     blocked(x, y, body)   the stretches of height `[[from, to, slant]]`, upwards, at which the body's
  *                           FEET cannot be at (x, y): inside the floor, and so near under a ceiling that its
  *                           head is in it. Between two stretches it fits; it stands on the top of one, and
@@ -575,9 +609,9 @@ const listOf = (value) => (value === undefined ? [] : Array.isArray(value) ? val
  * (`clip` too, but for the point; liquids and the compilers' marks do not), and every brush entity but
  * triggers, ladders, water, `func_illusionary` and the like, and but the doors that are open.
  */
-export function spaceOf(map, { doors = "open", open, shut } = {}) {
+export function spaceOf(map, { doors = "open", open, shut, off } = {}) {
   if (doors !== "open" && doors !== "closed") throw new Error(`doors: "open" or "closed", not ${doors}`);
-  const options = { doors, open: listOf(open), shut: listOf(shut) };
+  const options = { doors, open: listOf(open), shut: listOf(shut), off: listOf(off) };
   return isCompiled(map) ? compiledSpace(map, options) : sourceSpace(map, options);
 }
 

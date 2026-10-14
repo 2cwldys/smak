@@ -675,6 +675,13 @@ export function addMesh(src, where) {
  * Returns a copy of the file with one more submodel in a bodypart, after the ones it has, holding one
  * empty mesh: replaceMesh fills it. Its number is the old count. The bodypart's table of submodels is
  * written again at the end of the file; the old one stays where it was, unused.
+ * The bodyparts after it have their `base` raised with the count. The engine picks a bodypart's submodel
+ * from a body number as floor(body / base) % count (R_StudioSetupModel), and a compiler writes for `base`
+ * the product of the counts of the bodyparts before it: with a base left at the old count, the new
+ * submodel's own number would also turn the next bodypart's. So a bodypart that is not the last may be
+ * added to; what changes is the body number of every pairing that does not show the first submodel of
+ * each later bodypart (it is counted in the new bases). A later base that is not a multiple of the old
+ * count was not written by that rule: it is left as it is, and `check` tells of it.
  */
 export function addModel(src, bodypart, name) {
   const file = growing(Buffer.from(src));
@@ -695,8 +702,29 @@ export function addModel(src, bodypart, name) {
   table.writeInt32LE(at + end, mesh + MESH.triindex);
   file.head.writeInt32LE(count + 1, entry + BODYPART.nummodels);
   file.head.writeInt32LE(at, entry + BODYPART.modelindex);
+  // the bases of the bodyparts after it: each held the old count as a factor, and now holds the new one
+  for (let later = bodypart + 1; later < int32(src, HDR.numbodyparts); later++) {
+    const baseAt = int32(src, HDR.bodypartindex) + later * BODYPART.sizeof + BODYPART.base;
+    const base = int32(src, baseAt);
+    if (count > 0 && base > 0 && base % count === 0)
+      file.head.writeInt32LE((base / count) * (count + 1), baseAt);
+  }
   return engineLayout(file.whole());
 }
+
+/**
+ * The `base` a compiler writes for each bodypart of a file: 1 for the first, and for each one after it the
+ * product of the counts of submodels of those before it. With those bases every pairing of submodels has a
+ * body number of its own: the sum, over the bodyparts, of a submodel's number times its bodypart's base.
+ */
+export const basesByRule = (mdl) => {
+  let base = 1;
+  return readMdl(mdl).bodyparts.map((bodypart) => {
+    const own = base;
+    base *= bodypart.models.length;
+    return own;
+  });
+};
 
 /**
  * Returns a copy of the file with one mesh left without triangles (its normals stay, so the others keep

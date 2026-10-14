@@ -10,11 +10,13 @@ export const HANDS = /hands|arms|body/i;
 /**
  * One submodel's weapon, measured: the meshes `pick` chooses, the bone that carries most
  * of them, and their triangles in that bone's space. `body` is the number the item's
- * script gives; `what` names the file in the error.
+ * script gives; `what` names the file in the error. `part`: the bodypart whose submodel is meant (the
+ * first unless told).
  */
-export function measure(src, body, pick, what = "") {
+export function measure(src, body, pick, what = "", part = 0) {
   const info = readMdl(src);
-  const bodypart = info.bodyparts[0];
+  const bodypart = info.bodyparts[part];
+  if (!bodypart) throw new Error(`${what}: no bodypart ${part}`);
   const j = Math.floor(body / bodypart.base) % bodypart.models.length;
   const model = bodypart.models[j];
   const meshes = model.meshes.map((mesh, k) => ({ mesh, k })).filter(({ mesh }) => pick(mesh));

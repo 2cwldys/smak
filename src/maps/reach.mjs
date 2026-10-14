@@ -34,7 +34,7 @@
 // finding a way is a strong hint and no proof: an opening narrower than 32 and a cell together can fall
 // between two places of the grid when it is off the grid. A jump across a gap is tried along sixteen ways
 // only, and as one arc with nothing in its way. Nothing here was measured against the game: it is geometry.
-import { BODIES, START_CLASSES, spaceOf, restOf, bodyFor, pointOf, isCompiled } from "./space.mjs";
+import { BODIES, START_CLASSES, spaceOf, restOf, bodyFor, pointOf, isCompiled, classUnder } from "./space.mjs";
 import { valueOf, originOf, brushModelOf, asObject } from "./entities.mjs";
 import { STEP_HEIGHT } from "./source.mjs";
 import { withMod } from "./mod.mjs";
@@ -146,6 +146,15 @@ const NOT_GONE_TO =
   /^(light|info_texlights$|info_null$|info_target$|info_landmark$|infodecal$|info_node|info_intermission$|env_|ambient_|multi_|multisource$|path_|trigger_|mstrig_|ms_npcscript$|ms_player_spec$|game_|target_|scripted_|aiscripted_|momentary_|disabled_|cycler_sprite$)/;
 /** Brush entities a player goes to: what is walked into, opened, pressed or climbed. */
 const GONE_TO = /^(trigger_|msarea_|func_door|momentary_door$|func_button$|func_rot_button$|func_ladder$)/;
+/**
+ * The triggers that are fired by name and never touched, whether a map makes them of a brush or not: nobody
+ * has to get to one. The Half-Life SDK's dlls/triggers.cpp: a `trigger_counter`'s Spawn sets a Use and no
+ * Touch, and never asks for its model (so one with no brush counts as well as one with); `trigger_relay`,
+ * `trigger_auto`, `trigger_changetarget` and `trigger_camera` are point entities there; a
+ * `trigger_transition` is a volume the engine asks about, solid to nothing.
+ */
+const FIRED_NOT_TOUCHED =
+  /^(trigger_counter|trigger_relay|trigger_auto|trigger_changetarget|trigger_camera|trigger_transition)$/;
 /** A brush entity that is touched by walking into it, not by reaching for it. */
 const WALKED_INTO = /^(trigger_|msarea_)/;
 /** The trigger that takes a player elsewhere in the map, to the entity its `target` names. */
@@ -781,6 +790,18 @@ const OTHER_WAYS = [
  *             normal has a z under 0.7 is slid down and never walked up, as the engine has it
  *   exits     the ways out of the map, by number, classname or targetname, besides `EXIT_CLASSES`: floor a
  *             player reaches one from is no one-way place
+ *   markers   more entities a player goes to, by number, classname or targetname, which their class alone
+ *             would leave out: an `info_target` that marks where a script puts a chest
+ *   wiring    entities nobody has to get to, named the same way (a classname may have `*` for any letters):
+ *             what is fired by name and does its work wherever it stands (a line of text, a counter, a
+ *             spawn area's own origin). They are left out whatever else they are. The lights, the sounds,
+ *             the `env_` and the triggers that are only fired are left out without being named
+ *   off       classnames that are an entity switched off (a mod's `disabled_*`: a class the game does not
+ *             have, so the engine makes nothing of it). Such a brush entity is no wall (`spaceOf`). One
+ *             whose class would be a way out (`disabled_msarea_transition`, with `exits` naming
+ *             `msarea_transition`) is still looked for, as the way on that is not opened yet: it is among
+ *             `entities` with `off: true`, a fact says whether it is reached, and it is neither a way
+ *             out nor, unreached, a warning
  *   doors     "open" (unless told) or "closed"; `open` and `shut`: brush entities taken as not there, and
  *             doors taken as closed, by number, classname or targetname (`spaceOf`)
  *   bodies    `{ name: "large" | "standing" | "crouching" | { half, height, feet } }`: the box a thing moves
@@ -794,7 +815,7 @@ const OTHER_WAYS = [
  * It returns
  *   { warnings, facts            sentences: what is wrong, and what was found
  *     starts                     [{ number, classname, origin, floor }]: where the walk began
- *     entities                   [{ number, classname, targetname, origin, reached, how, far, why }] for
+ *     entities                   [{ number, classname, targetname, origin, reached, how, far, why, off }] for
  *                                every entity a player goes to. `how`: "walk", or what else it takes:
  *                                "jump", "crouch-jump", "crouch", "air" (open air leads to it, no way on
  *                                foot), "none" (walled off); `far`: the walk to it in units. With `jump`,
@@ -815,7 +836,10 @@ const OTHER_WAYS = [
  *     doors                      the doors, each with whether it was taken as open
  *     cell, area                 the grid walked on, and the floor walked in square units
  *     walked(x, y, under)        the floor a player walks at a place: the highest at or under the height
- *                                `under` (any, without it); null where none is walked
+ *                                `under` (any, without it); null where none is walked. It is a HEIGHT, and a
+ *                                floor at 0 is 0: ask `=== null`, or ask `on`
+ *     on(x, y, under)            the same place as yes and no: { floor (the height a player stands at
+ *                                there, or null), stands, walked, jumped, trapped }, each true or false
  *     stands(x, y, under)        the same for where a player would fit at all, walked or not
  *     jumped(x, y, under)        the same for floor that only a jump reaches (with `jump`)
  *     trapped(x, y, under) }     the same for the floor of the one-way places
@@ -844,6 +868,9 @@ export function reachOf(map, options = {}) {
     gravity = GRAVITY,
     slopes = true,
     exits = [],
+    markers = [],
+    wiring = [],
+    off = [],
   } = options;
   const jump = options.jump === true ? JUMP_HEIGHT : options.jump || 0;
   if (!(cell >= 1)) throw new Error(`cell: the grid in units, 1 at the least, not ${cell}`);
@@ -861,7 +888,7 @@ export function reachOf(map, options = {}) {
     const launch = Math.sqrt(2 * JUMP_GRAVITY * (height - drawnUp));
     return { up: (launch * launch) / (2 * gravity) + drawnUp, leap: { launch, speed, gravity } };
   };
-  const space = spaceOf(map, { doors, open, shut });
+  const space = spaceOf(map, { doors, open, shut, off });
   const grid = gridOf(space, cell);
   const things = thingsOf(map);
   const warnings = [];
@@ -981,20 +1008,35 @@ export function reachOf(map, options = {}) {
   const exitNames = [...EXIT_CLASSES, ...(Array.isArray(exits) ? exits : [exits])];
   const isExit = (thing) =>
     [thing.number, thing.classname, thing.targetname].some((name) => exitNames.includes(name));
+  /** Whether a thing is one of a list of numbers, classnames (`*` for any letters) and targetnames. */
+  const oneOf = (list, thing) =>
+    [list].flat().some(
+      (each) =>
+        each === thing.number ||
+        (typeof each === "string" && (each === thing.targetname || classUnder([each], thing.classname) !== null)), // prettier-ignore
+    );
+  const offNames = [off].flat();
   const entities = [];
   for (const thing of things) {
     if (thing.number === 0 && isCompiled(map)) continue;
+    if (oneOf(wiring, thing)) continue;
     const area = thing.brush ? areaOf.get(thing.number) : null;
-    if (
-      thing.brush
-        ? !area || !(GONE_TO.test(thing.classname) || isExit(thing))
-        : !thing.origin || NOT_GONE_TO.test(thing.classname)
-    )
-      continue;
-    const spot = begun.length ? spotFor(space, grid, layer, flood, thing, touch, area) : -1;
+    // switched off: the class it would be. Of those, only what would be a way out is looked for
+    const under = classUnder(offNames, thing.classname);
+    const marked = oneOf(markers, thing);
+    const goneTo =
+      under !== null
+        ? thing.brush && exitNames.includes(under)
+        : thing.brush
+          ? (GONE_TO.test(thing.classname) && !FIRED_NOT_TOUCHED.test(thing.classname)) || isExit(thing)
+          : !NOT_GONE_TO.test(thing.classname);
+    if ((thing.brush ? !area : !thing.origin) || !(goneTo || marked)) continue;
+    // it is got to as its own class is: a trigger by walking into it
+    const sought = under === null ? thing : { ...thing, classname: under };
+    const spot = begun.length ? spotFor(space, grid, layer, flood, sought, touch, area) : -1;
     const middle = area ? area.min.map((value, axis) => (value + area.max[axis]) / 2) : thing.origin;
     const byJump =
-      spot >= 0 && flood !== onFoot && spotFor(space, grid, layer, onFoot, thing, touch, area) < 0;
+      spot >= 0 && flood !== onFoot && spotFor(space, grid, layer, onFoot, sought, touch, area) < 0;
     entities.push({
       number: thing.number,
       classname: thing.classname,
@@ -1005,8 +1047,9 @@ export function reachOf(map, options = {}) {
       how: spot < 0 ? "none" : byJump ? "jump" : "walk",
       far: spot >= 0 ? Math.round(flood.far[spot]) : null,
       why: null,
+      off: under !== null,
       spot,
-      thing,
+      thing: sought,
       area,
     });
   }
@@ -1049,15 +1092,21 @@ export function reachOf(map, options = {}) {
       ? "it is inside something solid"
       : `no opening leads to it${space.doors.some((door) => !door.open) ? " (with the doors that are taken as closed)" : ""}`;
   }
-  const unreached = entities.filter((entity) => !entity.reached);
+  // what is switched off is told apart: it is looked for, and its not being reached is no fault yet
+  const switchedOff = entities.filter((entity) => entity.off);
+  const unreached = entities.filter((entity) => !entity.reached && !entity.off);
   const onlyByJump = entities.filter((entity) => entity.reached && entity.how === "jump");
   const afoot = jump ? "on foot or by a jump" : "on foot";
+  const live = entities.length - switchedOff.length;
   if (unreached.length)
     warnings.push(
-      `${unreached.length} of the ${entities.length} entities a player goes to are not reached ${afoot} from the places to start: ${some(unreached.map((entity) => `${named(entity)} at ${place(entity.origin)}: ${entity.why}`))}`,
+      `${unreached.length} of the ${live} entities a player goes to are not reached ${afoot} from the places to start: ${some(unreached.map((entity) => `${named(entity)} at ${place(entity.origin)}: ${entity.why}`))}`,
     );
-  else if (entities.length && begun.length)
-    facts.push(`all ${entities.length} entities a player goes to are reached ${afoot}`);
+  else if (live && begun.length) facts.push(`all ${live} entities a player goes to are reached ${afoot}`);
+  if (switchedOff.length && begun.length)
+    facts.push(
+      `${switchedOff.length} ways out are switched off (a class the game does not have: no wall, and no way out until it is given its class): ${some(switchedOff.map((entity) => `${named(entity)} ${entity.reached ? "is reached" : `is NOT reached (${entity.why})`}`))}`,
+    );
 
   // ── what only a jump reaches ──
   const leaps = flood === onFoot ? [] : leapsOf(grid, layer, flood, onFoot);
@@ -1227,6 +1276,9 @@ export function reachOf(map, options = {}) {
         found = ofLayer.floor[spot];
     return found;
   };
+  const isWalked = (spot) => flood.far[spot] !== undefined;
+  const isJumped = (spot) => flood.far[spot] !== undefined && onFoot.far[spot] === undefined;
+  const isTrapped = (spot) => Boolean(trap.inside?.[spot]);
   return {
     warnings,
     facts,
@@ -1243,11 +1295,21 @@ export function reachOf(map, options = {}) {
     doors: space.doors,
     cell: grid.cell,
     area,
-    walked: (x, y, under) => floorAt(layer, x, y, under, (spot) => flood.far[spot] !== undefined),
+    walked: (x, y, under) => floorAt(layer, x, y, under, isWalked),
     stands: (x, y, under) => floorAt(layer, x, y, under, null),
-    jumped: (x, y, under) =>
-      floorAt(layer, x, y, under, (spot) => flood.far[spot] !== undefined && onFoot.far[spot] === undefined),
-    trapped: (x, y, under) => floorAt(layer, x, y, under, (spot) => Boolean(trap.inside?.[spot])),
+    jumped: (x, y, under) => floorAt(layer, x, y, under, isJumped),
+    trapped: (x, y, under) => floorAt(layer, x, y, under, isTrapped),
+    on: (x, y, under) => {
+      const stood = floorAt(layer, x, y, under, null);
+      const walkedAt = floorAt(layer, x, y, under, isWalked);
+      return {
+        floor: walkedAt ?? stood,
+        stands: stood !== null,
+        walked: walkedAt !== null,
+        jumped: floorAt(layer, x, y, under, isJumped) !== null,
+        trapped: floorAt(layer, x, y, under, isTrapped) !== null,
+      };
+    },
   };
 }
 

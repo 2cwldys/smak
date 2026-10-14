@@ -30,12 +30,17 @@
 // that draws it and, in the finer originals, each limb from bones that bend it. Every corner of the new
 // bow takes the bone of the original's nearest corner (as src/build.mjs does with `rig: "nearest"`), so it
 // is drawn and bends as the original did.
+// The corners of the string's middle, where the fingers draw it, are also marked `part: 1` (every other
+// corner is part 0): whoever places the bow as a NEW thing, with no original of its own to go by, sends
+// them to the bone that draws the string with `bones: [, "its name"]` (`addFitted`, src/items.mjs).
 //
 // Words used below. A "zone" is a rectangle of the texture; `u`, `v` are pixels inside one.
 import { sheet, shape, cylinderLight, times } from "../src/workshop.mjs";
 
 const WIDTH = 1024;
 const HEIGHT = 256;
+/** The `part` of the corners of the string's middle. */
+const STRING_MIDDLE = 1;
 
 export function bow(spec) {
   const canvas = sheet(WIDTH, HEIGHT);
@@ -102,9 +107,9 @@ export function bow(spec) {
   const yMid = string.mid ?? yEnd;
   /**
    * One of the four corners (0..3) of the string's square section at x, y. Its place in the texture is
-   * not known yet: each face gives its corners theirs, below.
+   * not known yet: each face gives its corners theirs, below. `part`: 1 for the string's middle.
    */
-  const corner = (x, y, cornerIndex) =>
+  const corner = (x, y, cornerIndex, part = 0) =>
     mesh.V(
       [
         x + (cornerIndex === 0 || cornerIndex === 3 ? -radius : radius) * 0.3,
@@ -112,13 +117,14 @@ export function bow(spec) {
         cornerIndex === 1 || cornerIndex === 2 ? radius : -radius,
       ],
       [0, 0],
+      part,
     );
   for (const side of [-1, 1]) {
     const xEnd = side * string.x;
     // how many pixels of the string's strip this half takes: 40 a unit, as far as the strip goes
     const run = Math.min(zones.string.w, Math.hypot(xEnd, yEnd - yMid) * 40);
     const endCorners = [0, 1, 2, 3].map((cornerIndex) => corner(xEnd, yEnd, cornerIndex));
-    const midCorners = [0, 1, 2, 3].map((cornerIndex) => corner(0, yMid, cornerIndex));
+    const midCorners = [0, 1, 2, 3].map((cornerIndex) => corner(0, yMid, cornerIndex, STRING_MIDDLE));
     // its four faces; every other one takes the strip upside down, so that neighbours meet on a row
     for (let cornerIndex = 0; cornerIndex < 4; cornerIndex++) {
       const nextCorner = (cornerIndex + 1) % 4;

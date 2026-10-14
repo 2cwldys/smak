@@ -3,6 +3,69 @@
 The newest first. A version that changes what a model's file looks like, or that a model made before needs
 mending for, says so under **Mind**.
 
+## 0.13.0 (2026-10-13)
+
+A weapon in one recipe, a game that is heard, and the faults agents met building two maps. Three agents
+making a second map and its first weapon for Master Sword Classic spent over half their time testing in the
+game by reading pictures, each run paying over a minute of loading; this version is what they asked for.
+
+- **`smak play` hears the game, and a run passes or fails by what it says.** What the server tells the player
+  (HUD lines, boxes, chat, a script's console lines) is read from the engine's own user messages, with nothing
+  of the game changed, and written with its time to log.txt and log.jsonl. `until` on any step waits for a
+  line instead of the clock (`within`, `every`); `expect` and `expectNot` (steps, and `--expect`,
+  `--expect-not`) hold a run to lines: it ends with 1 when one fails, and says which.
+- **A session that stays up**: `smak play <url> --serve`, then `smak play <session> --attach --map ...` as often
+  as wanted (`--stay`, `--close`); several `--map`/`--steps` in one command; a `map` step; `--put place=file`
+  writes a rebuilt map or pack into the running engine. Measured: in the game 6 s after a run begins in a
+  session and 18 s from a cold start, where 0.11's fixed waits took 79.
+- **New steps**: `mouse` (a button held), `mouseDown`/`mouseUp` (held across steps), `look` and `face` (the
+  view set in degrees), an exact `turn`, `where` (the player's place and view, in the log), `goto` (by the
+  profile's `play.goto`, read back). A contact sheet of each run's pictures (`sheet.png`), and `result.json`.
+- **A profile's `play`** gains `loaded` (the line a loaded map prints), `goto`, `messages` (which user
+  messages to read, and how); its `enter` steps may wait by `until`. Master Sword's profile enters with one
+  click repeated until the game answers, reads HUDInfoMsg, TextMsg, SayText, HP and MP, and says a thing with
+  `cmd say_text 1` (its old `setsay` moved the way of speaking on by one each time).
+- **A new item in a game's own models** (`src/items.mjs`, docs/ITEMS.md). `addFitted`: a piece as a new
+  submodel after the ones a bodypart has, laid on one that is there (by its outline, as a shield on its back,
+  or as given), on the bone asked for, with `bones` for the corners a piece marks by `part`, `rig: "nearest"`
+  for what bends, `keep` for meshes taken along (a bow's nocked arrow). `addItem`: one piece in every file
+  and place of a family (data: files, bodyparts, bones, the thing each is laid on, how a script's numbers
+  follow), returning the files and the constants (`itemConstants`). `keptWhole`: that what a file had is where
+  it was. `itemSheet`: each new submodel beside the one it was laid on. `smak item`. A file that holds the
+  item already is kept when it is the same thing (`existing: "same"`) and refused when it is another.
+- **A bodypart that is not the last may be added to**: `addModel` (and so `putBody`, `copyBody`) raises the
+  `base` of the bodyparts after it; `check` warns of a base that is not the product of the counts before it
+  (`basesByRule`) and refuses a base of 0.
+- **An icon's tile** (`src/icon.mjs`): `iconPicture` draws one body on black as it stands or with its long
+  axis on the diagonal, heavy end up; `reducedPicture`. `render` takes `parts`.
+- **`check` and the hundred textures**: the 100 is the compiler's (studiomdl's MAXSTUDIOSKINS), not an
+  engine's. For goldsrc the warning says so; for xash it is a fact above 256.
+- **The walk test is told what a class is**: `markers`, `wiring`, `off` beside `exits`, as options and as a
+  profile's fields. A class the game does not have is no wall; a way out so written is looked for and told
+  apart. Triggers that are only fired are not gone to. `reach.on(x, y)` answers yes or no where `walked`
+  gives a height that may be 0.
+- **A `trigger_counter` with no brush** is no longer said to have no shape.
+- **Scripts placed against the game's** (`maps.scriptsPlaced`, `smak scripts`, `map-check --scripts`): each
+  of ours replaces a game script, is new and named, or is new and named by nothing (a warning). The rules
+  are a profile's `scriptPack`.
+- **A compile that is seen and stopped**: `progress`, `--timeout`, "stopped" in the summary, and the portals
+  hlbsp left (`result.portals`), with a warning before hlvis when they foretell minutes. A draft says in
+  `result.facts` that its light has no bounces.
+- **The light on the floor** (`maps.lightReport`, `smak map-light`): the mean of the floors' lightmap samples,
+  by room or as dark stretches. The views say what their light is.
+- `bowkit` marks the middle of its string `part: 1`.
+- The Master Sword profile: `ITEM_FAMILIES` (blunt1h, shield, bow, bow_bending) as `items`; `wiring`;
+  `scriptPack`; `play`.
+- New: src/items.mjs, src/icon.mjs, src/maps/scripts.mjs, src/maps/light.mjs, src/maps/compile-run.mjs,
+  src/play-browser.mjs, src/play-session.mjs, src/play-sheet.mjs, docs/ITEMS.md, docs/MAPS-CHECKS.md,
+  docs/PLAY.md, tests 31 to 33 and 40.
+
+**Mind**: a body number that shows another than the first submodel of a LATER bodypart changes when a
+submodel is added before it (the bases grow). A brush `trigger_counter` is no longer among a walk's entities.
+`compileMap`'s result has `facts` and `portals`. The bending bow family creases where two bones meet and has
+not been in a game; the rigid one is the sound one. Reading the game's text and setting the view find the
+engine's tables in memory: tried against one Xash3D FWGS browser build only.
+
 ## 0.12.0 (2026-10-13)
 
 A monster made from nothing. Until now the kit made things that are carried, worn or stood somewhere; the

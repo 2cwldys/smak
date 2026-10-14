@@ -17,12 +17,16 @@ import {
   attachments,
   boneControllers,
   boneMatrices,
+  basesByRule,
 } from "./mdl.mjs";
 import { sub, dot, cross } from "./vec.mjs";
 import { FRONT } from "./mesh.mjs";
 import { isEngineLayout } from "./layout.mjs";
 
-/** What each engine holds. `verts`: points and normals of one submodel, and the corners it draws. */
+/**
+ * What each engine holds. `verts`: points and normals of one submodel, and the corners it draws.
+ * `textures` is no limit of an engine's: see TEXTURES_READ.
+ */
 export const LIMITS = {
   goldsrc: {
     verts: 2048,
@@ -63,6 +67,27 @@ const CHROME_SIZE = 64;
 // submodel.
 const COMMAND_COUNT = 2;
 const CORNER = { vertex: 0, normal: 2, sizeof: 8 };
+
+/**
+ * How many textures a model may have, as far as it can be read (2026-10-13). The 100 is MAXSTUDIOSKINS of
+ * the SDK's studio.h ("total textures"), and what uses it is the compiler: studiomdl keeps its textures in a
+ * table of that size and stops at one more. Nothing that READS a model was found to count them:
+ *   Xash3D FWGS (its source, engine/common/mod_studio.c and ref/gl/gl_studio.c): Mod_LoadStudioModel and
+ *     R_StudioLoadTexture walk `numtextures` as the file gives it; its studio.h has MAXSTUDIOSKINS 256 and
+ *     no line of the engine uses the name. What ends is the renderer's own table of every texture of the
+ *     game, MAX_TEXTURES: 8192 (1024 in the software renderer built for little memory), shared by the map,
+ *     the sprites and every model loaded
+ *   a dedicated server (ReHLDS, Mod_LoadStudioModel, from memory of it): copies the textures in the table's
+ *     order, by the same count, into memory it asks for by the file's size
+ *   GoldSrc's own client is closed: that it has no table of 100 is NOT read from its source. A mesh's
+ *     `skinref` and the skin table are 16 bits, which is no limit in practice
+ * Of the 682 models one mod ships none has more than 100, as files written by that compiler would not.
+ */
+const TEXTURES_READ = {
+  goldsrc:
+    "that is the compiler's limit (studiomdl's MAXSTUDIOSKINS), not one found in an engine: Xash and a dedicated server read as many as the file has, and GoldSrc's own client, whose source is closed, is not known to count them. A model made here never passes through that compiler; try it in the game on Steam's engine before it is relied on",
+  xash: "Xash's studio.h names 256 (MAXSTUDIOSKINS) and nothing in the engine uses it: the textures are loaded as many as the file has, into the renderer's table of every texture of the game (8192; 1024 in the software renderer built for little memory)",
+};
 
 /** Near a limit: this share of it. */
 const NEAR_LIMIT = 0.75;
@@ -287,6 +312,38 @@ function checkParts(src, seqs, names, drawn, { errors, warnings, facts }) {
 }
 
 /**
+ * Each bodypart's `base`: what a body number is divided by to pick its submodel. The engine's renderer
+ * (R_StudioSetupModel; Xash's ref/gl/gl_studio.c has the same two lines) takes
+ *   index = body / bodypart->base;   index = index % bodypart->nummodels;
+ * and a compiler writes for `base` the product of the counts of the bodyparts before (`basesByRule`), so
+ * that every pairing of submodels has one number. A base of 0 is a division by nothing. Another base than
+ * the rule's still draws, and some submodel of each bodypart: but the body numbers no longer mean what the
+ * counts say (a submodel added to an earlier bodypart also turns this one, or cannot be shown with every
+ * one of this one's), so it is told, and plainly when this bodypart has one submodel only and so nothing
+ * to turn.
+ */
+function checkBases(src, info, { errors, warnings }) {
+  const rule = basesByRule(src);
+  info.bodyparts.forEach((bodypart, i) => {
+    if (bodypart.base < 1)
+      errors.push(
+        `the bodypart ${bodypart.name} has base ${bodypart.base}: the engine divides the body number by it`,
+      );
+    else if (bodypart.base !== rule[i])
+      warnings.push(
+        `the bodypart ${bodypart.name} has base ${bodypart.base}, and the bodyparts before it have ${rule[i]} pairings of submodels (${info.bodyparts
+          .slice(0, i)
+          .map((before) => before.models.length)
+          .join(" x ")}): the engine picks its submodel as floor(body / base) % ${bodypart.models.length}, so its base is to be ${rule[i]}${
+          bodypart.models.length === 1
+            ? "; it has one submodel, so every body number still shows it, and the fault waits for its second"
+            : ": as it is, body numbers show other submodels of it than their counts say"
+        } (a submodel was added to an earlier bodypart by a tool that left this number; addModel raises it)`,
+      );
+  });
+}
+
+/**
  * Everything `check` looks at once the file's tables have been read (`info`), written into `report`. It
  * throws a RangeError when something in the file points past its end.
  */
@@ -308,10 +365,11 @@ function inspect(src, engine, info, report) {
   bones(src).forEach((bone, i) => {
     if (bone.parent >= i) errors.push(`the bone ${bone.name} hangs from a bone that comes after it`);
   });
-  // the compiler's own limits, which models in use are known to pass: told, not refused
+  // the compiler's own limits, which models in use are known to pass: told, not refused. For Xash, whose
+  // source says there is no such limit, it is a fact and no warning
   if (info.textures.length > limits.textures)
-    warnings.push(
-      `${info.textures.length} textures: more than the ${limits.textures} ${engine === "goldsrc" ? "GoldSrc's compiler" : "Xash"} allows for; try it in the game`,
+    (engine === "goldsrc" ? warnings : facts).push(
+      `${info.textures.length} textures, more than ${limits.textures}: ${TEXTURES_READ[engine]}`,
     );
   if (info.bodyparts.length > limits.bodyparts)
     errors.push(`${info.bodyparts.length} bodyparts: the engine holds ${limits.bodyparts}`);
@@ -330,6 +388,8 @@ function inspect(src, engine, info, report) {
       "its textures are kept in another file (the same name with a t before .mdl): put them inside with withTextures before working on it",
     );
   checkTextures(src, info, engine, report);
+
+  checkBases(src, info, report);
 
   // the submodels, in the order drawnCorners lists them
   const drawn = drawnCorners(src);

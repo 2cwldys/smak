@@ -378,7 +378,7 @@ a `shot` (a picture, after the wait):
 | `{ "command": "noclip" }` | A console command, or a list of them |
 | `{ "say": "hail" }` | The words said as the mod's profile says a thing is said |
 | `{ "walk": 3000 }` | Forward for 3 seconds; `"to": "back"`, `"left"` or `"right"` |
-| `{ "turn": 90 }` | A quarter turn to the left (under 0: to the right). By time, and only about right |
+| `{ "turn": 90 }` | A quarter turn to the left (under 0: to the right) |
 | `{ "button": "jump", "ms": 200 }` | One of the game's buttons held: `jump`, `duck`, `use`, `attack`, `moveup`... |
 | `{ "hold": "w", "ms": 2000 }`, `{ "press": "Enter" }` | A key of the keyboard held, or pressed once |
 | `{ "click": [512, 330] }` | A click at that place of the page, in pixels |
@@ -390,20 +390,15 @@ Two are taken unasked: `loaded`, when the map has loaded, and `entered`, after t
 that never got into the game shows in those two at once. From a script it is `play.play({ driver, map, steps,
 out, mod })` with `play.browserDriver({ url, playwright })`, which resolves to `{ pictures, steps, log }`.
 
+- **Since 0.13 this section is the short of it: `docs/PLAY.md` is the whole.** The game's text is heard and
+  written to `log.txt`; a step waits for a line (`until`) and a run is held to lines (`expect`, `expectNot`);
+  `turn`, `face` and `look` are exact; `where` reads the player's place and `goto` puts him at one (by the
+  profile's `play.goto`); `--serve` and `--attach` keep the game up between runs.
 - **The game's own part is in the profile**, as its `play` field: `enter` (the steps that get through the
   menu once the map has loaded), `say` (the console commands that say a thing, with `{text}` for the words),
-  `loads` (milliseconds a map is given to load) and `screen` (the page's size the clicks were measured on).
-  Half-Life's has no menu and says with `say`. Master Sword's clicks the character's card twice and says with
-  `setsay` and then `say`, since its NPCs hear local speech only: `profiles/mastersword.mjs`.
-- **Waits are fixed times**, not events: nothing tells the kit that a map has finished loading. When
-  `00_loaded.png` still shows the loading screen, give more with `--loads`.
-- **A turn is not exact.** No command sets where the player looks; `turn` holds the game's `+left` for the
-  time `cl_yawspeed` (210 degrees a second) takes, and is out by a frame's worth or more. Take a picture
-  after a turn and judge from it.
-- **There is no "go to x, y, z".** The engine has no such command (no `setpos`). To see a far place, walk
-  there, or `{ "command": ["sv_cheats 1", "noclip"] }` and fly: `walk` then goes where the player looks.
-- **It sees; it does not measure.** Nothing reads the player's place or what an NPC answered: you look at the
-  pictures and read `log.txt`. Say to the person what you saw and what you did not try.
+  `loaded`, `goto`, `messages` and `screen` (the page's size the clicks were measured on):
+  `profiles/mastersword.mjs`.
+- Say to the person what the run's lines proved, what you saw in its pictures, and what you did not try.
 
 ## The limits of this way of making maps
 

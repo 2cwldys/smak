@@ -38,6 +38,10 @@ const areas = [
   "27-play", // the play driver: steps made actions, a map played through a fake driver, `smak play`'s refusals
   "29-monster-parts", // a monster's parts: hit boxes, attachments, controllers, an animation's travel and box, the floor's line
   "30-animate", // animations written as poses: turns in the model's axes, a leg bent to its foot, keys, the walk's measures
+  "31-items", // a submodel added before the last bodypart and its bases, a piece laid on one that is there, an item's family, `smak item`
+  "32-map-faults", // a walked floor at 0 asked as yes or no, entities switched off, markers and wiring, a counter with no brush, scripts placed
+  "33-compile-light", // a compile seen to work and stopped at its time, the portals foretold, a draft; the light on a map's floors
+  "40-play-heard", // the play driver hearing the game: until, expect, the view, a place, a session kept and served, the sheet
   "19-example-and-kit-faults", // the examples' wrong arguments and refused models; the kits' fittings and rings
 ];
 

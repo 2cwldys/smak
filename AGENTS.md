@@ -128,9 +128,17 @@ node bin/smak.mjs map-textures <bsp> -o dir        every texture of a map as a P
 node bin/smak.mjs wad <file.wad> [-o dir]          a .wad's textures listed; with -o, each as a PNG
 node bin/smak.mjs wad-make <pictures...> -o out.wad   a .wad from PNG or BMP pictures, each named after its file
 node bin/smak.mjs map-compile <file.map> -o out.bsp --wad a.wad [--wadinclude] [--fast] [--vhlt <folder>]
+node bin/smak.mjs map-compile <file.map> ... [--timeout 600 | --timeout hlvis=600,hlrad=1200] [--progress]   a stage seen and stopped
+node bin/smak.mjs map-light <bsp> [--rooms rooms.json]   the light on the floors, room by room: what the game lights a figure by
+node bin/smak.mjs scripts <script folders, maps...> --mod <profile> [--shipped <folder>]
+                                                   each script of one's own: replaces a game's, is named, or is named by nothing
+node bin/smak.mjs item <piece.mjs> --mod <profile> --game <mod> --family <name> --name <word> -o dir [--pictures]
+                                                   a new weapon, shield or bow in the game's own model files, and its script's numbers (docs/ITEMS.md)
 node bin/smak.mjs play <url> --map <name> [--steps steps.json] -o dir [--mod <profile>] --playwright <folder>
                                                    the map in the game itself, where the person has a browser build of it and Playwright:
-                                                   entered, walked, spoken in, pictures taken (docs/MAPS-MAKING.md, "Seeing it in the game")
+                                                   entered, walked, spoken in, pictures taken, and every line the game says written down;
+                                                   steps wait for a line (until) and a run passes or fails by lines (expect): docs/PLAY.md.
+                                                   --serve keeps the game up and --attach runs in it: seconds a run, not a minute
 ```
 
 The three that draw take `--width`, `--height`, `--game <folder>` (the mod's folder, then `valve`: where the map's

@@ -23,15 +23,28 @@
 //     doors         the brush classes that open: taken as open by the walk test
 //     exits         the classes a player leaves the map by, besides `trigger_changelevel`: floor from which
 //                   one is reached is no one-way place (the walk test's `exits`)
+//     markers       classes a player goes to although their kind is wiring's (the walk test's `markers`):
+//                   a point the mod's scripts put something at
+//     wiring        classes nobody has to get to, names with `*` for any letters (the walk test's
+//                   `wiring`): what is fired by name and works wherever it stands. An entity of one that
+//                   stands high in a wall is not said to be "not reached"
 //     modelOf       (keys) => "models/x.mdl" | null: the model the game gives an entity that names none in
 //                   its own keys (a monster's, from its script); asked when a picture is drawn with `models`
-//     off           classnames that are a way of switching an entity off (`disabled_*`): not looked up
+//     off           classnames that are a way of switching an entity off (`disabled_*`): not looked up; in
+//                   the walk test, no wall, and a way out so written is looked for and told apart
 //     targets       the keys that name another entity: { keys: [...], others: [classes whose every other
 //                   key is a name they fire] }
 //     named         names the game itself fires, which no entity of the map has to
 //     engineKeys    the keys the engine reads for every entity, whatever its class
 //     files         [{ classes, key | keys, folders, unless, what }]: more keys that name a file of the game
 //     rules         the mod's own rules, as data and small functions (rules.mjs)
+//     scriptPack    for a mod whose maps and scripts name scripts by path: how its scripts are read and
+//                   named ({ shipped, loose, ofEntity, aliases, started }: scripts.mjs), so that one's own
+//                   scripts can be placed against the game's: which replace one, which are new and named,
+//                   which are named by nothing (`scriptsPlaced`, `smak scripts`)
+//     items         { name: family }: the families of held items, each as `addItem` of src/items.mjs takes one
+//                   (which files, bodyparts and bones a kind of item is shown from, and the game's own
+//                   thing each new one is laid on); `smak item --family <name>` reads them here
 //   }
 //
 // The kit ships one profile, `GOLDSRC`: Half-Life's own, with nothing of any mod in it. A mod's profile is
@@ -63,6 +76,9 @@ import { valueOf } from "./entities.mjs";
  *   engineKeys  the fields of an entity the engine fills from a map's keys whatever the class: the table
  *               gEntvarsDescription of the SDK's dlls/util.cpp
  *   play        how the game is played by src/play.mjs, which has each field: no menu, `say`, cl_yawspeed 210
+ *               (the SDK's cl_dll/input.cpp), the line a loaded map prints (the engine's "Custom resource
+ *               propagation complete", engine/client/cl_parse.c), no command that puts the player at a place,
+ *               and the SDK's two messages of text, TextMsg and SayText, read as the SDK writes them
  */
 export const GOLDSRC = deepFrozen({
   name: "goldsrc",
@@ -91,6 +107,8 @@ export const GOLDSRC = deepFrozen({
   },
   doors: ["func_door", "func_door_rotating", "momentary_door"],
   exits: [],
+  markers: [],
+  wiring: [],
   off: [],
   targets: { keys: ["target", "killtarget", "master"], others: ["multi_manager"] },
   named: ["game_playerdie", "game_playerkill", "game_playerspawn", "game_playerjoin", "game_playerleave"],
@@ -108,11 +126,15 @@ export const GOLDSRC = deepFrozen({
   ], // prettier-ignore
   files: [],
   rules: [],
-  play: { enter: [], say: ["say {text}"], loads: 45000, yawspeed: 210, screen: [1024, 768] },
+  play: {
+    ...{ enter: [], say: ["say {text}"], loads: 45000, yawspeed: 210, screen: [1024, 768] },
+    ...{ loaded: "Custom resource propagation complete", goto: null },
+    messages: { TextMsg: "textmsg", SayText: "saytext" },
+  },
 });
 
 /** The fields of a profile that are lists or objects of their own, by which a wrong one is told. */
-const LISTS = ["folders", "wads", "dlls", "fgd", "starts", "walkers", "doors", "exits", "off", "named", "engineKeys", "files", "rules"]; // prettier-ignore
+const LISTS = ["folders", "wads", "dlls", "fgd", "starts", "walkers", "doors", "exits", "markers", "wiring", "off", "named", "engineKeys", "files", "rules"]; // prettier-ignore
 /** What each profile's definitions came to, so that an FGD is read and a hundred maps are learned once. */
 const definitionsKept = new WeakMap();
 /** The profiles made whole, by the object they were made from. */
@@ -326,7 +348,8 @@ export function bodiesOf(mod, classnames, definitions = definitionsFor(mod)) {
  *   bodies    the box of every class of the map that starts or walks (`bodiesOf`), under the caller's own
  *   open      the profile's `doors` that the kit does not take for doors by itself, unless `doors` is "closed"
  *   folders   the profile's, when it has any
- *   exits     the profile's, and the caller's with them (for `reachOf`)
+ *   exits     the profile's, and the caller's with them (for `reachOf`); `markers`, `wiring` and `off` the
+ *             same way
  *   modelsBy  when the caller asks for models: those the profile's `modelOf` gives the map's entities,
  *             by number (`modelsOf`); a model the caller names stands over them
  * Options with no `mod` come back as they are.
@@ -341,8 +364,9 @@ export function withMod(options = {}, map) {
   const more = whole.doors.filter((classname) => !DOORS.test(classname));
   if (more.length && own.doors !== "closed")
     settled.open = [...more, ...(own.open === undefined ? [] : [own.open].flat())];
-  if (whole.exits.length)
-    settled.exits = [...whole.exits, ...(own.exits === undefined ? [] : [own.exits].flat())];
+  for (const list of ["exits", "markers", "wiring", "off"])
+    if (whole[list].length)
+      settled[list] = [...whole[list], ...(own[list] === undefined ? [] : [own[list]].flat())];
   if (own.models && own.modelsBy === undefined && typeof whole.modelOf === "function")
     settled.modelsBy = modelsOf(whole, map);
   return settled;

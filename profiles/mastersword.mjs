@@ -29,6 +29,11 @@ const PROGRAM = "dlls/ms.dll";
 const SCRIPT_END = ".script";
 /** The folder of the pack whose scripts are items: an item's name is its script's, without the folder. */
 const ITEMS = "items/";
+/** The pack's list of its items, one name a line, and the ending of a script of items/ that is no item. */
+const ITEM_LIST = "items.txt";
+const CLIENT_SIDE = /_cl$/;
+/** The script the game runs for a map by itself, in the folder of the map's name. */
+const MAP_STARTUP = /^([^/]+)\/map_startup$/;
 
 // ── the script pack ─────────────────────────────────────────────────────────
 // dlls/sc.dll is a data file despite its name: every script of the game, enciphered. The format and the
@@ -97,6 +102,17 @@ export function packScripts(bytes) {
     const size = plain.readUInt32LE(at + PACK.name + 4);
     if (from + size <= length) texts.set(scriptName(name), plain.toString("latin1", from, from + size));
   }
+  return texts;
+}
+
+/**
+ * The pack unpacked into a folder (as tools write it out, one file a script): a Map from each script's name
+ * to its text, with the list of items under its own name.
+ */
+function unpackedScripts(folder) {
+  const texts = new Map();
+  for (const [name, file] of looseScriptFiles(folder)) texts.set(name, readFileSync(file, "latin1"));
+  if (existsSync(join(folder, ITEM_LIST))) texts.set(ITEM_LIST, readFileSync(join(folder, ITEM_LIST), "latin1")); // prettier-ignore
   return texts;
 }
 
@@ -177,6 +193,280 @@ function looseScriptNames(folder, under = "") {
   }
   return names;
 }
+
+// ── the families of held items ──────────────────────────────────────────────
+// How the game shows a weapon, read from its item scripts (the pack's items/base_weapon, blunt_base_onehanded,
+// shields_base, bows_base and the items named below) and from its model files with `smak info`, 2026-10-13.
+//
+// In the hands (first person) a family shares ONE file: the arms, every weapon of the family as a submodel
+// of the first bodypart, and the animations. An item says which with MODEL_VIEW_IDX, the submodel's number
+// (items/base_weapon: `setviewmodelprop ent_me submodel ... MODEL_VIEW_IDX`, done only when it is over 0).
+// On the body and on the floor a weapon is 3 or 4 submodels in a row of a `p_weapons` file's one bodypart,
+// and an item names the first with MODEL_BODY_OFS: base_weapon shows OFS + 1 - hand (the hand's number is 1
+// for the right and 0 for the left) when it is drawn, OFS + 2 when it falls, and shields_base and bows_base
+// show OFS + 3 when it is worn on the back. The pose is the animation `<ANIM_PREFIX>_idle` (in a hand) and
+// `<ANIM_PREFIX>_floor_idle` (on the floor) of that file, and a new item reuses the prefix of the weapon it
+// is laid on: the hand holds it where it held that one.
+//
+// A family here is what `addItem` of the kit takes (src/items.mjs, docs/ITEMS.md): `like` is the game's own
+// weapon each placement is laid on, `bone` the bone that weapon hangs from, `numbers` how the two
+// constants follow from where the new submodels land, `constants` what else the item's script sets.
+// `script` is the game's item to write the new one after. Files are named from the game's folder.
+const VIEW_SHRINK = 2;
+const WORLD_SHRINK = 4;
+const NUMBERS = { MODEL_VIEW_IDX: "view", MODEL_BODY_OFS: "world" };
+/** A row of world placements: `[[like, bone, ending, animation], ...]` in one bodypart of one file. */
+const worldRow = (file, shrink, row, more = {}) =>
+  row.map(([like, bone, ending, seq]) => ({
+    group: "world",
+    file,
+    bodypart: 0,
+    like,
+    bone,
+    name: `{name}_${ending}`,
+    shrink,
+    seq,
+    ...more,
+  }));
+
+export const ITEM_FAMILIES = {
+  // items/blunt_mace (41 lines) on items/blunt_base_onehanded. v_1hblunts.mdl: 5 bones, the nine weapons
+  // each whole on `skullblade`, then the bodypart `arms`. The 200% charge is `special_02`
+  blunt1h: {
+    title: "a one-handed blunt weapon: a mace, a hammer, a club",
+    script: "items/blunt_mace",
+    constants: { MODEL_VIEW: "viewmodels/v_1hblunts.mdl", ANIM_PREFIX: "mace" },
+    numbers: NUMBERS,
+    placements: [
+      {
+        group: "view",
+        file: "models/viewmodels/v_1hblunts.mdl",
+        bodypart: 0,
+        like: "mace_ref",
+        bone: "skullblade",
+        name: "{name}_ref",
+        shrink: VIEW_SHRINK,
+        view: "first",
+        seq: "idle1",
+      },
+      ...worldRow("models/weapons/p_weapons1.mdl", WORLD_SHRINK, [
+        ["mace_rhand", "Bip01 R Hand", "rhand", "mace_idle"],
+        ["mace_lhand", "Bip01 L Hand", "lhand", "mace_idle"],
+        ["mace_floor", "Bip01 Pelvis", "floor", "mace_floor_idle"],
+      ]),
+    ],
+  },
+  // items/shields_buckler on items/shields_base (which sets ANIM_PREFIX allshields and the three
+  // p_weapons2 constants itself). v_shields.mdl: the shield on the bone `shield`, five of them, then the
+  // bodypart `arm`. Of the game's shields the buckler is the one carried on both forearms (the iron, rune
+  // and dark shields' left-hand submodel hangs from `Bip01 L Hand`), so it is the one laid on. A shield in
+  // the world keeps half its picture where a weapon keeps a quarter: it fills more of the screen
+  shield: {
+    title: "a shield, strapped to the forearm",
+    script: "items/shields_buckler",
+    how: "shield",
+    constants: { MODEL_VIEW: "viewmodels/v_shields.mdl" },
+    numbers: NUMBERS,
+    placements: [
+      {
+        group: "view",
+        file: "models/viewmodels/v_shields.mdl",
+        bodypart: 0,
+        like: "buckler_ref",
+        bone: "shield",
+        name: "{name}_ref",
+        shrink: 1,
+        view: "first",
+        seq: "idle1",
+      },
+      ...worldRow("models/weapons/p_weapons2.mdl", 2, [
+        ["buckler_rhand", "Bip01 R Arm2", "rhand", "allshields_idle"],
+        ["buckler_lhand", "Bip01 L Arm2", "lhand", "allshields_idle"],
+        ["buckler_floor", "Bip01 Pelvis", "floor", "allshields_floor_idle"],
+        ["buckler_sheath", "Bip01 Spine3", "sheath", "allshields_idle"],
+      ]),
+    ],
+  },
+  // items/bows_treebow on items/bows_base. v_bows.mdl: 55 bones. The Tree Bow's submodel is a stave rigid
+  // on `Bone25`, the middle of its string on `Dummy01` (the bone the fingers draw), and its own nocked
+  // arrow, three meshes on `smdimport`: every bow's submodel holds its arrow. So a new bow is rigid on
+  // Bone25, the corners of its string's middle (which the kit's bow marks `part: 1`) go on Dummy01
+  // (`bones`), and the Tree Bow's arrow is taken along as it is (`keep`). In the world a bow is rigid, and
+  // is listed left hand first: 4 submodels, the last on the back. (tools/models/weapons.mjs binds the Tree
+  // Bow it REPLACES "by the nearest bone", each corner to the bone of the old bow's nearest corner; tried
+  // here on a new bow, that sent the stave's belly at the grip to Dummy01 with the string, so the string is
+  // named and not guessed)
+  bow: {
+    title: "a bow: a rigid stave, a string that is drawn, the game's arrow on it",
+    script: "items/bows_treebow",
+    constants: {
+      MODEL_VIEW: "viewmodels/v_bows.mdl",
+      MODEL_HANDS: "weapons/p_weapons2.mdl",
+      MODEL_WORLD: "weapons/p_weapons2.mdl",
+      MODEL_WEAR: "weapons/p_weapons2.mdl",
+      ANIM_PREFIX: "treebow",
+    },
+    numbers: NUMBERS,
+    placements: [
+      {
+        group: "view",
+        file: "models/viewmodels/v_bows.mdl",
+        bodypart: 0,
+        like: "treebow_ref",
+        bone: "Bone25",
+        name: "{name}_ref",
+        shrink: VIEW_SHRINK,
+        pick: /^treebow_/i,
+        keep: /fletching|darksteel|^longbowdarkwood/i,
+        rig: null,
+        bones: [null, "Dummy01"],
+        view: "first",
+        seq: "stretch",
+        frame: 40,
+      },
+      ...worldRow(
+        "models/weapons/p_weapons2.mdl",
+        WORLD_SHRINK,
+        [
+          ["treebow_lhand", "Bip01 L Hand", "lhand", "treebow_idle"],
+          ["treebow_rhand", "Bip01 R Hand", "rhand", "treebow_idle"],
+          ["treebow_floor", "Bip01 Pelvis", "floor", "treebow_floor_idle"],
+          ["treebow_sheath", "Bip01 Spine3", "sheath", "treebow_idle"],
+        ],
+        { rig: null },
+      ),
+    ],
+  },
+  // The same bow laid on the Long Bow, whose limbs hang from six bones that bend them as the string is
+  // drawn (Bone16, Bone28, Bone01, Bone27, Bone26 beside Bone25): each corner of the new stave takes the
+  // bone of the Long Bow's nearest corner (`rig: "nearest"`) and bends as the Long Bow does; the string's
+  // middle is named, as above. NOT tried in the game; a stave of another curve than the Long Bow's takes the
+  // bones of whatever part of it is nearest, and may crease where two bones meet
+  bow_bending: {
+    title: "a bow whose limbs bend, bound to the Long Bow's bones (untried)",
+    script: "items/bows_longbow",
+    constants: {
+      MODEL_VIEW: "viewmodels/v_bows.mdl",
+      MODEL_HANDS: "weapons/p_weapons2.mdl",
+      MODEL_WORLD: "weapons/p_weapons2.mdl",
+      MODEL_WEAR: "weapons/p_weapons2.mdl",
+      ANIM_PREFIX: "longbow",
+    },
+    numbers: NUMBERS,
+    placements: [
+      {
+        group: "view",
+        file: "models/viewmodels/v_bows.mdl",
+        bodypart: 0,
+        like: "longbow_ref",
+        bone: "Bone25",
+        name: "{name}_ref",
+        shrink: VIEW_SHRINK,
+        pick: /^longbow(string|h|wood)\./i,
+        keep: /fletching|darksteel|darkwood/i,
+        rig: "nearest",
+        bones: [null, "Dummy01"],
+        view: "first",
+        seq: "stretch",
+        frame: 40,
+      },
+      ...worldRow(
+        "models/weapons/p_weapons2.mdl",
+        WORLD_SHRINK,
+        [
+          ["longbow_lhand", "smdimport", "lhand", "longbow_idle"],
+          ["longbow_rhand", "Bip01 R Hand", "rhand", "longbow_idle"],
+          ["longbow_floor", "Bip01 Pelvis", "floor", "longbow_floor_idle"],
+          ["longbow_sheath", "Bip01 Spine3", "sheath", "longbow_idle"],
+        ],
+        { rig: null },
+      ),
+    ],
+  },
+};
+
+// ── playing it ──────────────────────────────────────────────────────────────
+// PLAYING IT (src/play.mjs). All of it seen in the game on 2026-10-13, in a local browser build with one
+// saved character and a page of 1024 by 768.
+//
+// GETTING IN. A loaded map prints "Custom resource propagation complete." and shows the character cards a
+// few seconds later; ONE click on the first card, at (512, 330), chooses the character and enters (a second
+// click is a swing of the fist). The cards take no click until they are drawn, so the click is done again
+// every second until the box "Welcome to Master Sword" comes: the game sends it, and then the player's
+// health (the HP message), a tenth of a second after the click that was taken, and the player stands in
+// the world. Measured: 8 s for the engine, 8 s for a small map (4 s the second time in one session), under
+// a second to enter once the cards are drawn, where the clock was waited out for 65 s before.
+//
+// WHAT THE GAME SAYS. Nearly all of it goes to the player in the user message HUDInfoMsg (the source,
+// server/Player/playershared.cpp: SendHUDMsg, SendHelpMsg, SendEventMsg; read by the client in
+// client/MasterSword/vgui_hud.cpp, __MsgFunc_HUDInfoMsg), whose first byte is its kind:
+//   0  a box: its title, its text                                (an ms_text, "has gained", a map's name)
+//   1  a line of the event console: four bytes of colour, the text  ("HIT! 4.0 holy damage", a kill, a
+//      script's playermessage)
+//   2  a part of a help tip: its number, the text; 3 the tip's title, which shows the parts together
+//   4  a line of speech: a byte for who hears (0 all, 1 near, 2 the party), the text
+// The client prints a line of kind 1 to the console only when it scrolls off the HUD, a line at a time and
+// seconds late, and never again once its ten places have each been printed from; a box is never printed.
+// So the message itself is read. A script's `consolemsg` and the game's own notes are TextMsg, the SDK's.
+// HP and MP are a short and a byte that is 1 for the most the player can have.
+//
+// SAYING. An NPC hears local speech only. `say <text>` speaks in the player's current way, which the
+// command `setsay` moves on by one each time it is given (all, near, the party: client/MasterSword/
+// HUDMisc.cpp, UserCmd_ChangeSayType), so "setsay, say" spoke near once and to the party the next time.
+// The server's own `say_text <way> <text>` says it in the way named (server/client.cpp, ClientCommand2);
+// the client has a command of that name that opens the chat line instead, so it is sent past the client
+// with the engine's `cmd`. An NPC answered a say 9 to 27 seconds after it in a build drawn in software.
+//
+// GOING TO A PLACE. The game has no command for it; `trial goto` is the command of a helper script for the
+// local game (trial/commands, in the repository this profile was written in: it also gives items and
+// skills). A map without that script refuses a `goto` step in a sentence, since the place is read back.
+const HUD = { box: 0, event: 1, tipPart: 2, tip: 3, speech: 4 };
+const tipParts = [];
+/** The strings of a message's bytes from `from` on, each ended by a 0. */
+const stringsFrom = (bytes, from) =>
+  String.fromCharCode(...bytes.slice(from))
+    .split("\0")
+    .map((text) => text.replace(/\|/g, "\n"));
+/** A box, a tip: its title and its text on one line, the text's own lines parted by " | ". */
+const boxLine = (title, text) =>
+  `${title.trim()}: ${text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).join(" | ")}`; // prettier-ignore
+/** HUDInfoMsg read: the lines the player is shown. */
+export function hudInfoLines(bytes) {
+  const kind = bytes[0];
+  if (kind === HUD.box) {
+    const [title = "", text = ""] = stringsFrom(bytes, 1);
+    return boxLine(title, text);
+  }
+  if (kind === HUD.event) return stringsFrom(bytes, 5)[0]?.split(/\r?\n/) ?? null;
+  if (kind === HUD.tipPart) {
+    if (!bytes[1]) tipParts.length = 0;
+    tipParts.push(stringsFrom(bytes, 2)[0] ?? "");
+    return null;
+  }
+  if (kind === HUD.tip) return boxLine(stringsFrom(bytes, 1)[0] ?? "", tipParts.splice(0).join(""));
+  if (kind === HUD.speech) return stringsFrom(bytes, 2)[0]?.split(/\r?\n/) ?? null;
+  return null;
+}
+/** HP and MP read: "HP 210", and "MaxHP 234" for the most the player can have. */
+const amountLine = (name) => (bytes) => `${bytes[2] ? "Max" : ""}${name} ${bytes[0] | (bytes[1] << 8)}`;
+/** The way of speaking an NPC hears: near (the source, server/Monsters/MSMonster.h, SPEECH_LOCAL). */
+const SPEECH_NEAR = 1;
+
+const PLAY = {
+  enter: [{ click: [512, 330], every: 1000, until: "^Welcome to Master Sword", within: 60000 }],
+  say: [`cmd say_text ${SPEECH_NEAR} {text}`],
+  loads: 90000,
+  loaded: "Custom resource propagation complete",
+  goto: ["trial goto {x} {y} {z}"],
+  messages: {
+    HUDInfoMsg: hudInfoLines,
+    TextMsg: "textmsg",
+    SayText: "saytext",
+    HP: amountLine("HP"),
+    MP: amountLine("MP"),
+  },
+  screen: [1024, 768],
+};
 
 // ── the profile ─────────────────────────────────────────────────────────────
 /** The classes a monster's template is written as: every `msmonster_*`, the NPCs and the chests. */
@@ -272,6 +562,16 @@ export default function masterSword({ game, folders, scripts = [], cache } = {})
     // a player leaves a map by an msarea_transition (the source, server/msmapents.cpp, CAreaTransition);
     // one switched off (`disabled_msarea_transition`) is another class, and no way out
     exits: ["msarea_transition"],
+    // what is fired by name and never gone to (the walk test's `wiring`). The source, server/msmapents.cpp:
+    // ms_text is a game_text under another name (LINK_ENTITY_TO_CLASS(ms_text, CGameText)); a spawn area,
+    // under either of its names and with a brush or without, is a CAreaInvisible (SOLID_NOT, no Touch) that
+    // thinks or is fired (CAreaMonsterSpawn::Spawn sets a think or waits for ResetUse): where its own
+    // origin is says nothing, its monsters are entities of their own; every mstrig_ is fired (mstrig_music,
+    // mstrig_weather, mstrig_stopspawn; mstrig_multi is a multi_manager)
+    wiring: ["ms_text", "ms_monsterspawn", "msarea_monsterspawn", "mstrig_*"],
+    // a point a script puts something at (a chest at an info_target) is named by the map that has one, with
+    // the walk test's `markers`: of the class alone it cannot be said, an info_target is as often a beam's end
+    markers: [],
 
     // what a monster, an NPC or a chest looks like is in its script (`scriptModel`, above)
     modelOf: (keys) => {
@@ -286,19 +586,59 @@ export default function masterSword({ game, folders, scripts = [], cache } = {})
     // and 28 entities in 9 maps are a mapper's note to the next, `remark_<name>`
     off: ["disabled_*", "disable_*", "*_disabled", "remark_*"],
 
-    // playing it (src/play.mjs), as seen in the game on 2026-10-13, in a local browser build with one saved
-    // character and a page of 1024 by 768: a loaded map shows the character cards, and the first card, at
-    // (512, 330), is clicked once to choose it and once more to enter; the game is there some 20 seconds
-    // later. An NPC hears local speech only: `setsay` and then `say <text>` (`say_text` opens the chat line
-    // instead, which then swallows the keys that follow). The orchard map took about 45 seconds to load.
-    // Tried through `smak play` the same day: an NPC answered a `say` 9 to 27 seconds after it (the build
-    // draws in software), so a say wants a long `wait` before its picture
-    play: {
-      enter: [{ click: [512, 330], wait: 1500, shot: "chosen" }, { click: [512, 330], wait: 20000 }], // prettier-ignore
-      say: ["setsay", "say {text}"],
-      loads: 45000,
-      screen: [1024, 768],
+    // the families of held items (above): what `smak item --family` and `addItem` take
+    items: ITEM_FAMILIES,
+
+    // How a script is named, for placing scripts of one's own against the pack's (scripts.mjs, `smak
+    // scripts`). The pack is laid over by name: a file at a path the pack has takes that script's place,
+    // and one at any other path is a new script, which is read only if something names it.
+    //   by a map: `scriptfile` and `defscriptfile` (a script's path), and an msitem_spawn's `scriptfile`
+    //     (an item's name: the script is items/<name>)
+    //   by a script: its path as a word of any line (#include, createnpc, callexternal, clientevent,
+    //     applyeffect, precachefile ... : the commands are too many to list and all write the path whole),
+    //     and an item by its bare name
+    //   by the game itself: <map>/map_startup, taken in by the pack's world.script with
+    //     `#include [casual] $currentmapscript` (the source, shared/ms/script.cpp: the map's name and
+    //     "/map_startup"); and an item, which the game knows by its name once the pack's items.txt lists
+    //     it (server/weapons/genericitem.cpp reads that list and makes "items/<name>" of each line). The
+    //     list of a pack one builds is not seen here: a new script of items/ that is not a player's-side
+    //     one (`_cl`) is taken to be listed, as a builder that lists every such script does, and that is
+    //     said in its line
+    scriptPack: {
+      shipped: (folder) =>
+        folder ? unpackedScripts(folder) : existsSync(pack) ? packScripts(readFileSync(pack)) : new Map(),
+      loose: (folder) =>
+        new Map(
+          [...looseScriptFiles(folder)].map(([name, file]) => [name, { text: readFileSync(file, "latin1"), file }]), // prettier-ignore
+        ),
+      ofEntity: (keys) =>
+        [keys.scriptfile, keys.defscriptfile]
+          .filter((value) => typeof value === "string" && value)
+          .map((value) =>
+            keys.classname === "msitem_spawn" ? `${ITEMS}${scriptName(value)}` : scriptName(value),
+          ),
+      aliases: (name) => (name.startsWith(ITEMS) ? [name.slice(ITEMS.length)] : []),
+      started: (name, { maps }) => {
+        const map = MAP_STARTUP.exec(name)?.[1];
+        if (map)
+          return maps.some((each) => each.toLowerCase() === map)
+            ? `the game itself, when the map ${map} starts`
+            : null;
+        if (name.startsWith(ITEMS) && !name.slice(ITEMS.length).includes("/") && !CLIENT_SIDE.test(name))
+          return "the list of items, if the pack's items.txt has its name (a builder that lists every new script of items/ puts it there)";
+        return null;
+      },
+      // the maps the game has, by name: a map_startup is run for one of these, or for one given
+      maps: () => {
+        const folder = join(mod, "maps");
+        return (existsSync(folder) ? readdirSync(folder) : [])
+          .filter((file) => /\.bsp$/i.test(file))
+          .map((file) => file.replace(/\.bsp$/i, ""));
+      },
     },
+
+    // playing it (src/play.mjs): see PLAYING IT, above
+    play: PLAY,
 
     targets: {
       // perishtarget: fired on a monster's last death (the source, server/monsters/msmonsterserver.cpp,

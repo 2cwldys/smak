@@ -121,6 +121,19 @@ const LIQUID_ALPHA = 0.62;
  * than the bytes its compiler stored. Measured against the game's own screenshots of one map (Xash in the
  * browser, its defaults): a straight 1.55 came within 10 levels in 255 a channel, with no tint; a curve
  * (a gamma) fitted worse and tinted the picture. 1 is the samples as stored.
+ * What the engine does, read since in its source (Xash3D FWGS, ref/gl/gl_rsurf.c R_BuildLightMap and
+ * engine/client/gamma.c, 2026-10): a sample is run through a table that, with the engine's defaults (gamma
+ * and lightgamma 2.5, brightness 0), is a straight line, and the lightmap is then laid on the texture
+ * twice over (gl_overbright 1: the blend is destination x source x 2), cut off at white; the texture
+ * itself is lifted by texgamma (its colours to the power 0.8). So the game's own word is texture x sample
+ * x 2 (x 1.34 where it draws from vertex buffers: the samples are then scaled by 171 / 256 first), and
+ * 1.55 is a fit to pictures of a browser build, between the two. Either way it is a straight
+ * multiply of what hlrad stored, bounces and all: a view is as true as the map's lightmaps are, and of a
+ * draft (hlrad -fast: no bounces) it shows the draft's light.
+ * A VIEW'S BRIGHTNESS IS NOT A ROOM'S. `facts.brightness` is the mean of one picture: walls, ceiling and
+ * floor together, as that camera has them. A lamp high in a room makes a bright picture of a room whose
+ * floor is dim, and the game lights what stands in a room by its floor. `lightReport` (light.mjs) says
+ * the floor's light room by room, and is what to judge a room's light by.
  */
 const BRIGHTNESS = 1.55;
 /**
@@ -1414,7 +1427,7 @@ export function drawMap(bsp, options = {}) {
   const brightness = Math.round(meanBrightness(canvas));
   if (scene.lit && options.light !== false && brightness < DARK_VIEW)
     notes.push(
-      `the picture is dark (${brightness} of 255 on average): so is the map there, as the game shows it. \`brightness: 4\` looks into it, \`light: false\` shows the textures alone`,
+      `the picture is dark (${brightness} of 255 on average): so is the map there, as the game shows it. \`brightness: 4\` looks into it, \`light: false\` shows the textures alone. (A picture's brightness is of this view's walls, ceiling and floor together; \`lightReport\` says how lit each room's floor is, which is what a player and every monster stand in)`,
     );
   const facts = {
     from: view.eye,
@@ -1425,7 +1438,9 @@ export function drawMap(bsp, options = {}) {
     contents: contentsName(contents),
     faces,
     pixels: shareDrawn(canvas),
-    light: scene.lit ? (LIGHT_WORDS[scene.light] ?? LIGHT_WORDS.true) : "none",
+    light: scene.lit
+      ? `${LIGHT_WORDS[scene.light] ?? LIGHT_WORDS.true}; each sample times ${options.brightness ?? BRIGHTNESS} on its texture, as the compiler stored it (of a draft, hlrad -fast, that is light with no bounces)`
+      : "none",
     brightness,
     missing: [...scene.missing].sort(),
     sky: scene.sky?.name ?? null,

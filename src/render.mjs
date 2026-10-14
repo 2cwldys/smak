@@ -237,6 +237,8 @@ function cutNear(polygon, near) {
  *   width, height, background [r, g, b], light (false: the texture as it is), cull (false: both sides of
  *   every triangle)
  *   seq, frame, pose, body, skin   as in posed
+ *   parts       only these bodyparts are drawn (their numbers), and the picture is framed by them alone: the
+ *               weapon of a first-person file without the arms that hold it
  * A triangle seen from behind is not drawn, as in the game: a hole in the picture is a triangle the wrong way
  * round.
  */
@@ -251,7 +253,8 @@ export function render(src, opts = {}) {
     light = true,
     cull = true,
   } = opts;
-  const { tris } = posed(src, opts);
+  const all = posed(src, opts).tris;
+  const tris = opts.parts ? all.filter((t) => opts.parts.includes(t.where.bodypart)) : all;
 
   // the picture in dots, several to a pixel: each dot's colour, and how far from the camera what it shows is
   const wide = width * SUPERSAMPLE;

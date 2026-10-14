@@ -132,7 +132,7 @@ export function buildMdl({
  * A fit that leaves the piece the size it was drawn at: the fit's scaling undone about the piece's lowest-x
  * end (the middle of that end of its box), so that end stays where the fit put it.
  */
-function atOwnSize(fit, tris) {
+export function atOwnSize(fit, tris) {
   const b = box(uniq(tris));
   const hold = fit.at([b.mn[0], (b.mn[1] + b.mx[1]) / 2, (b.mn[2] + b.mx[2]) / 2]);
   const { at, k } = fit;
@@ -144,7 +144,7 @@ function atOwnSize(fit, tris) {
  */
 const ALONG_WEIGHT = 3;
 /** The bone of the corner (of `corners`: { p, bone }) nearest a point, or `otherwise` when there are none. */
-function boneNearest(corners, point, otherwise) {
+export function boneNearest(corners, point, otherwise) {
   let bone = otherwise;
   let least = Infinity;
   for (const corner of corners) {

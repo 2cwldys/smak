@@ -95,6 +95,15 @@ const VALUE_FLAGS = [
   "steps",
   "playwright",
   "loads",
+  "expect",
+  "expect-not",
+  "put",
+  "family",
+  "base",
+  "shipped",
+  "timeout",
+  "dark",
+  "rooms",
 ];
 // the flags of the map commands that may be given more than once: each time adds to a list
 const LISTED_FLAGS = [
@@ -110,6 +119,11 @@ const LISTED_FLAGS = [
   "learned",
   "scripts",
   "exit",
+  "map",
+  "steps",
+  "expect",
+  "expect-not",
+  "put",
 ];
 // `map-entities` and `map-plan` print no more lines than this of one list unless told all of it is wanted
 const MARKS_PRINTED = 40;
@@ -850,6 +864,136 @@ function obj({ command, file, flags }) {
   process.exit(errors ? 1 : 0);
 }
 
+// ── an item added to a family of a mod's models ────────────────────────────
+/**
+ * item: a piece, made by a module, added as new submodels to every file a family of the mod's profile shows
+ * its kind of item from (`addItem`): the files are looked for in --base and then in the game's folders, the
+ * thing each placement is laid on is measured in the game's own, and what comes of it is checked and written
+ * under -o by the same paths. A file that holds the item already is left as it is.
+ */
+async function item({ command, file, flags, listed }) {
+  const mod = (await profileOf(flags, listed)) ?? fail(`${command}: --mod <profile>: the families are a profile's \`items\``); // prettier-ignore
+  const families = mod.items ?? {};
+  const known = Object.keys(families).join(", ") || "the profile has none";
+  const family = families[need(command, flags.family, `--family <name>: ${known}`)];
+  if (!family) fail(`${command}: the profile has no family ${flags.family}: ${known}`);
+  const to = need(command, flags.o, "-o <folder>");
+  const name = need(command, flags.name, "--name <the word its submodels are named with>");
+  const module = await import(pathToFileURL(resolve(existing(file))).href);
+  const maker = module.default ?? module.piece;
+  const piece = typeof maker === "function" ? await maker() : maker;
+  if (!piece?.tris && typeof piece?.shield !== "function")
+    fail(
+      `${command}: ${basename(file)} is to export a piece ({ tris, image }, as the kits make one), or a function that makes it, as its default`,
+    );
+  /** a file of the game as installed: the first of its folders that has it */
+  const own = (path) => {
+    const folder = mod.folders.find((each) => existsSync(join(each, path)));
+    return folder ? readFileSync(join(folder, path)) : fail(`${command}: ${path} is in none of the game's folders (--game <the mod's folder>)`); // prettier-ignore
+  };
+  const read = (path) =>
+    flags.base && existsSync(join(flags.base, path)) ? readFileSync(join(flags.base, path)) : own(path);
+  const began = new Map();
+  const result = smak.addItem(
+    (path) => began.get(path) ?? began.set(path, read(path)).get(path),
+    { name, piece, texture: flags.texture ?? `${name}.bmp` },
+    family,
+    { reference: own, existing: "same" },
+  );
+  let wrong = 0;
+  for (const place of result.placed)
+    console.log(
+      `${place.kept ? "kept " : "added"} ${place.file} ${place.name}: submodel ${place.model}, on ${place.report.bones.join(" + ")} as ${place.report.like}, ${place.report.tris} triangles, ${place.report.turn}, box off by ${round2(place.report.boxOff)}`,
+    );
+  for (const [path, mdl] of result.files) {
+    for (const line of smak.keptWhole(began.get(path), mdl).lines) {
+      if (!line.ok) wrong++;
+      console.log(`${line.ok ? "ok   " : "FAIL "} ${path}: ${line.text}`);
+    }
+    for (const engine of ENGINES) {
+      const report = smak.check(mdl, engine);
+      wrong += report.errors.length;
+      for (const error of report.errors) console.log(`ERROR ${path} (${engine}): ${error}`);
+      for (const warning of report.warnings) console.log(`WARN  ${path} (${engine}): ${warning}`);
+    }
+    save(join(to, path), mdl);
+    console.log(`      ${join(to, path)}: ${mdl.length} bytes`);
+    if (flags.pictures) {
+      const sheet = smak.itemSheet(mdl, result.placed.filter((place) => place.file === path)); // prettier-ignore
+      const picture = join(to, "pictures", `${name}_${basename(path).replace(/\.mdl$/i, "")}.png`);
+      save(picture, smak.png(sheet.width, sheet.height, sheet.rgba));
+      console.log(`      ${picture}: each new submodel beside the one it was laid on`);
+    }
+  }
+  console.log(`its script${family.script ? ` (after ${family.script})` : ""}:`);
+  for (const line of smak.itemConstants(result)) console.log(`  ${line}`);
+  process.exit(wrong ? 1 : 0);
+}
+
+// ── scripts of one's own against the game's ────────────────────────────────
+/** A map's name and its entities, each a plain object of its keys: of a .bsp or of brush source. */
+function mapForScripts(file) {
+  const name = basename(file).replace(/\.(bsp|map)$/i, "");
+  if (isSource(file))
+    return { name, entities: maps.readMap(readFileSync(file, "utf8")).entities.map((entity) => ({ ...entity })) }; // prettier-ignore
+  return { name, entities: readCompiled(file).bsp.entities.map((entity) => Object.fromEntries(entity)) };
+}
+/**
+ * What `scriptsPlaced` found, printed: every script with its place, or only what is wrong. Returns how many
+ * warnings there were.
+ */
+function sayScripts(placed, { all = true } = {}) {
+  if (all) {
+    for (const fact of placed.facts) console.log(`      ${fact}`);
+    for (const script of placed.scripts)
+      console.log(
+        script.state === "replaces"
+          ? `replaces  ${script.name}`
+          : script.state === "named"
+            ? `new       ${script.name}: named by ${script.by[0]}${script.by.length > 1 ? ` and ${script.by.length - 1} more` : ""}`
+            : `UNNAMED   ${script.name}`,
+      );
+  }
+  for (const warning of placed.warnings) console.log(`WARN  ${warning}`);
+  return placed.warnings.length;
+}
+/** The scripts of some folders placed against a profile's pack, with the maps that may name them. */
+function placeScripts(mod, folders, mapFiles, shippedFolder) {
+  const pack = mod.scriptPack;
+  const ours = new Map();
+  for (const folder of folders) for (const [name, script] of pack.loose(folder)) ours.set(name, script);
+  const given = mapFiles.map(mapForScripts);
+  return maps.scriptsPlaced({
+    ours,
+    shipped: pack.shipped(shippedFolder),
+    maps: given,
+    rules: pack,
+    mapNames: [...(pack.maps?.() ?? []), ...given.map((map) => map.name)],
+  });
+}
+/**
+ * scripts: folders of scripts of one's own against the scripts the game ships: which take a game script's
+ * place, which are new and named by a map or a script, which are named by nothing. The rest of the words
+ * are more folders, and maps (.bsp or .map) whose entities may name a script.
+ */
+async function scripts({ command, file, rest, flags, listed }) {
+  const mod = (await profileOf(flags, listed)) ?? fail(`${command}: --mod <profile>: how a game names its scripts is its profile's`); // prettier-ignore
+  if (!mod.scriptPack) fail(`${command}: the profile ${mod.name} has no \`scriptPack\`: it says nothing of scripts`);
+  const words = [file, ...rest];
+  const mapFiles = words.filter((word) => /\.(bsp|map)$/i.test(word)).map(existing);
+  const folders = words.filter((word) => !/\.(bsp|map)$/i.test(word));
+  for (const folder of folders)
+    if (!existsSync(folder) || !statSync(folder).isDirectory()) fail(`${command}: no such folder: ${folder}`);
+  const shipped = flags.shipped === undefined ? undefined : existingFolder(flags.shipped);
+  const placed = placeScripts(mod, folders, mapFiles, shipped);
+  if (flags.json) console.log(JSON.stringify(placed, null, 2));
+  else {
+    const warned = sayScripts(placed);
+    console.log(warned ? `${warned} warnings` : "every script of ours replaces one of the game's or is named");
+  }
+  process.exit(0);
+}
+
 // ── the two pages ──────────────────────────────────────────────────────────
 // Both keep running until the process is stopped.
 const forever = () => new Promise(() => {});
@@ -1139,7 +1283,15 @@ async function mapCheck({ file, flags, listed }) {
   for (const fact of report.facts) console.log(`      ${fact}`);
   for (const warning of report.warnings) console.log(`WARN  ${warning}`);
   for (const error of report.errors) console.log(`ERROR ${error}`);
-  const warned = report.warnings.length ? `, with ${report.warnings.length} warnings` : "";
+  // the script folders given, against the game's pack: one of ours that replaces nothing and is named by
+  // nothing is laid over the pack for no one (`smak scripts` lists them all)
+  let unnamed = 0;
+  if (listed.scripts?.length && against.mod?.scriptPack)
+    unnamed = sayScripts(
+      placeScripts(against.mod, listed.scripts, [file], flags.shipped && existingFolder(flags.shipped)),
+      { all: false },
+    );
+  const warned = report.warnings.length + unnamed ? `, with ${report.warnings.length + unnamed} warnings` : "";
   const fitFor = source ? "to compile" : `for ${engine}`;
   console.log(
     report.errors.length ? `${report.errors.length} errors: not fit ${fitFor}` : `fit ${fitFor}${warned}`,
@@ -1591,7 +1743,45 @@ function wadMake({ command, file, rest, flags }) {
   console.log(`${to}: ${textures.length} textures`);
 }
 
+// ── map-light ──────────────────────────────────────────────────────────────
+/**
+ * map-light: the light on a compiled map's floors, from its lightmaps: all of it, and room by room (--rooms:
+ * a JSON file of { name: { min, max } }) or as the dark stretches of it.
+ */
+function mapLight({ command, file, flags }) {
+  const { bsp } = readCompiled(file);
+  const rooms = flags.rooms === undefined ? null : JSON.parse(readFileSync(existing(flags.rooms), "utf8"));
+  const dark = flags.dark === undefined ? undefined : numberOf(flags, "dark");
+  const cell = flags.cell === undefined ? undefined : numberOf(flags, "cell");
+  if (dark !== undefined && !(dark > 0)) fail(`${command}: --dark is a brightness, 1 to 255, not ${flags.dark}`);
+  const reach = flags.walked ? maps.reachOf(bsp) : null;
+  const report = maps.lightReport(bsp, defined({ rooms, dark, cell, reach }));
+  if (flags.json) {
+    const { warnings, facts, ...rest } = report;
+    console.log(JSON.stringify({ ...rest, warnings, facts }, null, 2));
+    return;
+  }
+  for (const fact of report.facts) console.log(`      ${fact}`);
+  for (const warning of report.warnings) console.log(`WARN  ${warning}`);
+}
+
 // ── map-compile ────────────────────────────────────────────────────────────
+/**
+ * --timeout as `compileMap` takes it: seconds for every program ("600"), or for some by name
+ * ("hlvis=600,hlrad=1200"). Undefined without the flag.
+ */
+function timeoutOf(command, said) {
+  if (said === undefined) return undefined;
+  if (/^\d+(\.\d+)?$/.test(said)) return Number(said) * 1000;
+  const each = {};
+  for (const word of String(said).split(",")) {
+    const [tool, seconds] = word.split("=");
+    if (!maps.COMPILERS.includes(tool) || !(Number(seconds) > 0))
+      fail(`${command}: --timeout is seconds ("600"), or seconds by program ("hlvis=600,hlrad=1200"), not ${said}`); // prettier-ignore
+    each[tool] = Number(seconds) * 1000;
+  }
+  return each;
+}
 function mapCompile({ command, file, flags, listed }) {
   const to = need(command, flags.o, "-o out.bsp");
   if (!isSource(file))
@@ -1605,11 +1795,19 @@ function mapCompile({ command, file, flags, listed }) {
     vis: flags.vis !== false,
     light: flags.light !== false,
     compilers: flags.vhlt === undefined ? undefined : { folder: flags.vhlt },
+    timeout: timeoutOf(command, flags.timeout),
+    // what the compilers print is handed on as they work, on standard error: asked for, or to a terminal
+    progress: flags.progress === undefined ? Boolean(process.stderr.isTTY) : Boolean(flags.progress),
   });
   for (const log of result.logs)
     console.log(
-      `      ${log.tool}  ${log.seconds.toFixed(1)} s  ${log.code === 0 ? "ended" : `code ${log.code}`}`,
+      `      ${log.tool}  ${log.seconds.toFixed(1)} s  ${log.code === 0 ? "ended" : log.code === null ? "stopped" : `code ${log.code}`}`,
     );
+  if (result.portals)
+    console.log(
+      `      portals  ${result.portals.portals} between ${result.portals.leaves} leaves (hlvis's work: a full one foretold at ${result.portals.seconds} s or more)`,
+    );
+  for (const fact of result.facts) console.log(`      ${fact}`);
   for (const warning of result.warnings) console.log(`WARN  ${warning}`);
   for (const error of result.errors) console.log(`ERROR ${error}`);
   console.log(result.bsp ? `${result.bsp}: compiled` : "not compiled");
@@ -1623,34 +1821,128 @@ function mapCompile({ command, file, flags, listed }) {
  * pictures' paths at the end.
  */
 async function playMap({ command, file: url, flags, listed }) {
-  const { playOf, playPartOf, playwrightFrom, browserDriver, play } = smak.play;
+  const { playOf, playPartOf, messagesOf, playwrightFrom, browserDriver, playSession, patternOf } = smak.play;
+  const { serveSession, attachSession, closeSession, sessionState, expectationLine, SESSION_PORT } =
+    smak.play;
+  /** The steps of a file, or the command stopped: a file that is not there, or is no JSON. */
+  const stepsOf = (file) => {
+    if (file === undefined) return [];
+    try {
+      return JSON.parse(readFileSync(existing(file), "utf8"));
+    } catch (error) {
+      return fail(`${command}: --steps is a JSON file that holds a list of steps, and ${file} does not read as JSON (${error.message})`); // prettier-ignore
+    }
+  };
+  /** One run printed: its pictures, its log, and whether what it expected held. False when it did not. */
+  const report = (run) => {
+    console.log(`${run.pictures.length} pictures in ${run.out}${run.sheet ? `, all of them in ${run.sheet}` : ""}`); // prettier-ignore
+    for (const picture of run.pictures) console.log(`  ${picture}`);
+    console.log(`what the game said: ${run.logFile}${run.linesFile ? ` (and ${run.linesFile})` : ""}`);
+    const failed = run.expectations.filter((each) => !each.passed);
+    if (run.expectations.length) {
+      for (const each of run.expectations) console.log(expectationLine(each));
+      console.log(`${run.passed ? "PASSED" : "FAILED"}: ${run.expectations.length - failed.length} of ${run.expectations.length} expectations held   (${(run.took / 1000).toFixed(1)} s)`); // prettier-ignore
+    } else console.log(`done in ${(run.took / 1000).toFixed(1)} s (nothing was expected of it: no pass and no fail)`); // prettier-ignore
+    return failed.length === 0;
+  };
+  /** A run that stopped, printed; false. */
+  const stopped = (error) => {
+    for (const each of error.expectations ?? []) console.error(expectationLine(each));
+    if (error.sheet) console.error(`the pictures up to there: ${error.sheet}`);
+    if (error.logFile) console.error(`what the game said up to there: ${error.logFile}`);
+    console.error(`FAILED: ${/^play: /.test(error.message) ? error.message : `${command}: ${sayOf(error)}`}`);
+    return false;
+  };
   try {
     if (!/^https?:\/\//i.test(url))
-      fail(`${command}: the address of the page that runs the game comes first (http://...), not ${url}`);
-    const map = need(command, flags.map, "--map <name>: the map to load, as the console's `map` takes it");
-    let steps = [];
-    try {
-      if (flags.steps !== undefined) steps = JSON.parse(readFileSync(existing(flags.steps), "utf8"));
-    } catch (error) {
-      fail(`${command}: --steps is a JSON file that holds a list of steps, and ${flags.steps} does not read as JSON (${error.message})`); // prettier-ignore
+      fail(
+        `${command}: the address of the page that runs the game comes first (http://...), not ${url}${flags.attach ? `: with --attach it is the session's (http://127.0.0.1:${SESSION_PORT})` : ""}`,
+      );
+    if (flags.attach && flags.close) {
+      await closeSession(url);
+      return console.log(`${url}: the session is closed`);
     }
+    // each --map is a run, with the --steps given in the same place; -o is its folder, or theirs
+    const mapsGiven = listed.map ?? [];
+    const stay = flags.stay === true;
+    if (!flags.serve && !stay && !mapsGiven.length)
+      fail(`${command}: --map <name>: the map to load, as the console's \`map\` takes it`);
+    if (stay && (!flags.attach || mapsGiven.length))
+      fail(`${command}: --stay goes on in the map a session is in: with --attach, and without --map`);
+    const stepFiles = listed.steps ?? [];
+    if (stepFiles.length > Math.max(1, mapsGiven.length))
+      fail(`${command}: ${stepFiles.length} --steps and ${mapsGiven.length} --map: a list of steps goes with a map`); // prettier-ignore
+    const patterns = (name) => (listed[name] ?? []).filter((each) => patternOf(each, `--${name}`));
+    const expect = patterns("expect");
+    const expectNot = patterns("expect-not");
+    const put = (listed.put ?? []).map((each) => {
+      const [path, ...rest] = each.split("=");
+      if (!path || !rest.length) fail(`${command}: --put <place in the game's files>=<file>, not ${each}`);
+      return { path, file: existing(rest.join("=")) };
+    });
+    const out = flags.o ?? "play";
+    const runs = (stay ? [null] : mapsGiven).map((map, index, all) => ({
+      ...(stay ? { stay: true } : { map }),
+      steps: stepsOf(stepFiles[index]),
+      out: all.length > 1 ? join(out, `${index + 1}-${String(map).replace(/[^A-Za-z0-9_-]/g, "_")}`) : out,
+      ...defined({ loads: numberOf(flags, "loads") }),
+      ...{ expect, expectNot, sheet: flags.sheet !== false },
+      // the files are put once, before the first map
+      put: index ? [] : put,
+    }));
+
+    // a session served elsewhere: the steps are checked there, against its profile
+    if (flags.attach) {
+      await sessionState(url);
+      let held = true;
+      for (const run of runs) {
+        console.log(`${url}: ${run.stay ? "staying" : `map ${run.map}`}, ${run.steps.length} steps      (from the start, it took, what)`); // prettier-ignore
+        held = (await attachSession(url, run, { tell: (line) => console.log(line) }).then(report, stopped)) && held; // prettier-ignore
+      }
+      if (!held) process.exit(1);
+      return;
+    }
+
     const mod = await profileOf(flags, listed);
-    playOf(steps, { mod });
+    for (const run of runs) playOf(run.steps, { mod });
     const [wide, high] = playPartOf(mod).screen ?? [];
     const width = numberOf(flags, "width") ?? wide;
     const height = numberOf(flags, "height") ?? high;
     const playwright = playwrightFrom(flags.playwright ?? process.env.PLAYWRIGHT_DIR);
-    const driver = browserDriver(defined({ url, playwright, width, height }));
+    const driver = browserDriver(
+      defined({ url, playwright, width, height, messages: messagesOf(mod), headless: flags.show !== true }),
+    );
     if (wide && (width !== wide || height !== high))
       console.log(`WARN  the profile's clicks were measured on a page of ${wide} by ${high}, and this one is ${width} by ${height}`); // prettier-ignore
-    console.log(`${url}: map ${map}, ${steps.length} steps      (from the start, it took, what)`);
-    const run = await play({
-      ...defined({ mod, loads: numberOf(flags, "loads") }),
-      ...{ driver, map, steps, out: flags.o ?? "play", tell: (line) => console.log(line) },
-    });
-    console.log(`${run.pictures.length} pictures in ${run.out}, to open and look at:`);
-    for (const picture of run.pictures) console.log(`  ${picture}`);
-    console.log(`the game's console: ${run.logFile} (${run.log.length} lines)`);
+    const session = playSession({ driver, mod, tell: (line) => console.log(line) });
+
+    if (flags.serve) {
+      const began = Date.now();
+      const served = await serveSession({
+        ...{ session, tell: (line) => console.log(line) },
+        ...defined({ port: numberOf(flags, "port") }),
+      });
+      console.log(`the engine is up (${((Date.now() - began) / 1000).toFixed(1)} s). The session is served at ${served.address}:`); // prettier-ignore
+      console.log(`  smak play ${served.address} --attach --map <name> --steps steps.json -o <folder>     a run in it`); // prettier-ignore
+      console.log(`  smak play ${served.address} --attach --close                                        its end`); // prettier-ignore
+      let held = true;
+      for (const run of runs) held = (await session.run(run).then(report, stopped)) && held;
+      await served.closed;
+      console.log("the session is closed");
+      if (!held) process.exit(1);
+      return;
+    }
+
+    let held = true;
+    try {
+      for (const run of runs) {
+        console.log(`${url}: map ${run.map}, ${run.steps.length} steps      (from the start, it took, what)`);
+        held = (await session.run(run).then(report, stopped)) && held;
+      }
+    } finally {
+      await session.close().catch(() => {});
+    }
+    if (!held) process.exit(1);
   } catch (error) {
     if (error.logFile) console.error(`the game's console up to there: ${error.logFile}`);
     fail(/^play: /.test(error.message) ? error.message : `${command}: ${sayOf(error)}`);
@@ -1744,6 +2036,27 @@ const COMMANDS = {
                                             by the names in the file. --up: which axis of the file is up (y: what Blender writes);
                                             --turn: degrees about the upright axis; --ground: its lowest point at z = 0;
                                             --centre: its middle at the origin. One bone, one still animation: a prop the game can load`,
+  },
+  item: {
+    run: item,
+    own: true,
+    help: `  item <piece.mjs> --mod <profile> --game <folder> --family <name> --name <word> -o <folder> [--texture name.bmp] [--base <folder>] [--pictures]
+                                            a new item in the models a game shows its kind from: the module's default export is the
+                                            piece ({ tris, image }) or a function that makes it; the family (which files, bodyparts,
+                                            bones, the game's own thing each is laid on) is one of the profile's \`items\`. Each file is
+                                            read from --base when it is there, else from the game; written under -o with what the
+                                            item's script is to say (docs/ITEMS.md). Exit code 1 when a check fails`,
+  },
+  scripts: {
+    run: scripts,
+    own: true,
+    folder: true,
+    help: `  scripts <folder> [more folders, maps ...] --mod <profile> --game <folder> [--shipped <the pack unpacked>] [--json]
+                                            scripts of your own against the scripts the game ships, for a mod whose profile says how
+                                            scripts are named: each one "replaces" a game script, is "new" and named (by a map given
+                                            here, by a script, by the game itself), or is new and named by nothing: a warning, since
+                                            laid over the game's pack it replaces nothing and is never read. map-check says the same
+                                            of the folders it is given with --scripts`,
   },
   view: {
     run: view,
@@ -1878,26 +2191,52 @@ const COMMANDS = {
     help: `  wad-make <picture.png|.bmp> [more ...] -o out.wad   a .wad of pictures, each texture named after its file (15 letters at most,
                                             sides multiples of 16; a name that begins with { has holes where its PNG is see-through)`,
   },
+  "map-light": {
+    run: mapLight,
+    own: true,
+    help: `  map-light <bsp> [--rooms rooms.json] [--dark 24] [--cell 128] [--walked] [--json]
+                                            the light on the map's floors, from its lightmaps, with no picture and no game: the mean
+                                            of the samples the compiler stored (0 to 255), and what is dark of it: room by room
+                                            (--rooms: { "name": { "min": [x, y, z], "max": [x, y, z] } }) or as the dark stretches
+                                            of floor. The game lights what stands in a room by the floor under it. --walked: only
+                                            floor the walk test gets to. A draft's light (--fast) has no bounces: it is darker`,
+  },
   "map-compile": {
     run: mapCompile,
     own: true,
     help: `  map-compile <file.map> -o out.bsp [--wad <file.wad> ...] [--wadinclude] [--fast] [--no-vis] [--no-light] [--vhlt <folder>]
+                              [--timeout <seconds | hlvis=600,hlrad=1200>] [--progress | --no-progress]
                                             compiles brush source with VHLT (an outside program: VHLT_DIR, the PATH or --vhlt);
-                                            a leak and every error in a sentence, exit code 1 unless it compiled`,
+                                            a leak and every error in a sentence, exit code 1 unless it compiled. Each program's
+                                            seconds are printed, and the portals hlbsp left hlvis (its work: many are foretold).
+                                            --timeout: a program that runs longer is stopped, and that is said (unless told: 120 s
+                                            for hlcsg and hlbsp, 900 for hlvis and hlrad). --progress: what the compilers print is
+                                            handed on as they work, on standard error (so by itself, to a terminal)`,
   },
   play: {
     run: playMap,
     own: true,
     address: true,
     help: `  play <url> --map <name> [--steps steps.json] [-o <folder>] [--mod <profile>] [--game <folder> ...] [--playwright <folder>]
-                              [--width 1024] [--height 768] [--loads ms]
+                              [--width 1024] [--height 768] [--loads ms] [--expect <pattern> ...] [--expect-not <pattern> ...]
+                              [--put <place>=<file> ...] [--no-sheet] [--show]
                                             the map seen in the game itself: a browser build of Xash3D at that address is opened,
                                             the map loaded, the game entered as the mod's profile says, and the steps done
-                                            (steps.json: a list such as [{ "walk": 3000, "shot": "gate" }, { "turn": 90 },
-                                            { "say": "hail", "wait": 3000, "shot": "spoken" }, { "command": "noclip" }]; docs/MAPS-MAKING.md,
-                                            "Seeing it in the game"). The pictures go to the folder as PNG files, with the game's
-                                            console in log.txt. It needs Playwright, an outside program: --playwright names the
-                                            folder that holds its node_modules (or PLAYWRIGHT_DIR)
+                                            (steps.json: a list such as [{ "walk": 3000, "shot": "gate" }, { "face": 90, "look": -20 },
+                                            { "say": "hail", "until": "welcome", "shot": "spoken" }, { "expect": "You receive" }];
+                                            docs/PLAY.md has every step). The pictures go to the folder as PNG files with sheet.png,
+                                            all of them in one; what the game said is in log.txt and log.jsonl, each line with its
+                                            time. --expect, --expect-not: lines the whole run is held to. It ends with 1 when an
+                                            expectation did not hold or the run stopped. --map and --steps given several times: one
+                                            run each, in one start of the engine. --put: a file written into the engine first.
+                                            It needs Playwright, an outside program: --playwright names the folder that holds its
+                                            node_modules (or PLAYWRIGHT_DIR)
+  play <url> --serve [--port 8098] [--mod ...] [--playwright ...]
+                                            the game started and KEPT: a session served on this machine, for runs that pay for
+                                            their map and not for the engine
+  play <session> --attach --map <name> [--steps steps.json] [-o <folder>] [--expect ...] [--put ...]   a run in that session
+  play <session> --attach --stay [--steps steps.json] [-o <folder>]      more steps where the last run left the player
+  play <session> --attach --close                                        the session ended
 `,
   },
   mcp: {

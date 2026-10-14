@@ -4,7 +4,7 @@ Tools for making and changing GoldSrc models (`.mdl`: Half-Life and its mods), b
 coding agent such as Claude Code. You say what you want; the agent writes small scripts with this kit, draws the
 result into pictures to check its own work, and hands you a `.mdl` to try in the game.
 
-Version 0.12.0. An early release, made for an agent to work. For the person it has two pages in the browser: a
+Version 0.13.0. An early release, made for an agent to work. For the person it has two pages in the browser: a
 **viewer** that shows any two models side by side, turning and playing their animations together, and an
 **editor** for touching up a model by hand (its animations, events and textures; not its shape), on a project
 file the agent can work on too (`editor/README.md`).
@@ -21,6 +21,8 @@ file the agent can work on too (`editor/README.md`).
   is (mail, plate, a strap) and how far their edges are; adds a body again in another texture; finds
   a model's loose pieces (a pack, a pouch, a helmet) and takes them off; moves a part from one model to another
   that shares its skeleton.
+- **Items**: adds a new weapon, shield or bow to the files a game already shows its kind from, as new
+  submodels after the ones it has, laid on the game's own, with the numbers its script needs (`smak item`).
 - **Checking**: tells whether a model stays inside what GoldSrc, or Xash3D, can load.
 - **Pictures**: draws any model from any side, or as the player sees a weapon, so the agent can see what it made.
 
@@ -71,6 +73,14 @@ and the agent's output folder together to compare before and after.
 For a map: `node bin/smak.mjs map-info path/to/map.bsp`, `map-plan path/to/map.bsp -o plan.png` and
 `map-views path/to/map.bsp -o views.png` say what is in it and draw it.
 
+For a new item, a mod's scripts and a map's light:
+
+```
+node bin/smak.mjs item   piece.mjs --mod profile.mjs --game <mod> --family <name> --name club -o out --pictures
+node bin/smak.mjs scripts <your scripts> <map.bsp> --mod profile.mjs --game <mod>
+node bin/smak.mjs map-light map.bsp [--rooms rooms.json]
+```
+
 `node bin/smak.mjs help` lists every command. If a picture comes out empty, the model keeps a blank submodel at
 body 0: `info` shows the body numbers, and `--body N` picks one.
 
@@ -109,6 +119,24 @@ body 0: `info` shows the body numbers, and `--body N` picks one.
   the game is the real test.
 - Many models give the left and right side of the body the same pixels of a texture. A mark painted on one side
   then shows on the other; the kit reports how much of each texture is shared.
+
+## What changed in 0.13.0
+
+- **A map played in the game, and tested by what the game says** (`smak play`, `src/play.mjs`, docs/PLAY.md):
+  steps such as walk, face, look, say, goto, a mouse button held, run in an Xash3D browser build through the
+  caller's own Playwright. Every line the game tells the player is written down with its time; a step waits
+  for a line (`until`) and a run is held to lines (`expect`, `expectNot`), so it passes or fails without its
+  pictures being read. `--serve` keeps the game up: a second run is in the game in seconds. What is one
+  game's (how a player gets in, how a thing is said, which messages it speaks in) is in its profile.
+- **A new item in one call** (`addItem`, `addFitted`, `smak item`; docs/ITEMS.md): a family is data in a
+  mod's profile; the piece is laid on the game's own weapon in each file, and the script's numbers come back.
+  A bodypart that is not the last can be added to, and `check` tells a wrong `base`.
+- **An icon's tile** (`iconPicture`): a long thing on the diagonal, the arms left out.
+- **The walk test knows what a class is** (`markers`, `wiring`, `off`), and `reach.on` answers yes or no.
+- **Scripts placed against the game's** (`smak scripts`): which replace, which are named, which nothing names.
+- **A compile seen and stopped** (`--progress`, `--timeout`), with hlvis's work foretold from the portals.
+- **The light on the floor** (`smak map-light`): room by room, from the lightmaps; a view's brightness is
+  not a room's.
 
 ## What changed in 0.12.0
 
