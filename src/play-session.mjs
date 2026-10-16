@@ -112,8 +112,8 @@ export async function serveSession({ session, port = SESSION_PORT, host = "127.0
         line({ result });
         tell?.(`     ${result.passed ? "passed" : "FAILED"} in ${(result.took / 1000).toFixed(1)} s`);
       } catch (error) {
-        const { pictures, logFile, sheet, expectations, fights } = error;
-        line({ failure: error.message, pictures, logFile, sheet, expectations, fights });
+        const { pictures, logFile, sheet, expectations, fights, summary, summaryFile } = error;
+        line({ failure: error.message, pictures, logFile, sheet, expectations, fights, summary, summaryFile });
         tell?.(`     ${error.message}`);
       } finally {
         clearInterval(beating);

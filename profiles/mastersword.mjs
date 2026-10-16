@@ -151,6 +151,39 @@ function linesOf(text, command) {
   return lines;
 }
 
+/** What the game keeps of an entity's description and of a name with its prefix: the source,
+ * shared/ms/scriptcmds.cpp, ScriptCmd_Desc ("limited to 72 characters": cut to 72, with "WARNING: Description
+ * too long") and ScriptCmd_Name (with a `|`, the prefix and the name together cut to 29: "WARNING: Name too
+ * long"). A name with no `|` is not cut there. */
+export const DESC_MOST = 72;
+export const NAME_MOST = 29;
+
+/**
+ * What the game would cut in a script's own `desc` and `name` lines, as sentences (the script check's
+ * warnings). A line's words are joined by one space each, as the game joins its parameters; a word in
+ * quotes is one word. A value put together while the game runs (`$get(...)`) is measured as written.
+ */
+export function scriptLint(text) {
+  const said = [];
+  text.split(/\r?\n/).forEach((raw, index) => {
+    const line = raw.replace(/\/\/.*$/, "");
+    const got = /^\s*(desc|name)\s+(.*\S)\s*$/i.exec(line);
+    if (!got) return;
+    const value = (got[2].match(/"[^"]*"|\S+/g) ?? []).map((word) => word.replace(/^"(.*)"$/, "$1")).join(" ");
+    const command = got[1].toLowerCase();
+    if (command === "desc" && value.length > DESC_MOST)
+      said.push(
+        `line ${index + 1}: its desc is ${value.length} characters, and the game keeps ${DESC_MOST} of it (shared/ms/scriptcmds.cpp, ScriptCmd_Desc): "${value.slice(0, DESC_MOST)}" (cut: "${value.slice(DESC_MOST)}")`,
+      );
+    const bar = value.indexOf("|");
+    if (command === "name" && bar >= 0 && value.length - 1 > NAME_MOST)
+      said.push(
+        `line ${index + 1}: its name "${value}" is ${value.length - 1} characters with its prefix, and the game keeps ${NAME_MOST} of the two (shared/ms/scriptcmds.cpp, ScriptCmd_Name): the name becomes "${value.slice(bar + 1, bar + 1 + NAME_MOST - bar)}"`,
+      );
+  });
+  return said;
+}
+
 /**
  * The model a script gives its entity, as a path from the game's folder ("models/monsters/skeleton.mdl"),
  * or null where it names none that can be read. `textOf(name)` is a script's text, or undefined.
@@ -481,7 +514,13 @@ const PLAY = {
   loads: 90000,
   loaded: "Custom resource propagation complete",
   goto: ["trial goto {x} {y} {z}"],
+  // put 4 over the place asked, he drops onto the floor: at its own height a path brush 2 high held him fast
+  // (setorigin puts the box where it is told, and a box in a brush does not move: seen in the orchard, 2026-10-15)
+  lift: 4,
   heal: ["trial heal"],
+  // a way to another map (msarea_transition) asks "Press (enter) to continue": `accept` is the command the
+  // key gives; the engine says "Spawn Server: <map>" as the next map's server starts (Xash3D FWGS, engine/server/sv_init.c, SV_SpawnServer)
+  travel: { commands: ["accept"], spawned: /Spawn Server: (\S+)/ },
   target: {
     commands: ["trial nearest {radius}"],
     answer:
@@ -491,6 +530,40 @@ const PLAY = {
     // (lowercase), the nearest of all when none does; `trial prefer none` undoes it. A fight's `prefer`
     prefer: ["trial prefer {word}"],
     unprefer: ["trial prefer none"],
+    // `trial skip <index>`: from then on `trial nearest` passes over that monster (one a fight cannot get at)
+    skip: ["trial skip {id}"],
+  },
+  // `trial census <radius>`: every living monster within it, the player's enemies and the rest
+  census: {
+    commands: ["trial census {radius}"],
+    count: /^TRIAL census (?<count>\d+) within/,
+    one: /^TRIAL census one (?<name>.*) hp (?<hp>\S+) at \((?<x>[-\d.]+),(?<y>[-\d.]+),(?<z>[-\d.]+)\) relate (?<relate>\S+)$/,
+  },
+  // A RANGED WEAPON. A bow is drawn while the left button is held and loosed when it is let go: base_ranged's
+  // attack is "charge-throw-projectile" (scripts/items/base_ranged), drawn to the full between hold_min and
+  // hold_max (bows_base: 1.1 and 1.3 s; msc/game/server/Weapons/giattack.cpp, ChargeThrowProj: the shot's speed
+  // is RANGED_FORCE times the share of hold_max held), so 1.4 s. Arrows are a quiver's (or a pack's); with none
+  // the game gives a blunt one free (UseAmmo: proj_arrow_generic, proj_bolt_generic). An arrow falls at
+  // sv_gravity 800 times its own 0.7 to 0.75. A weapon goes into the hands by its quickslot: the server's
+  // `quickslot create <n> current` (sent past the client, which has a command of that name) makes slot n+1
+  // what is in the hands, and the client's `+quickslot <n>` let go within 2 s does `inv transfer <id> 0`
+  // (client/MasterSword/vgui_QuickSlot.h, SlotPressed and ConfirmItem), which puts away what was held. So the
+  // melee weapon held is made slot 10 as the bow is drawn, and slot 10 puts it back. The test characters keep
+  // their bow in slot 1 (msr-web maps/trial/chars). A spell (magic_hand_*) is put into the hands by `prep`.
+  // `trial hands <item>` says whether it is held. Seen 2026-10-16: a Thornbow drawn from the back, two arrows
+  // into a dummy 400 off by a plain aim, the Short Sword back in the hands.
+  ranged: {
+    draw: ({ item, slot }) => ["cmd quickslot create 9 current", ...(/^magic_hand_/.test(item) ? [`cmd prep ${item}`] : [`+quickslot ${slot}`, `-quickslot ${slot}`])], // prettier-ignore
+    back: ["+quickslot 10", "-quickslot 10"],
+    held: { commands: ["trial hands {item}"], answer: /^TRIAL hands \S+ (?<held>[01])$/ },
+    hold: 1400,
+    drawn: 1000,
+    // the console's +attack, which the left button is bound to: a press of the page's mouse started a draw half as
+    // often (2026-10-16, a dummy 300 off: 8 of 24 by the mouse, 11 of 24 by +attack, the same aim each time)
+    button: "attack",
+    // RANGED_FORCE of each (scripts/items/bows_*): units a second at a full draw
+    speeds: { bows_thornbow: 1700, bows_longbow: 2100, bows_shortbow: 1000, bows_orcbow: 900, bows_crossbow_light: 1000 },
+    gravity: 580,
   },
   fight: {
     attack: [{ tap: "left", ms: 200, every: 700 }],
@@ -662,6 +735,8 @@ export default function masterSword({ game, folders, scripts = [], cache } = {})
             keys.classname === "msitem_spawn" ? `${ITEMS}${scriptName(value)}` : scriptName(value),
           ),
       aliases: (name) => (name.startsWith(ITEMS) ? [name.slice(ITEMS.length)] : []),
+      // a desc over 72 characters, a name with its prefix over 29: what the game cuts (scriptLint)
+      lint: (name, text) => scriptLint(text),
       started: (name, { maps }) => {
         const map = MAP_STARTUP.exec(name)?.[1];
         if (map)

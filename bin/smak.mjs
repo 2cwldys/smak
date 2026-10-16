@@ -2160,7 +2160,7 @@ function mapCompile({ command, file, flags, listed }) {
  */
 async function playMap({ command, file: url, flags, listed }) {
   const { playOf, playPartOf, messagesOf, playwrightFrom, browserDriver, playSession, patternOf } = smak.play;
-  const { serveSession, attachSession, closeSession, sessionState, expectationLine, fightLine, SESSION_PORT } =
+  const { serveSession, attachSession, closeSession, sessionState, expectationLine, fightLine, summaryLines, SESSION_PORT } =
     smak.play;
   /** The steps of a file, or the command stopped: a file that is not there, or is no JSON. */
   const stepsOf = (file) => {
@@ -2177,6 +2177,7 @@ async function playMap({ command, file: url, flags, listed }) {
     for (const picture of run.pictures) console.log(`  ${picture}`);
     console.log(`what the game said: ${run.logFile}${run.linesFile ? ` (and ${run.linesFile})` : ""}`);
     for (const fight of run.fights ?? []) console.log(fightLine(fight));
+    for (const line of run.summary ? summaryLines(run.summary) : []) console.log(line);
     const failed = run.expectations.filter((each) => !each.passed);
     if (run.expectations.length) {
       for (const each of run.expectations) console.log(expectationLine(each));
@@ -2187,6 +2188,7 @@ async function playMap({ command, file: url, flags, listed }) {
   /** A run that stopped, printed; false. */
   const stopped = (error) => {
     for (const fight of error.fights ?? []) console.error(fightLine(fight));
+    for (const line of error.summary ? summaryLines(error.summary) : []) console.error(line);
     for (const each of error.expectations ?? []) console.error(expectationLine(each));
     if (error.sheet) console.error(`the pictures up to there: ${error.sheet}`);
     if (error.logFile) console.error(`what the game said up to there: ${error.logFile}`);
@@ -2231,7 +2233,7 @@ async function playMap({ command, file: url, flags, listed }) {
       ...(stay ? { stay: true } : { map }),
       steps: stepsOf(stepFiles[index]),
       out: all.length > 1 ? join(out, `${index + 1}-${String(map).replace(/[^A-Za-z0-9_-]/g, "_")}`) : out,
-      ...defined({ loads: numberOf(flags, "loads") }),
+      ...defined({ loads: numberOf(flags, "loads"), from: index ? undefined : flags.from }),
       ...{ expect, expectNot, sheet: flags.sheet !== false },
       // the files are put once, before the first map
       put: index ? [] : put,
@@ -2646,7 +2648,7 @@ const COMMANDS = {
                                             their map and not for the engine. --over: a folder laid over the game's (msc=mine/msc),
                                             marked now; a run with the same --over puts what changed in it since
   play <session> --attach --map <name> [--steps steps.json] [-o <folder>] [--expect ...] [--put ...] [--over ...]   a run in that session
-  play <session> --attach --stay [--steps steps.json] [-o <folder>]      more steps where the last run left the player
+  play <session> --attach --stay [--steps steps.json] [-o <folder>] [--from <section|step>]   more steps where the last run left the player
   play <session> --attach --close                                        the session ended
 `,
   },

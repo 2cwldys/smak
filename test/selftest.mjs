@@ -60,6 +60,8 @@ const areas = [
   "50-play-session-long", // a session's run quiet for long still answered (headers at once, a beat, no fetch); folders laid over, what changed put
   "51-map-bands-open", // a band left empty at a place on purpose, said by a key the bands rule reads: only the true faults told
   "52-play-fight-ways", // a fight that prefers a kind of enemy, sidesteps round a crowd to it, dodges a place it is warned of
+  "53-play-runner", // a line said before its step, sections and a run from one, kept values, a travel, the summary, the script lint
+  "54-play-fight-reach", // an enemy a fight cannot get at (passed over, stopped at, gone to, shot at), a ranged weapon drawn and put back, a quiet without its line, a census, a walk that moves nobody
   "19-example-and-kit-faults", // the examples' wrong arguments and refused models; the kits' fittings and rings
 ];
 

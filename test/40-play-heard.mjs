@@ -43,6 +43,9 @@ const hearingDriver = (says = {}, { goes = true } = {}) => {
       said(text);
       const place = /^put me at (-?\d+) (-?\d+) (-?\d+)$/.exec(text);
       if (place && goes) view.origin = place.slice(1).map(Number);
+      // a walk moves him along +x while its button is down (a walk that moves nobody stops a run)
+      const walking = /^([+-])(forward|back|moveleft|moveright)$/.exec(text);
+      if (walking) view.walking = walking[1] === "+";
     },
     click(x, y) {
       calls.push(`click ${x} ${y}`);
@@ -55,12 +58,13 @@ const hearingDriver = (says = {}, { goes = true } = {}) => {
     mouseUp: (button) => void calls.push(`mouseUp ${button}`),
     wait(ms) {
       now += ms;
+      if (view.walking) view.origin = [view.origin[0] + ms * 0.2, view.origin[1], view.origin[2]];
     },
     shot(file) {
       calls.push(`shot ${file}`);
       writeFileSync(file, picture);
     },
-    view: () => ({ ...view }),
+    view: () => ({ yaw: view.yaw, pitch: view.pitch, origin: [...view.origin] }),
     look(to) {
       calls.push(`look ${JSON.stringify(to)}`);
       Object.assign(view, to);

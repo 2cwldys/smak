@@ -57,6 +57,7 @@ import { join, resolve } from "node:path";
 import { GOLDSRC, modOf } from "./maps/mod.mjs";
 import { sheetOf } from "./play-sheet.mjs";
 import { MOUSE_BUTTONS } from "./play-browser.mjs";
+import { ASIDE, CENSUS_RADIUS, LOOSED, aimOf, besideOf, censusOf, censusTable, fightOptionsOf, fightPartOf, leftOf, placeOf, progressOf } from "./play-fight.mjs"; // prettier-ignore
 
 export { SOFTWARE_GL, playwrightFrom, browserDriver } from "./play-browser.mjs";
 export { sheetOf } from "./play-sheet.mjs";
@@ -66,17 +67,24 @@ export { serveSession, attachSession, sessionState, closeSession, SESSION_PORT }
 const KINDS = [
   ...["command", "say", "walk", "turn", "button", "hold", "press", "click"],
   ...["mouse", "mouseDown", "mouseUp", "tap", "look", "face", "faceAt", "goto", "where", "map"],
-  ...["expect", "expectNot", "repeat", "fight"],
+  ...["expect", "expectNot", "repeat", "fight", "section", "travel", "census"],
 ];
 /** What a step may hold beside its kind, and which kinds take `ms` and `to`. */
-const BESIDE = ["wait", "shot", "ms", "to", "until", "within", "every", "since", "times", "for", "radius"];
+const BESIDE = ["wait", "shot", "ms", "to", "until", "within", "every", "since", "times", "for", "radius", "already", "onFail", "keep"]; // prettier-ignore
+/** What a step whose line was heard before it began does (`already`), and what a step that fails does (`onFail`). */
+const ALREADY = ["pass", "warn", "wait"];
+const ON_FAIL = ["stop", "continue"];
+/** A value kept by a step's `keep`, as a later step's text names it: `${hp}`. */
+const KEPT = /\$\{(\w+)\}/g;
+/** The section the steps before any `section` step are in. */
+const OPENING = "(start)";
 const TAKES_MS = ["button", "hold", "mouse", "tap"];
 /** The kinds that hold steps of their own and end by a line, a count or a time. */
 const LOOPS = ["repeat", "fight"];
 /** The lines of a fight a profile's `play.fight` may give the pattern of. */
 const FIGHT_LINES = ["dealt", "taken", "missed", "slain", "died", "health", "maxHealth"];
 /** What a `fight` step may say in its object. */
-const FIGHT = ["radius", "heal", "post", "attack", "chase", "quiet", "prefer", "sidestep", "dodge"];
+const FIGHT = ["radius", "heal", "post", "attack", "chase", "quiet", "prefer", "sidestep", "dodge", "stuck", "ranged", "quietEnds"]; // prettier-ignore
 /** What a fight's `dodge` may say in its object. */
 const DODGE = ["line", "far", "ms", "hold"];
 /** A word of an enemy's name a fight prefers: what a game's command takes as one word. */
@@ -99,7 +107,7 @@ const FLURRY = 3;
 const LET_BE_AFTER = 4;
 const LET_BE = 20000;
 /** The kinds that only read: nothing is done to the game, so no wait follows them unless one is given. */
-const READS = ["where", "expect", "expectNot"];
+const READS = ["where", "expect", "expectNot", "section", "census"];
 /** Where a walk goes, as the client library's buttons name it (the SDK's cl_dll/input.cpp). */
 const WALKS = { forward: "forward", back: "back", left: "moveleft", right: "moveright" };
 /** Milliseconds waited after a step that does something, unless the step says: a frame or two to show it. */
@@ -127,6 +135,8 @@ const LEAVES = 700;
 const GOTO_NEAR = 16;
 const GOTO_NEAR_Z = 72;
 const GOTO_WITHIN = 3000;
+/** Units a `walk` has to move the player by, or the run stops: he did not move (in a brush). */
+const WALKED = 2;
 /** A map's name and a picture's, as they may be written: nothing a console or a file system minds. */
 const MAP_NAME = /^[A-Za-z0-9_][A-Za-z0-9_\-/.]*$/;
 const SHOT_NAME = /^[A-Za-z0-9_-]+$/;
@@ -147,6 +157,8 @@ const shown = (value) => (value === undefined ? "nothing" : JSON.stringify(value
 const isCount = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0;
 const isNumber = (value) => typeof value === "number" && Number.isFinite(value);
 const isText = (value) => typeof value === "string" && value.trim() !== "";
+/** Whether a step's text names a value a step before kept (`${hp}`). */
+const templated = (value) => typeof value === "string" && /\$\{\w+\}/.test(value);
 /** An object without the fields that are undefined. */
 const defined = (fields) => Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined));
 
@@ -242,6 +254,11 @@ export const MESSAGE_READERS = {
  *              `{word}` (and the nearest of all when none does), and `unprefer`, those that undo it
  *   heal       how the player's health is given back in a test: console commands, or a function that gives
  *              them; null where the game has no such command
+ *   travel     how the player goes through a way to another map that he stands in (a `travel` step):
+ *              `{ commands, spawned }`, the console commands that take him (`["accept"]`) and the pattern of
+ *              the line that says the next map's server is up, its first group the map's name. A session
+ *              follows the map it is in by that line, however the player got there. Null where the game
+ *              has no ways between maps
  *   fight      what a `fight` step does and reads: `{ attack, dealt, taken, missed, slain, died, health,
  *              maxHealth }`. `attack`: the steps of one blow (`[{ tap: "left" }]`), done once a round. The
  *              rest are patterns of the game's lines, each null where the game says no such thing: a hit the
@@ -291,6 +308,15 @@ export function playPartOf(mod) {
     throw new Error(
       `mod: play.heal is a list of console commands that give the player's health back, or a function that gives them, not ${shown(part.heal)}`,
     );
+  part.travel ??= null;
+  if (part.travel !== null) {
+    const asked = part.travel;
+    if (typeof asked !== "object" || Array.isArray(asked) || !commands(asked.commands) || asked.spawned === undefined)
+      throw new Error(
+        `mod: play.travel is { commands, spawned }: the console commands that take the player through a way to another map, and the pattern of the line that says the next map's server is up (its first group the map's name), not ${shown(asked)}`,
+      ); // prettier-ignore
+    part.travel = { commands: asked.commands, spawned: patternOf(asked.spawned, "mod: play.travel.spawned") };
+  }
   part.target ??= null;
   if (part.target !== null && typeof part.target !== "function") {
     const asked = part.target;
@@ -328,7 +354,8 @@ export function playPartOf(mod) {
     throw new Error(`mod: play.fight.attack is the steps of one blow, such as [{ tap: "left" }], not ${shown(part.fight.attack)}`); // prettier-ignore
   for (const name of FIGHT_LINES)
     part.fight[name] = part.fight[name] == null ? null : patternOf(part.fight[name], `mod: play.fight.${name}`);
-  return part;
+  // a goto's lift, a census, a ranged weapon drawn, enemies passed over: src/play-fight.mjs
+  return fightPartOf(part, whole.play?.target, { patternOf, commands });
 }
 
 /** The names of the user messages a profile reads: what a driver is asked to listen to. */
@@ -387,6 +414,14 @@ function sayCommands(part, text, where) {
  *                                     is the middle of his box, 36 above the floor he stands on
  *   { where: "gate" }                 the player's place and view written into the log, under that name
  *   { map: "barrowroad" }             another map loaded in the same run, and entered as the profile says
+ *   { travel: true }                  through the way to another map the player stands in: the profile's
+ *                                     `play.travel` commands, its line of the next map's server, the map's
+ *                                     `loaded` line, and its `enter` steps. `travel: "barrowroad"`: and the
+ *                                     run stops if the way led elsewhere. `within`: the longest each wait is
+ *                                     (the profile's `loads`)
+ *   { section: "terraces" }           the steps after it, up to the next section, are one part of the run:
+ *                                     timed and counted on their own (`sections`, summary.json), and a run
+ *                                     may begin at it (`from`). It does nothing in the game
  *   { expect: "HIT! .* holy" }        the run fails unless a line heard matches (a regular expression)
  *   { expectNot: "Script Error" }     the run fails if a line heard matches
  *   { repeat: [steps], until: "x" }   the steps done again and again: until a line (`within`: 30000, and the
@@ -406,8 +441,14 @@ function sayCommands(part, text, where) {
  *                                     (milliseconds, 600, or false: with `chase`, a step to the side
  *                                     round others in the way), `dodge` (the pattern of a line that warns
  *                                     of a blow to a place, its `(?<x>)` and `(?<y>)`; or `{ line, far,
- *                                     ms, hold }`: stepped away from). What happened is written to the
- *                                     log as a line of the kind "fight", and is the run's `fights`
+ *                                     ms, hold }`: stepped away from), `stuck` (`{ after, then }` or false:
+ *                                     an enemy it cannot get at, passed over, stopped at, gone to or shot
+ *                                     at), `ranged` (a ranged weapon drawn for him), `quietEnds` (an end by
+ *                                     its quiet without the line is no failure): src/play-fight.mjs. What
+ *                                     happened is written to the log as a line of the kind "fight", and is
+ *                                     the run's `fights`
+ *   { census: 6000 }                  the living monsters within that radius counted as the profile's
+ *                                     `play.census` does, and written as a table (`true`: 6000)
  * and any step may also carry:
  *   until: "Skeleton .* dies"         after it, a line the game says is waited for (and not the clock). A
  *                                     step that DOES a thing hears from when it began doing it; one that
@@ -429,6 +470,21 @@ function sayCommands(part, text, where) {
  *   wait: 1500                        milliseconds waited after it (unless told: 1000 after a step that does
  *                                     something and has no `until`, none after one that only reads)
  *   shot: "gate"                      a picture taken after the wait: `NN_gate.png`, numbered as taken
+ *   already: "pass"                   with `until`: what is done when the line was said BEFORE the step began
+ *                                     (since the map was entered, or since the last step that waited for the
+ *                                     same line; a line another `until` stopped at is not looked at): "pass"
+ *                                     ends the step at once, the line taken as its own (unless told: a
+ *                                     fight's); "warn" says so in the log and waits all the same (a wait's
+ *                                     and a repeat's); "wait" says nothing (a step that does a thing: its
+ *                                     line is an answer to what it did). A run stopped by an `until` says
+ *                                     when its line was heard before, if it was
+ *   onFail: "continue"                the step failing (its line never came, a `goto` that put him nowhere)
+ *                                     is a failed expectation and the run goes on; "stop" (unless told, or as
+ *                                     its section's step says) stops it
+ *   keep: { hp: "= ([\\d.]+)" }       a value kept from what was said: the first group of the pattern, in the
+ *                                     line its `until` stopped at or else the last line since it began that
+ *                                     matches. A later step's command, `until`, `expect` or `expectNot` names
+ *                                     it `${hp}` (in a pattern, matched as written: dots are dots)
  * so `{ wait: 5000 }` only waits, `{ shot: "here" }` only takes a picture and `{ until: "dies" }` only waits
  * for a line.
  *
@@ -485,8 +541,8 @@ function actionOf(step, where, part, pause) {
   const expects = kind === "expect" || kind === "expectNot";
   if (step.until !== undefined && expects)
     refuse(`has until and ${kind}: an expectation waits by its own within`);
-  if (step.within !== undefined && step.until === undefined && !expects)
-    refuse("has within, which goes with until, expect or expectNot only");
+  if (step.within !== undefined && step.until === undefined && !expects && kind !== "travel")
+    refuse("has within, which goes with until, expect or expectNot only, and with travel");
   if (step.within !== undefined && !(isCount(step.within) && step.within > 0))
     refuse(`waits within ${shown(step.within)}: a number of milliseconds over 0`);
   const loops = LOOPS.includes(kind);
@@ -510,6 +566,15 @@ function actionOf(step, where, part, pause) {
     refuse(`goes on for ${shown(step.for)}: a number of milliseconds over 0`);
   if (step.radius !== undefined && !(kind === "faceAt" && step.faceAt === "target"))
     refuse('has radius, which goes with faceAt: "target" only (that of a fight is in its object)');
+  if (step.already !== undefined && step.until === undefined)
+    refuse("has already, which goes with until only: what a step does when its line was heard before it began");
+  if (step.already !== undefined && !ALREADY.includes(step.already))
+    refuse(`does ${shown(step.already)} with a line heard before it began: ${ALREADY.join(", ")}`);
+  if (step.onFail !== undefined && !ON_FAIL.includes(step.onFail))
+    refuse(`does ${shown(step.onFail)} when it fails: ${ON_FAIL.join(", ")}`);
+  const keeps = step.keep !== undefined && step.keep && typeof step.keep === "object" && !Array.isArray(step.keep) ? Object.keys(step.keep) : null; // prettier-ignore
+  if (step.keep !== undefined && !(keeps?.length && keeps.every((name) => /^\w+$/.test(name))))
+    refuse(`keeps ${shown(step.keep)}: { "name": "a pattern whose first group is kept" }, each name of letters, digits and _`); // prettier-ignore
   const far = (value, of) =>
     isCount(value) && value > 0 ? value : refuse(`${of} ${shown(value)}: a distance in the map's units, over 0`);
   const place = (value) => Array.isArray(value) && value.length === 3 && value.every(isNumber);
@@ -521,9 +586,10 @@ function actionOf(step, where, part, pause) {
   const quiets = kind === "fight" && step.fight?.quiet !== undefined;
   if (loops && step.until === undefined && step.times === undefined && step.for === undefined && !quiets)
     refuse(`${kind === "repeat" ? "repeats" : "fights"} without an end: until (a line), ${kind === "repeat" ? "times (a count) or for (milliseconds)" : "for (milliseconds) or quiet in its object"} says when it stops`); // prettier-ignore
+  // a text that names a kept value (`${hp}`) is made whole when the step is done: checked here with a stand-in
   const pattern = (written, of) => {
     try {
-      return patternOf(written, of);
+      return patternOf(templated(written) ? written.replace(KEPT, "0") : written, of);
     } catch (error) {
       return refuse(error.message.replace(/^play: /, ""));
     }
@@ -536,6 +602,8 @@ function actionOf(step, where, part, pause) {
       : refuse(`names the mouse's button ${shown(button)}: ${MOUSE_BUTTONS.join(", ")}`);
 
   const action = { kind: kind ?? "wait" };
+  /** The texts of the step that name a kept value, as written: made whole as it is done. */
+  const templates = {};
   if (kind === "command") {
     const commands = [step.command].flat();
     if (!commands.length || !commands.every((each) => isText(each) && !/[\r\n]/.test(each)))
@@ -543,12 +611,29 @@ function actionOf(step, where, part, pause) {
         `gives the command ${shown(step.command)}: a console command, or a list of them, each on one line`,
       );
     action.commands = commands;
+    if (commands.some(templated)) templates.commands = commands;
+  } else if (kind === "section") {
+    if (!(typeof step.section === "string" && SHOT_NAME.test(step.section)))
+      refuse(`opens the section ${shown(step.section)}: a name of letters, digits, _ and -`);
+    const strange = Object.keys(step).filter((key) => key !== "section" && key !== "onFail");
+    if (strange.length) refuse(`opens a section and has ${strange.join(", ")}: a section's step holds its name and onFail only`); // prettier-ignore
+    action.name = step.section;
+  } else if (kind === "travel") {
+    if (!(step.travel === true || (typeof step.travel === "string" && MAP_NAME.test(step.travel))))
+      refuse(`travels to ${shown(step.travel)}: true, or the name of the map the way leads to`);
+    if (step.until !== undefined) refuse("has until and travel: a travel waits for the next map by itself");
+    if (!part.travel)
+      refuse("travels to another map, and the profile names no way to (play.travel: the commands and the line of the next map's server)"); // prettier-ignore
+    action.map = step.travel === true ? null : step.travel;
+    action.commands = commandsOf(part.travel.commands, {}, [], "play.travel");
+    action.within = step.within ?? null;
   } else if (kind === "say") {
     action.commands = sayCommands(part, step.say, where);
     action.kind = "command";
   } else if (kind === "walk") {
     const to = step.to ?? "forward";
     if (!Object.hasOwn(WALKS, to)) refuse(`walks to ${shown(to)}: ${Object.keys(WALKS).join(", ")}`);
+    // a walk that moves him nowhere stops the run (he stands in something solid): see the button's
     Object.assign(action, { kind: "button", button: WALKS[to], ms: held(step.walk, "walks for") });
   } else if (kind === "turn") {
     if (!(isNumber(step.turn) && step.turn !== 0))
@@ -667,7 +752,12 @@ function actionOf(step, where, part, pause) {
         hold: dodge.hold === 0 ? 0 : held(dodge.hold ?? DODGE_HOLD, "after a dodge walks at nobody for"),
       };
     }
-    if (action.post) action.back = commandsOf(part.goto, { x: action.post[0], y: action.post[1], z: action.post[2] }, action.post, "play.goto"); // prettier-ignore
+    // an enemy it cannot get at, a ranged weapon, an end by quiet without the line: src/play-fight.mjs
+    fightOptionsOf(asked, action, part, { refuse, held, far, commandsOf, until: step.until !== undefined });
+    // a place gone to is asked a little over itself (the profile's lift): he drops onto the floor
+    const goesTo = ([x, y, z]) => commandsOf(part.goto, { x, y, z: z + part.lift }, [x, y, z + part.lift], "play.goto");
+    if (action.post) action.back = goesTo(action.post);
+    if (part.goto) action.goesTo = goesTo;
     if (action.heal !== null) action.heals = commandsOf(part.heal, {}, [], "play.heal");
   } else if (kind === "goto") {
     if (!place(step.goto))
@@ -677,8 +767,16 @@ function actionOf(step, where, part, pause) {
         "goes to a place, and the profile names no command that puts the player at one (play.goto): the engine has none of its own. Walk there, or fly with noclip",
       );
     const [x, y, z] = step.goto;
-    action.commands = commandsOf(part.goto, { x, y, z }, step.goto, "play.goto");
+    // a little over the place (the profile's lift): he drops onto a floor, where at its height a brush a unit or
+    // two high (a path) holds him fast; he is looked for at the place asked
+    action.commands = commandsOf(part.goto, { x, y, z: z + part.lift }, [x, y, z + part.lift], "play.goto");
     action.place = [x, y, z];
+  } else if (kind === "census") {
+    if (!(step.census === true || (isCount(step.census) && step.census > 0)))
+      refuse(`counts within ${shown(step.census)}: a distance in the map's units over 0, or true (${CENSUS_RADIUS})`);
+    if (!part.census)
+      refuse("counts the monsters, and the profile names no way to ask the game (play.census)");
+    action.radius = step.census === true ? CENSUS_RADIUS : step.census;
   } else if (kind === "where") {
     if (!(step.where === true || (typeof step.where === "string" && SHOT_NAME.test(step.where))))
       refuse(`asks where under the name ${shown(step.where)}: letters, digits, _ and -, or true for no name`);
@@ -689,21 +787,29 @@ function actionOf(step, where, part, pause) {
     action.map = step.map;
   } else if (expects) {
     action.pattern = pattern(step[kind], `${kind === "expect" ? "expects" : "expects no"}`);
+    if (templated(step[kind])) templates.pattern = step[kind];
     action.within = step.within ?? 0;
     action.since = step.since ?? "run";
   }
   if (step.until !== undefined) {
     action.until = pattern(step.until, "waits until");
+    if (templated(step.until)) templates.until = step.until;
+    // its line said before it began: a fight's ends it at once (an area that fell quiet while another was
+    // fought stays quiet); a wait's and a block's are told of; a deed's is the answer to nothing it did
+    action.already = step.already ?? (kind === "fight" ? "pass" : !kind || kind === "repeat" ? "warn" : "wait");
     action.within = step.within ?? WITHIN;
     // a tap is tapped again as often as it taps
     action.every = loops ? null : kind === "tap" ? action.every : (step.every ?? null);
     // a step that only waits hears from the last that did a thing: see `until` at the head of playOf
     action.since = step.since ?? (kind ? "step" : BEFORE);
   }
-  const idle = !kind || READS.includes(kind) || kind === "map" || step.until !== undefined || loops;
+  const idle = !kind || READS.includes(kind) || kind === "map" || kind === "travel" || step.until !== undefined || loops; // prettier-ignore
   // a tap is followed by what is left of its `every`, so that taps in steps of their own keep one time
   action.wait = step.wait ?? (idle ? 0 : kind === "tap" ? action.every - action.ms : pause);
   action.shot = step.shot ?? null;
+  if (step.onFail !== undefined) action.onFail = step.onFail;
+  if (keeps) action.keep = keeps.map((name) => ({ name, pattern: pattern(step.keep[name], `keeps ${name} by`) }));
+  if (Object.keys(templates).length) action.templates = templates;
   action.step = step;
   return action;
 }
@@ -712,7 +818,7 @@ function actionOf(step, where, part, pause) {
 /** What a driver has to be able to do for an action, as a sentence's end; null when every driver can. */
 function wantOf(action, driver) {
   const has = (...names) => names.every((name) => typeof driver[name] === "function");
-  if ((action.until || action.kind === "expect" || action.kind === "expectNot") && !has("lines"))
+  if ((action.until || ["expect", "expectNot", "travel", "census"].includes(action.kind) || action.keep) && !has("lines"))
     return "waits for what the game says, and this driver hears nothing (it has no lines())";
   if (action.kind === "look" && !has("look"))
     return "sets the view, which this driver cannot (it has no look())";
@@ -815,6 +921,16 @@ export function playSession({ driver, mod, pause: sessionPause, tell: sessionTel
   let taken = 0;
   /** Whether a turn is still set exactly: false once the driver's view could not be read. */
   let exact = true;
+  /** The lines an `until` has stopped at, in any run of the session: no other stops at one of them. */
+  const stoppedAt = new WeakSet();
+  /** Where in `heard` the map the session is in began (its `map` command, or its server's line): what a
+   * step's `already` looks back to; and where the last step that waited for each pattern ended. */
+  let mapStart = 0;
+  const lastWaited = new Map();
+  /** The values steps kept (`keep`), by name: a run that stays has those of the runs before it. */
+  const kept = new Map();
+  /** What the runs since a map was last loaded came to (a run that stays adds to them): summary.json's chain. */
+  let chain = [];
   const readers = Object.fromEntries(
     Object.entries(part.messages).map(([name, how]) => [
       name,
@@ -826,12 +942,19 @@ export function playSession({ driver, mod, pause: sessionPause, tell: sessionTel
     if (!hears) return;
     const fresh = (await driver.lines(taken)) ?? [];
     taken += fresh.length;
+    const was = heard.length;
     for (const each of fresh) {
       if (each.text !== undefined) heard.push({ at: each.at, kind: each.kind, text: String(each.text) });
       else if (readers[each.kind])
         for (const text of [readers[each.kind](each.bytes) ?? []].flat())
           if (isText(text)) heard.push({ at: each.at, kind: each.kind, text: String(text) });
     }
+    // the map is followed by its server's line, however the player came there (a way walked through)
+    if (part.travel)
+      for (let at = was; at < heard.length; at++) {
+        const spawned = heard[at].kind === OWN ? null : part.travel.spawned.exec(heard[at].text);
+        if (spawned?.[1]) [state.map, mapStart] = [spawned[1], at];
+      }
   };
   const note = (kind, text) => heard.push({ at: Date.now(), kind, text });
   /** The first line from `from` on that matches, is not the run's own, and is none of `but` (a WeakSet). */
@@ -861,6 +984,39 @@ export function playSession({ driver, mod, pause: sessionPause, tell: sessionTel
       ? `The last it said: ${said.slice(-LAST_LINES).map((each) => shown(each.text)).join(", ")}` // prettier-ignore
       : "It said nothing meanwhile";
   };
+  /** The enemies fights found they could not get at, by the game's id: passed over by every fight until a map loads. */
+  const unreachable = new Map();
+  /** The living monsters within `radius`, as the profile's `play.census` counts them: `{ count, ones }`, or null
+   * where the game did not answer or cannot be asked (src/play-fight.mjs reads it). */
+  const census = async (radius = CENSUS_RADIUS) => {
+    if (!part.census || !hears) return null;
+    await listen();
+    const from = heard.length;
+    for (const [index, command] of commandsOf(part.census.commands, { radius }, [radius], "play.census").entries()) {
+      if (index) await driver.wait(BETWEEN);
+      await driver.command(command);
+    }
+    const head = await waitFor(part.census.count, from, part.census.within);
+    if (!head) return null;
+    const count = Number(part.census.count.exec(head.text).groups.count);
+    const after = () => heard.slice(heard.indexOf(head)).filter((each) => each.kind !== OWN).map((each) => each.text);
+    // each one's line comes with the count's: a moment more for the last of them
+    for (let waited = 0; after().filter((text) => part.census.one.test(text)).length < count && waited < part.census.within; waited += POLL) { // prettier-ignore
+      await driver.wait(POLL);
+      await listen();
+    }
+    return censusOf(after(), part.census);
+  };
+  /** What is left, for the sentence of a failure: " left: Wolf 114 hp at (780,1322,0), 1 of 1." by a census done
+   * then; nothing where the game cannot be asked. */
+  const leftNow = async () => {
+    if (!part.census || !hears) return "";
+    try {
+      return ` ${leftOf(await census())}.`;
+    } catch (error) {
+      return ` (A census was asked, and failed: ${error.message})`;
+    }
+  };
 
   async function ready() {
     if (state.up) return;
@@ -881,6 +1037,7 @@ export function playSession({ driver, mod, pause: sessionPause, tell: sessionTel
     put = [],
     sheet = true,
     over = [],
+    from = null,
   } = {}) {
     const staying = stay === true;
     if (staying && !state.entered)
@@ -895,6 +1052,17 @@ export function playSession({ driver, mod, pause: sessionPause, tell: sessionTel
     if (!isCount(loading)) throw new Error(`play: loads is a number of milliseconds, not ${shown(loads)}`);
     const entering = playOf(part.enter, { mod, pause, what: "the profile's enter step" });
     const asked = playOf(steps, { mod, pause });
+    /** The step the run begins at: `from`, a section's name or a step's number (1 is the first). */
+    let startAt = 0;
+    if (from !== null && from !== undefined) {
+      const number = Number.isInteger(from) ? from : /^\d+$/.test(String(from)) ? Number(from) : null;
+      const names = asked.filter((action) => action.kind === "section").map((action) => action.name);
+      startAt = number !== null ? number - 1 : asked.findIndex((action) => action.kind === "section" && action.name === from); // prettier-ignore
+      if (!(startAt >= 0 && startAt < asked.length))
+        throw new Error(
+          `play: from ${shown(from)}: ${number !== null ? `the steps are numbered 1 to ${asked.length}` : `the steps have no section of that name (${names.length ? names.join(", ") : "they have none"})`}`,
+        ); // prettier-ignore
+    }
     const held = [expect, expectNot].map((list, which) =>
       [list].flat().map((written) => ({
         kind: which ? "expectNot" : "expect",
@@ -935,12 +1103,15 @@ export function playSession({ driver, mod, pause: sessionPause, tell: sessionTel
     const marks = new Map();
     const down = new Set();
     const fights = [];
-    /** The lines an `until` of this run has stopped at: no other stops at one of them. */
-    const stoppedAt = new WeakSet();
     let first = heard.length;
     let mapFrom = first;
     /** Where the last step that did a thing began: what "deed" reads from. */
     let before = first;
+    /** The run's sections, each as it is timed and counted; the one the steps are in; the steps that ended
+     * at once by a line said before they began (`already: "pass"`), by where they are. */
+    const sections = [];
+    let current = null;
+    const early = new Set();
     const picture = async (name) => {
       const file = join(out, `${String(pictures.length).padStart(2, "0")}_${name}.png`);
       await driver.shot(file);
@@ -971,6 +1142,7 @@ export function playSession({ driver, mod, pause: sessionPause, tell: sessionTel
       const entry = { part: phase, index, kind, step, at, took: Date.now() - began - at, picture: file };
       if (line) entry.heard = line.text;
       if (named) entry.where = named;
+      if (early.delete(where)) entry.already = true;
       done.push(entry);
       const said = lineOf(entry);
       note(OWN, said.trim());
@@ -1094,7 +1266,7 @@ export function playSession({ driver, mod, pause: sessionPause, tell: sessionTel
       if (line) stoppedAt.add(line);
       else if (action.until && !quiet && !over)
         throw new Error(
-          `play: the game never said ${action.until} in the ${rounded(action.within / 1000)} seconds its ${action.kind} was given (${passes} ${passes === 1 ? "pass" : "passes"}). ${lastLines(from)}`,
+          `play: the game never said ${action.until} in the ${rounded(action.within / 1000)} seconds its ${action.kind} was given (${passes} ${passes === 1 ? "pass" : "passes"}). ${lastLines(from)}${await leftNow()}`,
         );
       return { line, passes, over, took: clock() - began };
     };
@@ -1119,7 +1291,10 @@ export function playSession({ driver, mod, pause: sessionPause, tell: sessionTel
         ...(action.prefer.length ? { prefer: { words: action.prefer, slain: 0, rounds: 0, letBe: 0 } } : {}),
         ...(action.chase !== null && action.sidestep !== null ? { sidesteps: 0 } : {}),
         ...(action.dodge ? { dodge: { warned: 0, dodged: 0, clear: 0 } } : {}),
+        ...(action.ranged ? { ranged: { item: action.ranged.item, shots: 0, hits: 0, draws: 0 } } : {}),
+        ...(action.stuck ? { unreachable: [] } : {}),
       };
+      const fightBegan = clock();
       let read = from;
       let fallen = null;
       let alone = null;
@@ -1256,15 +1431,128 @@ export function playSession({ driver, mod, pause: sessionPause, tell: sessionTel
         note(OWN, `${where}: dodged ${shown(said)}: ${spot ? `from ${rounded(off(origin))} to ${rounded(off(now))} off ${spot.join(" ")}` : `a step aside, ${rounded(Math.hypot(now[0] - origin[0], now[1] - origin[1]))} units`} in ${took} ms`); // prettier-ignore
         return true;
       };
+      // ── an enemy it cannot get at, and a ranged weapon (src/play-fight.mjs) ──
+      /** Each enemy's time spent for nothing; whether the ranged weapon is in his hands; the hits before the last shot. */
+      const progress = progressOf();
+      let drawn = false;
+      let shotAt = null;
+      const keyOf = (enemy) => String(enemy.id ?? enemy.name ?? "");
+      /** The ranged weapon put into his hands, and asked after where the profile can: the run stops when it is not. */
+      const draw = async () => {
+        const { ranged } = action;
+        for (let tries = 1; ; tries++) {
+          await done(ranged.draws);
+          await driver.wait(ranged.drawn);
+          if (!ranged.asks) break;
+          await listen();
+          const asked = heard.length;
+          await done(ranged.asks);
+          const said = await waitFor(ranged.answer, asked, TARGET_WITHIN);
+          if (said && ranged.answer.exec(said.text).groups.held === "1") break;
+          if (tries >= 2)
+            throw new Error(`play: ${where} drew ${ranged.item} (${ranged.draws.join("; ")}) twice, and it is not in the player's hands: ${said ? shown(said.text) : "the game did not answer"}. Does the character carry it where the profile's play.ranged.draw takes it from (slot ${ranged.slot})?`); // prettier-ignore
+        }
+        drawn = true;
+        tally.ranged.draws++;
+        note("fight", `${where}: drew ${action.ranged.item}`);
+      };
+      /** What he held before put back into his hands, for the blows. */
+      const sheathe = async () => {
+        await done(action.ranged.backs);
+        await driver.wait(action.ranged.drawn);
+        drawn = false;
+        note("fight", `${where}: put ${action.ranged.item} back, for the blows`);
+      };
+      /** One shot: aimed (higher, for its fall; each a little over or under the last, see ASIDE), the button held
+       * for the draw (a mouse's, or a game's button by the console), aimed again, let go. */
+      const shoot = async (enemy) => {
+        const { ranged } = action;
+        if (!drawn) await draw();
+        const at = [enemy.origin[0], enemy.origin[1], enemy.origin[2] + ASIDE[tally.ranged.shots % ASIDE.length]];
+        const aimAt = async () => {
+          const { origin } = await driver.view();
+          if (origin) await driver.look(aimOf([origin[0], origin[1], origin[2] + part.eye], at, ranged).view);
+        };
+        const mouse = MOUSE_BUTTONS.includes(ranged.button);
+        await aimAt();
+        if (mouse) {
+          await driver.mouseDown(ranged.button);
+          down.add(ranged.button);
+        } else await driver.command(`+${ranged.button}`);
+        try {
+          await driver.wait(Math.max(0, ranged.hold - POLL));
+          await aimAt();
+          await driver.wait(Math.min(POLL, ranged.hold));
+        } finally {
+          if (mouse) {
+            await driver.mouseUp(ranged.button);
+            down.delete(ranged.button);
+          } else await driver.command(`-${ranged.button}`);
+        }
+        await driver.wait(LOOSED);
+        tally.ranged.shots++;
+        shotAt = tally.dealt.hits;
+      };
+      /** Whether this round's enemy is shot at, not struck: farther than `near`, and as the fight's `when` says. */
+      const shoots = async (enemy, far, track) => {
+        const { when, near, above } = action.ranged;
+        if (far <= near) return false;
+        if (when.includes("always") || track.shot || unreachable.get(track.key)?.then === "ranged") return true;
+        const { origin } = await driver.view();
+        return when.includes("flying") && Boolean(origin) && enemy.origin[2] - (origin[2] + part.eye) > above;
+      };
+      /** An enemy spent on for `stuck.after` with nothing to show: passed over, the run stopped, gone to or shot at.
+       * True when the round is over. */
+      const stuckOn = async (enemy, track) => {
+        let then = action.stuck.then;
+        // a goto done once, or shots that came to nothing as well: passed over now
+        if ((then === "goto" && track.went) || (then === "ranged" && track.shot)) then = "skip";
+        const name = enemy.name ?? "enemy";
+        const seconds = rounded(track.idle / 1000);
+        const what = { skip: "passed over from now on", fail: "the run stops", goto: "the player is put beside him", ranged: `shot at with ${action.ranged?.item}` }[then]; // prettier-ignore
+        const said = `${where}: ${track.rounds} rounds on an unreachable ${name} at ${placeOf(enemy.origin)} (${seconds} s with no blow landing and no nearer): ${what}`; // prettier-ignore
+        // of the kind "fight", as the fight's own line: a step may expect it
+        note("fight", said);
+        tell?.(said);
+        tally.unreachable.push({ name: enemy.name ?? null, at: enemy.origin.map(rounded), rounds: track.rounds, seconds, then }); // prettier-ignore
+        if (then === "fail")
+          throw new Error(`play: ${track.rounds} rounds on an unreachable ${name} at ${placeOf(enemy.origin)}, ${seconds} s with no blow of the player's landing and not coming nearer: the fight stops (stuck: "fail").${await leftNow()}`); // prettier-ignore
+        progress.again(track);
+        if (then === "goto") {
+          const { origin } = await driver.view();
+          const place = besideOf(enemy.origin, origin ?? enemy.origin);
+          await done(action.goesTo(place));
+          await driver.wait(PAUSE);
+          note("fight", `${where}: put beside ${name}: asked ${placeText(place)}, at ${placeText((await driver.view()).origin)}`); // prettier-ignore
+          track.went = true;
+          chased = null;
+          return true;
+        }
+        if (then === "ranged") {
+          track.shot = true;
+          unreachable.set(track.key, { name, origin: enemy.origin, then });
+          return false;
+        }
+        unreachable.set(track.key, { name, origin: enemy.origin, then: "skip", skipped: true });
+        if (action.skips && enemy.id !== undefined) await done(action.skips(enemy.id));
+        chased = null;
+        return true;
+      };
       /** The enemy chased: how near it has come, the rounds that came no nearer, the blows that landed on others. */
       let chased = null;
       let chasing = false;
       let hitsBefore = 0;
       let side = 1;
-      const { line, over, took } = await again(action, where, from, async (ended) => {
+      let ran;
+      let failure = null;
+      try {
+      ran = await again(action, where, from, async (ended) => {
         tally.rounds++;
         await listen();
         count();
+        // the round before given its due: a blow landed in it, or it was time spent on its enemy for nothing
+        progress.settle(clock(), tally.dealt.hits);
+        if (shotAt !== null) [tally.ranged.hits, shotAt] = [tally.ranged.hits + tally.dealt.hits - shotAt, null];
         // the last round's blow, struck on the way to an enemy out of reach, landed: on another, in the way
         if (chasing && chased && tally.dealt.hits > hitsBefore) chased.others++;
         chasing = false;
@@ -1299,7 +1587,8 @@ export function playSession({ driver, mod, pause: sessionPause, tell: sessionTel
         }
         const enemy = await find();
         tally.enemies.asked++;
-        if (!enemy) {
+        // one found unreachable and passed over, that the game still answers with (it cannot be told to skip): none
+        if (!enemy || unreachable.get(keyOf(enemy))?.skipped) {
           tally.enemies.none++;
           alone ??= clock();
           if (action.quiet !== null && clock() - alone >= action.quiet) return true;
@@ -1317,6 +1606,15 @@ export function playSession({ driver, mod, pause: sessionPause, tell: sessionTel
         }
         if (tally.prefer && preferred(enemy.name)) tally.prefer.rounds++;
         const far = await aim(enemy.origin);
+        const track = progress.seen(keyOf(enemy), { ...enemy, far }, clock(), tally.dealt.hits);
+        if (action.stuck && progress.stuck(track, action.stuck.after) && (await stuckOn(enemy, track))) return false;
+        // shot at from where he stands, or struck: the ranged weapon put back first
+        if (action.ranged && (await shoots(enemy, far, track))) {
+          await shoot(enemy);
+          await evade();
+          return false;
+        }
+        if (drawn) await sheathe();
         if (action.chase !== null && far > action.chase && clock() >= calm) {
           // the same enemy chased: is he any nearer?
           const who = enemy.id ?? enemy.name ?? "";
@@ -1371,8 +1669,16 @@ export function playSession({ driver, mod, pause: sessionPause, tell: sessionTel
         await evade();
         return false;
       });
+      } catch (error) {
+        // the run stops, and what the fight came to is written all the same
+        failure = error;
+        ran = { line: null, over: false, took: clock() - fightBegan };
+      }
+      const { line, over, took } = ran;
       await listen();
       count();
+      if (shotAt !== null) tally.ranged.hits += tally.dealt.hits - shotAt;
+      if (drawn) await sheathe().catch(() => {});
       if (preferSaid !== null && action.unprefers) await done(action.unprefers);
       if (fallen !== null) tally.down += clock() - fallen;
       tally.seconds = rounded(took / 1000);
@@ -1386,13 +1692,112 @@ export function playSession({ driver, mod, pause: sessionPause, tell: sessionTel
         ...(closeAsked ? { closeMost: kept.closeMost, closeMean: Math.round((closeSum / asked) * 100) / 100 } : {}),
       };
       tally.health.most = most ?? null;
+      // no enemy left, and the line never came: the area did not end as the steps thought
+      if (!failure && over && action.until && !line) tally.unended = String(action.until);
       fights.push(tally);
       note("fight", fightLine(tally));
       tell?.(fightLine(tally));
+      if (failure) throw failure;
+      if (tally.unended) {
+        // the pattern is said in the error and in the run's own note only: in a line of the kind "fight" a later
+        // `until` of the same pattern would stop at it
+        const said = `${where}: the fight ended by its quiet (no enemy found for ${rounded(action.quiet / 1000)} s), and the game never said`; // prettier-ignore
+        if (!action.quietEnds)
+          throw new Error(`play: ${said} ${action.until}: the area did not end as the steps thought (quietEnds: true takes the quiet for its end).${await leftNow()}`); // prettier-ignore
+        const left = await leftNow();
+        note(OWN, `NOTE ${said} ${action.until}`);
+        note("fight", `NOTE ${said} its line: taken for its end (quietEnds).${left}`);
+        tell?.(`NOTE ${said} ${action.until}: taken for its end (quietEnds).${left}`);
+      }
+      return line;
+    };
+    /** When a line was said, from this run's beginning. */
+    const whenOf = (line) =>
+      line.at >= began ? `${rounded((line.at - began) / 1000)} s` : `${rounded((began - line.at) / 1000)} s before this run began`; // prettier-ignore
+    /** The last line before `to` that matches, looked for back to `back`; a line an `until` stopped at only if `any`. */
+    const earlier = (pattern, back, to, any = false) => {
+      for (let at = to - 1; at >= back; at--)
+        if (heard[at].kind !== OWN && (any || !stoppedAt.has(heard[at])) && pattern.test(heard[at].text)) return heard[at]; // prettier-ignore
+      return null;
+    };
+    /** The commands a profile heals by: a command step that gives one is a heal in the run's summary. */
+    const healing = part.heal ? commandsOf(part.heal, {}, [], "play.heal") : [];
+    /** An action with the values it names (`${hp}`) put in: in a pattern as the text they are, dots and all. */
+    const whole = (action, where) => {
+      if (!action.templates) return action;
+      const fill = (text, literal) =>
+        text.replace(KEPT, (all, name) => {
+          if (!kept.has(name))
+            throw new Error(`play: ${where} names \${${name}}, and no step before it has kept a value of that name (keep)`); // prettier-ignore
+          return literal ? kept.get(name).replace(/[.*+?^${}()|[\]\\/]/g, "\\$&") : kept.get(name);
+        });
+      const { commands, pattern, until } = action.templates;
+      return {
+        ...action,
+        ...(commands ? { commands: commands.map((each) => fill(each, false)) } : {}),
+        ...(pattern ? { pattern: patternOf(fill(pattern, true), "an expectation") } : {}),
+        ...(until ? { until: patternOf(fill(until, true), "an until") } : {}),
+      };
+    };
+    /** What a step's `keep` keeps: the first group of its pattern, in its line or else the last said since it began. */
+    const keeping = async (action, line, from, where) => {
+      await listen();
+      for (const { name, pattern } of action.keep) {
+        let got = line ? pattern.exec(line.text) : null;
+        for (let at = heard.length - 1; !got && at >= from; at--)
+          if (heard[at].kind !== OWN) got = pattern.exec(heard[at].text);
+        if (!got)
+          throw new Error(`play: ${where} keeps ${name} by ${pattern}, and nothing said since it began matches it. ${lastLines(from)}`); // prettier-ignore
+        kept.set(name, got[1] ?? got[0]);
+        note(OWN, `${where}: kept ${name} = ${kept.get(name)}`);
+      }
+    };
+    /**
+     * One step done: its kept values put in; its line looked for in what was said before it began (`already`);
+     * then done (`perform`); a line it never heard said, in the sentence that stops the run, when it was heard
+     * before; its line marked as the last of its pattern waited for, and its values kept.
+     */
+    const act = async (written, where) => {
+      const action = whole(written, where);
+      await listen();
+      const from = heard.length;
+      if (action.kind === "command" && action.commands.some((each) => healing.some((heal) => each === heal || each.startsWith(`${heal} `)))) // prettier-ignore
+        if (current) current.heals++;
+      if (action.until && action.already !== "wait") {
+        // before where it hears from: a wait hears from the last deed, and a line since then is its own anyway
+        const hears = Math.min(from, sinceOf(action.since, from));
+        const back = earlier(action.until, Math.max(mapStart, lastWaited.get(String(action.until)) ?? 0), hears);
+        if (back && action.already === "pass") {
+          stoppedAt.add(back);
+          lastWaited.set(String(action.until), from);
+          early.add(where);
+          const said = `${where}: ${shown(back.text)} was heard at ${whenOf(back)}, before the step began: it ends at once (already: "pass")`; // prettier-ignore
+          note(OWN, said);
+          tell?.(said);
+          if (action.keep) await keeping(action, back, from, where);
+          return back;
+        }
+        if (back) {
+          const said = `${where}: WARN ${shown(back.text)} was heard at ${whenOf(back)}, before the step began; it waits for the line all the same (already: "warn")`; // prettier-ignore
+          note(OWN, said);
+          tell?.(said);
+        }
+      }
+      let line;
+      try {
+        line = await perform(action, where);
+      } catch (error) {
+        const back = action.until && /never said/.test(error.message) ? earlier(action.until, Math.min(first, mapStart), from, true) : null; // prettier-ignore
+        if (back)
+          error.message += ` This line was heard at ${whenOf(back)}, before the step began${stoppedAt.has(back) ? " (another step's until stopped at it)" : ""}: ${shown(back.text)}`; // prettier-ignore
+        throw error;
+      }
+      if (action.until && line) lastWaited.set(String(action.until), heard.length);
+      if (action.keep) await keeping(action, line, from, where);
       return line;
     };
     /** One action done through the driver: what it does, its `until`, then its wait. */
-    const act = async (action, where) => {
+    const perform = async (action, where) => {
       // what was said before the step is heard before it, so that "from this step on" is from here
       await listen();
       const from = heard.length;
@@ -1432,12 +1837,18 @@ export function playSession({ driver, mod, pause: sessionPause, tell: sessionTel
               return;
             }
           }
+          const was = action.step?.walk !== undefined && typeof driver.view === "function" ? (await driver.view()).origin : null;
           await driver.command(`+${action.button}`);
           try {
             await driver.wait(action.ms);
           } finally {
             await driver.command(`-${action.button}`);
           }
+          // a walk that took him nowhere: he stands in something solid (a goto into a brush), and what follows
+          // would be done where he is not thought to be
+          const now = was ? (await driver.view()).origin : null;
+          if (now && Math.hypot(now[0] - was[0], now[1] - was[1], now[2] - was[2]) < WALKED)
+            throw new Error(`play: did not move after walk ${action.ms} ms: in solid? (origin ${placeText(now)})`);
         } else if (action.kind === "hold") {
           await driver.keyDown(action.key);
           try {
@@ -1491,6 +1902,12 @@ export function playSession({ driver, mod, pause: sessionPause, tell: sessionTel
             `where${action.name ? ` ${action.name}` : ""}: origin ${placeText(origin)}, yaw ${rounded(yaw)}, pitch ${rounded(pitch)}`,
           );
         } else if (action.kind === "map") await load(action.map);
+        else if (action.kind === "census") {
+          const counted = await census(action.radius);
+          for (const said of censusTable(counted, where, action.radius)) note("census", said);
+          tell?.(censusTable(counted, where, action.radius).join("\n"));
+        }
+        else if (action.kind === "travel") await travel(action, where);
         else if (action.kind === "expect" || action.kind === "expectNot")
           await expecting(action, where, from);
       };
@@ -1501,7 +1918,7 @@ export function playSession({ driver, mod, pause: sessionPause, tell: sessionTel
         line = await waitFor(action.until, hears, action.within, action.every, once, stoppedAt);
         if (!line)
           throw new Error(
-            `play: the game never said ${action.until} in the ${rounded(action.within / 1000)} seconds it was given. ${lastLines(hears)}`,
+            `play: the game never said ${action.until} in the ${rounded(action.within / 1000)} seconds it was given. ${lastLines(hears)}${await leftNow()}`,
           );
         stoppedAt.add(line);
       }
@@ -1532,8 +1949,11 @@ export function playSession({ driver, mod, pause: sessionPause, tell: sessionTel
     const load = async (name, shots = false) => {
       state.entered = false;
       state.map = name;
+      // the monsters are new: none is passed over (the game's own list goes with its map)
+      unreachable.clear();
       const loaded = async () => {
         const from = heard.length;
+        mapStart = from;
         await driver.command(`map ${name}`);
         if (!(part.loaded && hears)) {
           if (loading > 0) await driver.wait(loading);
@@ -1553,6 +1973,85 @@ export function playSession({ driver, mod, pause: sessionPause, tell: sessionTel
       if (entering.length && shots)
         await record("enter", entering.length, "wait", { shot: "entered" }, "entered", () => {});
       state.entered = true;
+    };
+    /** Through the way the player stands in: the profile's commands, the next map's server, its load, its enter. */
+    const travel = async (action, where) => {
+      const within = action.within ?? loading;
+      const from = heard.length;
+      for (const [index, command] of action.commands.entries()) {
+        if (index) await driver.wait(BETWEEN);
+        await driver.command(command);
+      }
+      const spawned = await waitFor(part.travel.spawned, from, within);
+      if (!spawned)
+        throw new Error(
+          `play: the game never said ${part.travel.spawned} in the ${rounded(within / 1000)} seconds a travel was given: is the player in a way to another map (its "travel" line said)? ${lastLines(from)}`,
+        ); // prettier-ignore
+      state.entered = false;
+      const name = part.travel.spawned.exec(spawned.text)[1];
+      if (action.map && name.toLowerCase() !== action.map.toLowerCase())
+        throw new Error(`play: the way led to ${name}, and the step travels to ${action.map}`);
+      state.map = name;
+      if (part.loaded) {
+        const line = await waitFor(part.loaded, heard.indexOf(spawned) + 1, within);
+        if (!line)
+          throw new Error(
+            `play: the map ${name} had not loaded ${rounded(within / 1000)} seconds after its server began: the game never said ${part.loaded}. ${lastLines(from)}`,
+          ); // prettier-ignore
+      } else if (loading > 0) await driver.wait(loading);
+      mapFrom = heard.length;
+      await through("enter", entering);
+      state.entered = true;
+      const said = `${where}: travelled to ${name}`;
+      note(OWN, said);
+      tell?.(said);
+    };
+    /** A section begun (`marker` its step, or null for the steps before any) and the one before it ended. */
+    const open = (marker, index) => {
+      shut("done");
+      current = {
+        ...{ name: marker?.name ?? OPENING, step: index + 1, onFail: marker?.onFail ?? null, began: Date.now() },
+        ...{ from: heard.length, fights: fights.length, expectations: expectations.length, steps: 0, heals: 0, failed: 0 },
+      };
+      sections.push(current);
+      if (!marker) return;
+      const said = `section ${current.name} (step ${index + 1})`;
+      note(OWN, said);
+      tell?.(`--- ${said}`);
+    };
+    const shut = (how) => {
+      if (!current || current.ended) return;
+      Object.assign(current, { ended: how, took: Date.now() - current.began, to: heard.length });
+      Object.assign(current, { fightsTo: fights.length, expectationsTo: expectations.length });
+    };
+    /** The run's steps, from `from` on, by sections; a step that fails with onFail "continue" lets the run go on. */
+    const stepsOfRun = async () => {
+      if (startAt) {
+        const said = `from step ${startAt + 1}${asked[startAt].kind === "section" ? ` (section ${asked[startAt].name})` : ""}: steps 1 to ${startAt} are not done`; // prettier-ignore
+        note(OWN, said);
+        tell?.(said);
+      }
+      for (let index = startAt; index < asked.length; index++) {
+        const action = asked[index];
+        if (action.kind === "section") open(action, index);
+        else if (!current) open(asked.slice(0, index).findLast((each) => each.kind === "section") ?? null, index);
+        if (action.kind !== "section") current.steps++;
+        const at = Date.now() - began;
+        try {
+          await record("steps", index, action.kind, action.step, action.shot, (where) => act(action, where));
+        } catch (error) {
+          if ((action.onFail ?? current.onFail ?? "stop") !== "continue") throw error;
+          done.push({ part: "steps", index, kind: action.kind, step: action.step, at, took: Date.now() - began - at, picture: null, failed: error.message }); // prettier-ignore
+          // let go what the step held, as a run's end would: the next step begins with free hands
+          for (const button of down) await Promise.resolve(driver.mouseUp(button)).catch(() => {});
+          down.clear();
+          const entry = { where: `step ${index + 1}`, kind: "step", pattern: JSON.stringify(action.step), passed: false, line: error.message }; // prettier-ignore
+          expectations.push(entry);
+          current.failed++;
+          note(OWN, `${expectationLine(entry)} (onFail: "continue": the run goes on)`);
+          tell?.(`${expectationLine(entry)} (onFail: "continue": the run goes on)`);
+        }
+      }
     };
 
     let failure = null;
@@ -1589,11 +2088,13 @@ export function playSession({ driver, mod, pause: sessionPause, tell: sessionTel
         tell?.(said);
       }
       if (!staying) await load(map, true);
-      await through("steps", asked);
+      await stepsOfRun();
+      shut("done");
       for (const each of held.flat()) await expecting(each, "the run", heard.length);
     } catch (error) {
       failure = error;
     }
+    shut("stopped");
     // whatever is still held is let go: the next run begins with free hands
     for (const button of down) await Promise.resolve(driver.mouseUp(button)).catch(() => {});
     await listen().catch(() => {});
@@ -1629,16 +2130,23 @@ export function playSession({ driver, mod, pause: sessionPause, tell: sessionTel
         sheetFile = null;
       }
     const passed = !failure && expectations.every((each) => each.passed);
+    // what the run came to, section by section and fight by fight; and with the runs that stayed before it
+    if (!staying) chain = [];
+    const summary = summaryOf({ sections, fights, expectations, heard, lines: part.fight, map: state.map, out, took: Date.now() - began, passed, failure }); // prettier-ignore
+    chain.push({ out, map: summary.map, took: summary.took, passed, totals: summary.totals });
+    summary.chain = { runs: chain.map(({ totals: _totals, ...run }) => run), totals: totalsOf(chain.map((run) => run.totals)) }; // prettier-ignore
+    const summaryFile = join(out, "summary.json");
+    writeFileSync(summaryFile, JSON.stringify(summary, null, 2));
     const result = {
       ...{ map: state.map, out, took: Date.now() - began, passed },
-      ...{ pictures, sheet: sheetFile, steps: done, expectations, fights },
-      ...{ logFile, linesFile: hears ? linesFile : null, resultFile: join(out, "result.json") },
+      ...{ pictures, sheet: sheetFile, steps: done, expectations, fights, sections: summary.sections, summary },
+      ...{ logFile, linesFile: hears ? linesFile : null, resultFile: join(out, "result.json"), summaryFile },
     };
     writeFileSync(
       result.resultFile,
       JSON.stringify({ ...result, failure: failure ? failure.message : null }, null, 2),
     );
-    if (failure) throw Object.assign(failure, { pictures, logFile, sheet: sheetFile, expectations, fights });
+    if (failure) throw Object.assign(failure, { pictures, logFile, sheet: sheetFile, expectations, fights, summary, summaryFile }); // prettier-ignore
     return { ...result, lines, log };
   }
 
@@ -1730,6 +2238,76 @@ export async function play({ driver, mod, pause, tell, ...run } = {}) {
   return result;
 }
 
+/** The numbers a summary adds up, each of a section, a run or the runs that stayed. */
+const TOTALS = ["seconds", "steps", "fights", "fightSeconds", "heals", "deaths", "slain"];
+/** Sums of the parts of a summary: `{ seconds, steps, fights, fightSeconds, heals, deaths, slain, taken, dealt, expectations }`. */
+export function totalsOf(parts) {
+  const totals = Object.fromEntries(TOTALS.map((name) => [name, 0]));
+  Object.assign(totals, { taken: { hits: 0, sum: 0 }, dealt: { hits: 0, sum: 0 }, expectations: { held: 0, failed: 0 } }); // prettier-ignore
+  for (const part of parts) {
+    for (const name of TOTALS) totals[name] += part?.[name] ?? 0;
+    for (const side of ["taken", "dealt"]) for (const name of ["hits", "sum"]) totals[side][name] += part?.[side]?.[name] ?? 0; // prettier-ignore
+    for (const name of ["held", "failed"]) totals.expectations[name] += part?.expectations?.[name] ?? 0;
+  }
+  for (const name of ["seconds", "fightSeconds"]) totals[name] = rounded(totals[name]);
+  for (const side of [totals.taken, totals.dealt]) side.sum = rounded(side.sum);
+  return totals;
+}
+
+/**
+ * What a run came to (summary.json): each section's time, steps, fights, heals (a fight's, and a step's that
+ * gives the profile's heal command), deaths, hits taken and dealt and the slain, as the game said them by the
+ * profile's `play.fight` patterns, and its expectations; each fight's; and the run's totals.
+ */
+export function summaryOf({ sections, fights, expectations, heard, lines, map, out, took, passed, failure }) {
+  const amount = (pattern, text) => {
+    const got = pattern?.exec(text);
+    return got ? (Number.isFinite(Number(got[1])) ? Number(got[1]) : 0) : null;
+  };
+  const sectionOf = (index) => sections.find((each) => index >= each.fights && index < (each.fightsTo ?? Infinity))?.name ?? null; // prettier-ignore
+  const fought = fights.map((fight, index) => ({
+    ...{ where: fight.where, section: sectionOf(index), seconds: fight.seconds ?? 0, ended: fight.ended ?? null },
+    ...{ heals: fight.heals ?? 0, deaths: fight.deaths ?? 0, taken: { hits: fight.taken?.hits ?? 0, sum: fight.taken?.sum ?? 0 } }, // prettier-ignore
+    ...{ dealt: { hits: fight.dealt?.hits ?? 0, sum: fight.dealt?.sum ?? 0 }, slain: fight.slain?.length ?? 0 },
+  }));
+  const parts = sections.map((section) => {
+    const counted = { deaths: 0, slain: 0, taken: { hits: 0, sum: 0 }, dealt: { hits: 0, sum: 0 } };
+    for (let at = section.from; at < (section.to ?? heard.length); at++) {
+      const { kind, text } = heard[at];
+      if (kind === OWN || kind === "fight" || kind === "where") continue;
+      const taken = amount(lines?.taken, text);
+      const dealt = amount(lines?.dealt, text);
+      if (taken !== null) (counted.taken.hits++, (counted.taken.sum += taken));
+      if (dealt !== null) (counted.dealt.hits++, (counted.dealt.sum += dealt));
+      if (lines?.died?.test(text)) counted.deaths++;
+      if (lines?.slain?.test(text)) counted.slain++;
+    }
+    for (const side of [counted.taken, counted.dealt]) side.sum = rounded(side.sum);
+    const own = fought.slice(section.fights, section.fightsTo ?? fights.length);
+    const asked = expectations.slice(section.expectations, section.expectationsTo ?? expectations.length);
+    return {
+      ...{ name: section.name, step: section.step, ended: section.ended ?? "stopped", seconds: rounded((section.took ?? 0) / 1000) }, // prettier-ignore
+      ...{ steps: section.steps, fights: own.length, fightSeconds: rounded(own.reduce((sum, each) => sum + each.seconds, 0)) }, // prettier-ignore
+      ...{ heals: section.heals + own.reduce((sum, each) => sum + each.heals, 0), ...counted },
+      expectations: { held: asked.filter((each) => each.passed).length, failed: asked.filter((each) => !each.passed).length }, // prettier-ignore
+    };
+  });
+  return {
+    ...{ map, out, took, passed, failure: failure ? failure.message : null },
+    ...{ sections: parts, fights: fought, totals: totalsOf(parts) },
+  };
+}
+
+/** A summary as lines to print: a line a section, one for the run, and one for the runs that stayed in it. */
+export function summaryLines(summary) {
+  const line = (head, part) =>
+    `${head}: ${part.seconds} s${part.ended ? `, ${part.ended}` : ""}; ${part.steps} steps; ${part.fights} ${part.fights === 1 ? "fight" : "fights"}${part.fights ? ` (${part.fightSeconds} s)` : ""}; ${part.heals} ${part.heals === 1 ? "heal" : "heals"}, ${part.deaths} ${part.deaths === 1 ? "death" : "deaths"}; taken ${part.taken.hits} hits, ${part.taken.sum} in all; dealt ${part.dealt.hits} hits, ${part.dealt.sum} in all; slain ${part.slain}; expectations ${part.expectations.held} held, ${part.expectations.failed} failed`; // prettier-ignore
+  const lines = summary.sections.map((part) => line(`section ${part.name} (step ${part.step})`, part));
+  lines.push(line("the run", summary.totals));
+  if (summary.chain?.runs.length > 1) lines.push(line(`the ${summary.chain.runs.length} runs since the map was loaded`, summary.chain.totals)); // prettier-ignore
+  return lines;
+}
+
 /** One thing done, as a line: when, how long, what, its picture and the line it waited for. */
 function lineOf({ part, kind, step, at, took, picture, heard, where }) {
   const seconds = (ms) => `${(ms / 1000).toFixed(1).padStart(6)} s`;
@@ -1750,7 +2328,7 @@ export function fightLine(fight) {
   for (const name of slain) names.set(name, (names.get(name) ?? 0) + 1);
   const dead = [...names].map(([name, count]) => (count > 1 ? `${name} x${count}` : name)).join(", ");
   return [
-    `fight (${where}): ${seconds} s, ended by ${ended === "line" ? `the line ${shown(line)}` : ended === "quiet" ? "no enemy being left" : "its time"}`,
+    `fight (${where}): ${seconds} s, ended by ${ended === "line" ? `the line ${shown(line)}` : ended === "quiet" ? `no enemy being left${fight.unended ? ", WITHOUT its line" : ""}` : "its time"}`,
     `${blows} blows in ${rounds} rounds`,
     `dealt ${dealt.hits} hits, ${dealt.sum} in all (${rate(dealt.hits)} hits a second), ${dealt.missed} missed`,
     `taken ${taken.hits} hits, ${taken.sum} in all (${rate(taken.sum)} a second)`,
@@ -1761,12 +2339,15 @@ export function fightLine(fight) {
     ...(fight.prefer ? [`preferred (${fight.prefer.words.join(", ")}): ${fight.prefer.slain} of the ${slain.length} slain, faced in ${fight.prefer.rounds} of ${rounds} rounds${fight.prefer.letBe ? `, let be ${fight.prefer.letBe} ${fight.prefer.letBe === 1 ? "time" : "times"} (not got at)` : ""}`] : []), // prettier-ignore
     ...(fight.sidesteps !== undefined ? [`${fight.sidesteps} ${fight.sidesteps === 1 ? "sidestep" : "sidesteps"} round others in the way`] : []), // prettier-ignore
     ...(fight.dodge ? [`dodged ${fight.dodge.dodged} of ${fight.dodge.warned} warnings${fight.dodge.clear ? ` (${fight.dodge.clear} heard off the place already)` : ""}`] : []), // prettier-ignore
+    ...(fight.ranged ? [`ranged (${fight.ranged.item}): ${fight.ranged.shots} ${fight.ranged.shots === 1 ? "shot" : "shots"}, ${fight.ranged.hits} ${fight.ranged.hits === 1 ? "hit" : "hits"}, drawn ${fight.ranged.draws} ${fight.ranged.draws === 1 ? "time" : "times"}`] : []), // prettier-ignore
+    ...(fight.unreachable?.length ? [`unreachable: ${fight.unreachable.map((one) => `${one.name ?? "an enemy"} at (${one.at.map(Math.round).join(",")}) after ${one.rounds} rounds (${one.then === "skip" ? "passed over" : one.then === "ranged" ? "shot at" : one.then === "goto" ? "gone to" : "the run stopped"})`).join(", ")}`] : []), // prettier-ignore
   ].join("; ");
 }
 
 /** An expectation, as a line: whether it held, what it was, where it was asked and the line that decided. */
 export function expectationLine({ where, kind, pattern, passed, line }) {
-  const what = kind === "expect" ? "expect" : "expect no";
+  // a step that failed and let the run go on (onFail: "continue") is one too: its sentence is the line
+  const what = kind === "expect" ? "expect" : kind === "expectNot" ? "expect no" : kind;
   const why = line ? `: ${line}` : kind === "expect" ? ": no such line was heard" : "";
   return `${passed ? "PASS" : "FAIL"}  ${what} ${pattern} (${where})${why}`;
 }

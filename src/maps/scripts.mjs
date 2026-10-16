@@ -19,6 +19,8 @@
 //     mapOf(name, { maps })   the map a script belongs to, or null for one of no map's: unless given, the
 //                       first folder of its name when a map of that name is known (`orchard/keeper` is the
 //                       orchard's), which is how a GoldSrc mod that names scripts by path keeps a map's own
+//     lint(name, text)  sentences of what the game would cut or refuse in a script's own lines (an item's
+//                       description too long for it): each a warning, under the script's name
 //   }
 // A script's name is its path as the game compares it (the profile's to say: lower case, `/`, no ending).
 
@@ -140,5 +142,9 @@ export function scriptsPlaced({ ours, shipped, maps = [], rules = {}, mapNames, 
     warnings.push(
       `${warned.length} scripts are new (the game ships none of that name) and nothing names them: no map's entity, no script the game reads, and the game runs none of that name by itself. Laid over the game's pack they replace nothing and are never read: ${some(warned.map((name) => `${name}${ours.get(name).file ? ` (${ours.get(name).file})` : ""}${by.get(name).length ? `, named only by ${by.get(name).join("; ")}` : ""}`))}. A script meant to replace one of the game's is to have that one's path; a name made while the game runs is not seen here`,
     );
+  // what the game would cut in our own lines (the mod's `lint`): of the maps looked at only, when some are
+  for (const [name, { text, file }] of ours)
+    if (!looked || theirs(name))
+      for (const said of rules.lint?.(name, text) ?? []) warnings.push(`${name}${file ? ` (${file})` : ""}: ${said}`);
   return { scripts, warnings, facts };
 }

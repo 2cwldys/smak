@@ -203,10 +203,11 @@ await testAsync(
     sure(x > 300 && x < 400, `he walked at it and stopped short of it: x ${x}`);
     sure(chased.driver.calls.includes("command +forward") && chased.driver.calls.at(-2) !== "command +forward", "by +forward, let go again");
 
-    // a fight that is over when nobody is left: no line is needed, and one that never comes stops nothing
+    // a fight that is over when nobody is left: no line is needed; one with a line that never comes is over
+    // too where it says quietEnds (and fails where it does not: below)
     const quiet = await fought("quiet", [{ name: "rat", hp: 30, at: [60, 0, 36] }], [
       { fight: { quiet: 1000 } },
-      { fight: { quiet: 500 }, until: "never said", within: 60000 },
+      { fight: { quiet: 500, quietEnds: true }, until: "never said", within: 60000 },
     ]);
     const [first, second] = quiet.run.fights;
     sure(first.ended === "quiet" && first.slain.join() === "rat" && first.seconds === 2.7, `over a second after the rat fell: ${first.ended}, ${first.seconds} s`); // prettier-ignore

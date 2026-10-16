@@ -86,6 +86,18 @@ is not looked at, and is counted in a fact instead. `--all` warns of every one, 
 (`scriptsPlaced({ ..., only: ["yard"] })` in a script). What it cannot see is a name put together while the
 game runs: a script reached only so is "named by nothing", a warning.
 
+**What the game would cut.** A profile's `lint(name, text)` gives warnings of a script's own lines, under its
+name. Master Sword's warns of an entity's `desc` over 72 characters and a `name` with a prefix (`the|Warden's
+Bow`) over 29, prefix and name together: the game cuts both there (shared/ms/scriptcmds.cpp, ScriptCmd_Desc and
+ScriptCmd_Name) and says only "Description too long" in a developer's console. A name with no `|` is not cut
+there. The words of a line are joined by one space each, as the game joins them:
+
+```
+WARN  items/armor_reaver (content/scripts/items/armor_reaver.script): line 26: its desc is 123 characters, and
+      the game keeps 72 of it (...): "Dark hides sewn into a sleeveless jerkin, a wolf's fur over the shoulder"
+      (cut: "s: what a raider of the northern coast wears ashore")
+```
+
 ## A compile that is seen, and stopped
 
 `compileMap` always had a time for each program (2 minutes for hlcsg and hlbsp, 15 for hlvis and hlrad;

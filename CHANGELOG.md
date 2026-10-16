@@ -3,6 +3,60 @@
 The newest first. A version that changes what a model's file looks like, or that a model made before needs
 mending for, says so under **Mind**.
 
+## 0.16.0 (2026-10-16)
+
+A long run that goes on, and a fight that knows what it cannot reach. A run of 98 minutes through two maps, from
+one map's door to the next one's last chest, lost most of its time to an enemy no blow could reach (a wolf in a
+fenced pen, a healer that kept away, a spider beyond a crowd), to waits for lines already said, and to putting
+together by hand what a run of many parts needs. And a fighter with only a sword cannot finish a map whose enemies
+fly or stand on a ledge: a test character now carries a bow, and the fight draws it.
+
+- **A fight that knows what it cannot reach, and shoots it.** Each enemy's time spent with no blow landing and no
+  step nearer is kept, and past `stuck.after` (30 s and four rounds) he is unreachable for every fight until a map
+  loads. The log says `N rounds on an unreachable Wolf at (780,1322,0)`, and `stuck.then` decides what follows:
+  `skip` (the profile's new `play.target.skip`; Master Sword's `trial skip`), `fail` (the run stops naming him and
+  his place), `goto` (the player is put beside him) or `ranged`.
+- **Ranged weapons.** `ranged: { item, slot, when, hold, near, above, speed }`: the character's bow or spell is
+  drawn (the profile's new `play.ranged`; Master Sword by quickslot, a spell by `prep`, and `trial hands` asks
+  whether it is held). He is aimed at in yaw and pitch, higher for the shot's fall, each shot a little over or
+  under the last (a game leaves an arrow stuck in its target). The button is held for the draw and let go, and the
+  weapon is put back when he comes within `near`. `when` is `"unreachable"`, `"flying"` (more than 64 units over
+  the eyes) or `"always"`. Seen in the game: a fighter shut in a pen shot a sentry 520 off over the fence (13 hits
+  of 28), then struck down a wolf with the sword. The test characters carry a Thornbow (fighter20) and a Longbow
+  (fighter6) with arrows.
+- **An end by quiet without the line fails**, unless `quietEnds: true`; either way a line says so.
+- **A census.** The profile's `play.census` (Master Sword's `trial census`) answers a `{ "census": radius }` step
+  with a table, and a census done by itself ends the sentence of a run stopped by an `until`, a fight without its
+  line or `stuck: "fail"`: `left: Wolf 114 hp at (780,1322,0), 1 of 1`.
+- **A stuck player.** A `walk` that moves him less than 2 units stops the run (`did not move after walk N ms: in
+  solid?`), and `goto` asks the profile's `lift` over its place (Master Sword: 4), so he drops onto a path brush
+  instead of being set into it.
+- **A long run that goes on, and is added up.** A step looks back as it begins: a `fight` whose line was said
+  before it ends at once (`"already": "pass"`, a fight's unless told; a ledge fight had waited 600 s for a line said
+  a minute earlier), a wait warns (`"warn"`), and a run stopped by an `until` says when its line was heard before.
+  `{ "section": "name" }` parts one file of steps: each section timed and counted, and `run({ from })` /
+  `--from <section|step>` begins at one (with `--stay`, after a failure). `"onFail": "continue"` makes a step's
+  failure an expectation and goes on. `"keep": { "hp": "= ([\d.]+)" }` keeps a value that a later step names
+  `${hp}`. `{ "travel": true }` goes through a way to another map (the profile's new `play.travel`: Master Sword
+  `accept` and "Spawn Server: <map>"), and a session follows its map by that line. Each run writes summary.json:
+  per section and per fight, time, heals (a `trial heal` outside a fight too), deaths, hits taken and dealt, the
+  slain, its expectations; `chain` adds up the runs that stayed. `summaryOf`, `summaryLines`, `totalsOf`.
+- **What the game would cut.** The script check takes a profile's `lint`: Master Sword's warns of a `desc` over 72
+  characters and a `name` with a prefix over 29 (shared/ms/scriptcmds.cpp). Six of a mod's item descriptions were
+  found cut.
+- In msr-web's tools/playtest.mjs: the trial commands, and our built map, in every map a way of the run's map leads
+  to; `--define script:NAME=value` (a test copy at pack time, for a hand copy); a folder per run (`<name>/<time>/`,
+  failed ones never deleted); `--detach` and `playtest wait`.
+- New: src/play-fight.mjs, tests 53 and 54.
+
+**Mind**: every fight now finds and passes over an enemy it cannot get at after 30 s (`stuck: false` for the old
+way). A walk into a wall, or from inside one, now stops the run. A fight with `until` and `quiet` that runs out of
+enemies without its line now fails (`quietEnds: true` for the old way). A fight that stops the run still writes its
+`fight` line. A step whose `until` line was said before it began now behaves otherwise: a fight ends at once (give
+`"already": "wait"` for the old way), a wait writes a WARN line. The lines an `until` stopped at are the session's,
+not one run's: a run that stays never stops at a line an earlier run's `until` took. A run's result has `sections`,
+`summary` and `summaryFile`. After a change to SMAK, stop the session and serve again.
+
 ## 0.15.0 (2026-10-15)
 
 Re-skins in one step, and a fight that chooses and moves. Agents making a map's monsters found that a body made
