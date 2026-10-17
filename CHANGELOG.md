@@ -3,6 +3,46 @@
 The newest first. A version that changes what a model's file looks like, or that a model made before needs
 mending for, says so under **Mind**.
 
+## 0.18.0 (2026-10-17)
+
+A second game's maps. The kit was made on Master Sword; it was turned on The Specialists and on three
+role-play cities of its Havoc9 community (Paradise City, Xenon City, Alexandria), to say what makes them good
+and to build one like them. A block was built, wired and compiled in two seconds; what the kit read wrong or
+could not say on the way is mended here.
+
+- **Switched lights count as the map starts.** A light with a name gets a style of 32 or more, and Half-Life
+  starts it on unless its spawnflags have 1 (CLight::Spawn). `map-light`, `map-character` and the views
+  counted every switched light off, so a city whose every flat has a lamp switch read black (a flat lit in the
+  game: "dark, mean 2.6"). `stylesAtStart(bsp)` and `stylesCounted`; `lightReport`'s `switched`
+  ("start", "off", "on"; `map-light --switched`); the views' `light` takes "start" (the default) and "off".
+- **What a map is wired to do.** `wiringOf(map)` and `smak map-wiring`: its properties (the doors by name,
+  and their families: `resident x9`), each switch and trigger followed through multi_managers and relays to
+  what it works (lights, sounds, lifts, doors, places that heal or hurt), its trains and their stops, a name
+  said from many speakers (an alarm), teleports, what comes back after it is broken; and the slips: a switch at
+  a name nothing answers to, a train that runs off its corners for good. Works on a .bsp and a .map.
+- **The Specialists' profile** (`profiles/specialists.mjs`), from the installed game: its starts, its
+  `ts_model` props (a city's props were counted 0), the FGD's door `delay` mended to a number with a fraction,
+  and two sets of figures, the game's 29 arenas and the Havoc9 cities (`specialists-roleplay.mjs` for the
+  command line). docs/MAPS-DESIGN.md has a section on the role-play city: wiring, density and dressing, not
+  shape.
+- **Rooms carved in their own textures.** A room given to `carve` may bring `texture`: the rock it is seen
+  from wears it, and a slab under two rooms is cut where they meet. A street of brick and asphalt and a shop of
+  tiles behind one wall is one carve.
+- **map-measure eight times faster on a large map** (Xenon City: 86 s to 12 s). A compiled map's space finds
+  where a line of sight stops in one walk (`firstStop`), where it was asked by halves.
+- **map-views looks where something is.** Its "largest rooms" are rooms with entities in them first, then
+  those with a floor: on a city the largest empty leaves were the air under its sky and black voids.
+- `map-character` takes folders, as its help said (each was refused); its table keeps its columns apart; its
+  warning no longer says Master Sword's maps of any mod's.
+- `embeddedTexture` gives null for a name the map lacks (one name looked for in several maps), as the docs
+  said; a number it has none for is still refused.
+- Master Sword's `character.figures` measured again for the light (47 of its 94 maps have switched lights):
+  shadow 17-55, brightest 188-250, mean 29.9-78; the rest is as it was.
+- New: src/maps/wiring.mjs, profiles/specialists.mjs, profiles/specialists-roleplay.mjs, test 56.
+
+**Mind**: the light of a map with switched lights is brighter than before in `map-light`, `map-character`
+and every view, and a view's words say so. `--switched off` and `--light off` give the old count.
+
 ## 0.17.0 (2026-10-16)
 
 Maps a player likes. A player walked the first two maps an agent made with this kit and said the items were good

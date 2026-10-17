@@ -133,12 +133,17 @@ node bin/smak.mjs wad <file.wad> [-o dir]          a .wad's textures listed; wit
 node bin/smak.mjs wad-make <pictures...> -o out.wad   a .wad from PNG or BMP pictures, each named after its file
 node bin/smak.mjs map-compile <file.map> -o out.bsp --wad a.wad [--wadinclude] [--fast] [--vhlt <folder>]
 node bin/smak.mjs map-compile <file.map> ... [--timeout 600 | --timeout hlvis=600,hlrad=1200] [--progress]   a stage seen and stopped
-node bin/smak.mjs map-light <bsp> [--rooms rooms.json]   the light on the floors, room by room: what the game lights a figure by
+node bin/smak.mjs map-light <bsp> [--rooms rooms.json] [--switched start|off|on]   the light on the floors, room by room: what
+                                                   the game lights a figure by; switched lights as the map starts (on unless made
+                                                   to start dark) unless told
+node bin/smak.mjs map-wiring <bsp|map> [--list]   what the entities are wired to do, as a role-play map is judged: properties
+                                                   (doors by name), switches and what each works through relays, lifts, places that
+                                                   heal or hurt, names said from many speakers, what comes back; slips warned of
 node bin/smak.mjs map-spawns <bsp|map> --mod <profile> [-o plan.png]   how each spawn area's monsters come, and by what; those
                                                    seen appearing from the trigger that brings them (SEEN), back soon at their own
                                                    spot (QUICK), races that attack each other on one spawn (FIGHT), a reward far
                                                    from the death that brings it; exit code 1 on SEEN or FIGHT (docs/MAPS-DESIGN.md)
-node bin/smak.mjs map-character <bsp> [more] [--mod <profile>]   its ground, textures, props, sounds and light in numbers,
+node bin/smak.mjs map-character <bsp> [more maps or folders] [--mod <profile>]   its ground, textures, props, sounds and light in numbers,
                                                    held against the mod's own maps: PLAIN figures, and a warning on five or more
 node bin/smak.mjs scripts <script folders, maps...> --mod <profile> [--shipped <folder>]
                                                    each script of one's own: replaces a game's, is named, or is named by nothing
@@ -1017,7 +1022,9 @@ landmarks, light, sound, monsters, rewards), read from a game's own maps, and th
 (`kits/encounterkit.mjs`) that bring monsters in out of sight.
 
 1. **Describe it in a script**: rooms as `{ min, max }` boxes of empty space (`maps.carve`), what stands in
-   them, the entities. `maps.writeMap` gives the `.map`'s text.
+   them, the entities. `maps.writeMap` gives the `.map`'s text. A room may bring its own textures,
+   `{ min, max, texture: { floor, ceiling, wall } }`: one carve then makes a street of brick and asphalt with
+   a shop of tiles behind one wall 16 thick.
 2. **Check the plan**: `maps.checkPlan(map, { textures })`. Fix every error; read the leak hint. **For a mod,
    give its profile**: `maps.checkPlan(map, { mod })` (`smak map-check x.map --mod <profile>`). A map's
    entities are text that only the game's code reads, and what that code does not know it drops without a
@@ -1027,7 +1034,8 @@ landmarks, light, sound, monsters, rewards), read from a game's own maps, and th
    --class <name>` shows how the mod's authors write a class: copy that, do not guess), the classes its
    program has, and its rules. The kit ships Half-Life's profile (`maps.GOLDSRC`) and no mod's:
    `docs/MAPS-MAKING.md`, "A mod's profile", is how to get from nothing to a checked one, and
-   `profiles/mastersword.mjs` is one mod's, as the example. **Never write an entity for a mod from memory.**
+   `profiles/mastersword.mjs` is one mod's, as the example (`profiles/specialists.mjs` a second: The Specialists,
+   its arenas and, as `specialists-roleplay.mjs`, the role-play cities). **Never write an entity for a mod from memory.**
 3. **Draw the source and look**: `maps.planOfSource(map)` and `maps.drawSource(map, { from, yaw })`, or
    `smak map-plan x.map -o p.png` and `smak map-view x.map -o v.png`. Flat colours, no light, a tenth of a
    second, no compilers: stairs in front of a doorway, a window in the wrong wall, a start outside its room.
@@ -1048,6 +1056,8 @@ landmarks, light, sound, monsters, rewards), read from a game's own maps, and th
    `smak map-reach` too: the compiled map is walked by its own clip hulls. For a mod with spawn areas,
    `smak map-spawns --mod` (no monster seen appearing, no races at war on one spawn, the reward where the
    fight was won) and `smak map-character --mod` (no five figures on the plain side of the mod's own maps).
+   For a role-play map, `smak map-wiring`: every door a property by its name, switches at what they mean to
+   work, no switch at a name nothing answers to, lifts that stop where they are called.
 8. **The game is the real test.** Tell the person the file, where it goes (`<mod>/maps/`, its `.wad` beside the
    mod's unless the compile was `--wadinclude`), and `map <name>` in the console. A mod may want its own
    entities to start a player (Master Sword: `ms_player_begin` and `ms_player_spawn`): its profile's `starts`

@@ -534,6 +534,16 @@ function compiledSpace(bsp, { doors, walls, open, shut, off }) {
     pieces
       .filter((piece) => stops(piece[2]))
       .map((piece) => [piece[0] + shift, piece[1] + shift, piece[3] ?? 1]);
+  /** Whether a point is in what stops a line of sight: the world's tree, walked down to its leaf. */
+  const pointStops = (point) => {
+    let at = world.headNodes[0];
+    while (at >= 0) {
+      const node = bsp.nodes[at];
+      const plane = bsp.planes[node.plane];
+      at = node.children[dot(plane.normal, point) - plane.dist >= 0 ? 0 : 1];
+    }
+    return stops(bsp.leaves[-1 - at]?.contents ?? CONTENTS.SOLID);
+  };
   return {
     compiled: true,
     min: [...mins],
@@ -629,16 +639,29 @@ function compiledSpace(bsp, { doors, walls, open, shut, off }) {
       const steps = Math.max(1, Math.ceil(length / SIGHT_STEP));
       for (let step = 1; step < steps; step++) {
         const share = step / steps;
-        let at = world.headNodes[0];
         const point = [0, 1, 2].map((axis) => from[axis] + (to[axis] - from[axis]) * share);
-        while (at >= 0) {
-          const node = bsp.nodes[at];
-          const plane = bsp.planes[node.plane];
-          at = node.children[dot(plane.normal, point) - plane.dist >= 0 ? 0 : 1];
-        }
-        if (stops(bsp.leaves[-1 - at]?.contents ?? CONTENTS.SOLID)) return false;
+        if (pointStops(point)) return false;
       }
       return true;
+    },
+    firstStop(from, to, precision = 1) {
+      // one walk along the line in steps of SIGHT_STEP, then the step that stopped cut in halves: what
+      // `sees` asked of every length at once
+      const length = Math.hypot(to[0] - from[0], to[1] - from[1], to[2] - from[2]);
+      if (!(length > 0)) return null;
+      const along = (distance) => [0, 1, 2].map((axis) => from[axis] + ((to[axis] - from[axis]) * distance) / length);
+      for (let distance = SIGHT_STEP; distance < length; distance += SIGHT_STEP) {
+        if (!pointStops(along(distance))) continue;
+        let near = distance - SIGHT_STEP;
+        let beyond = distance;
+        while (beyond - near > precision) {
+          const middle = (near + beyond) / 2;
+          if (pointStops(along(middle))) beyond = middle;
+          else near = middle;
+        }
+        return near;
+      }
+      return null;
     },
   };
 }
@@ -690,7 +713,9 @@ function givesWay(classname, spawnflags, walls) {
  *     climbs(x, y, body)    the stretches a body climbs or swims up through there: ladders and liquids,
  *     cut(x, y)             what an upright line there passes through: `[[from, to, kind]]`, the kind
  *                           "solid", "sky" or "liquid" (the world only: for a side section),
- *     sees(from, to) }      whether the straight line between two points touches nothing solid
+ *     sees(from, to)        whether the straight line between two points touches nothing solid,
+ *     firstStop(from, to, precision)   a compiled map's only: how far along that line it first meets
+ *                           something solid, to within `precision` (1), or null when it meets nothing }
  *
  * `body` is one of `BODIES` or its name, "point", "standing", "large" or "crouching" (the standing player
  * unless told); anything else is refused in a sentence (`bodyOf`). What stops a body: the world's brushes

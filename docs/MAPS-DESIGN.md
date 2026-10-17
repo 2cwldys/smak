@@ -33,10 +33,10 @@ and `smak map-spawns` (how its monsters come). Their recipes are `kits/encounter
 
 The game lights whatever stands in a place by the floor under it, so the floor's light is what plays
 (`smak map-light`, docs/MAPS-CHECKS.md).
-- **Shadow between the lights.** 19% to 56% of a good map's floor is under 24 of 255. An evenly lit map has
+- **Shadow between the lights.** 17% to 55% of a good map's floor is under 24 of 255. An evenly lit map has
   no depth and no "there" to go to.
-- **Pools that draw the eye.** The brightest floor reaches 190 to 250: lamps along a street, a sunlit gate.
-- **The mean is low.** 30 to 73 of 255. A daylight field may be brighter (one well-liked field is 109) and
+- **Pools that draw the eye.** The brightest floor reaches 188 to 250: lamps along a street, a sunlit gate.
+- **The mean is low.** 30 to 78 of 255. A daylight field may be brighter (one well-liked field is 109) and
   then keeps its shade under trees and cliffs.
 
 ## Dressing: textures, props, sound
@@ -143,6 +143,28 @@ test is an upper bound: a clear line through the world and the brush entities th
 breakables, illusionaries that are not see-through), within 3000 units, from eyes on a grid over the
 trigger's floor; it does not know where the player looks, or the dark. `map-check --mod` says the same
 warnings among its own.
+
+## A role-play city: wiring, not shape
+
+The rules above are a fought-through game's. A role-play city is judged otherwise. Three of the Havoc9
+community's cities on The Specialists, read on 2026-10-17 (`profiles/specialists.mjs`, `CITIES`):
+
+- **On the grid is no fault.** 11 to 17% of their walls are off the grid, 5 to 7% of the floor slopes: a
+  street of boxes. The game's own arenas are squarer still (5%).
+- **Dense and at a person's size.** 21 to 40% of the floor under 176 wide; headroom 167 to 213; doors 64
+  wide; many small named places (shops, flats, a clinic, a lab, a bar) and few halls. A map whose floor is
+  mostly over 352 wide, with headroom of 384, reads as an empty shell.
+- **Dressed heavily.** 64 to 444 textures, 70 to 214 props (`ts_model`), 38 to 94 sounds; a district's own
+  sounds and storefront signs.
+- **Every door a property.** 98 to 110 doors, all but two named, one name a home or a shop (`resident1`
+  to `resident9`, `lux_apt_a` to `d`): what a server's role-play plugin hands out as keys.
+- **Switches that make a room live.** 38 to 53: a lamp's switch, a TV (a button at a coloured light, the
+  screen's glow), a radio, a club's music, a shower, a stove; lifts (a button, a multi_manager, a train
+  between two corners that wait to be fired again, the doors after it); an oven that kills; healing pads
+  (`trigger_hurt` with `dmg` under 0); an alarm said from eleven speakers; windows that come back.
+
+`smak map-wiring` reads all of this; `smak map-character --mod profiles/specialists-roleplay.mjs` holds a
+map's figures against the cities.
 
 ## Pitfalls
 

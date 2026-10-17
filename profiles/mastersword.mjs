@@ -820,7 +820,8 @@ export default function masterSword({ game, folders, scripts = [], cache } = {})
     // A map's character against the game's own (character.mjs, `smak map-character`): what is a prop, a
     // sound and music here, and the figures of 94 of the game's 100 maps (all but char_recover,
     // test_scripts, the three pvp_ maps and ms_soccer), [lower quartile, median, upper quartile], measured
-    // with `learnCharacter` on 2026-10-16. The two maps of a gauntlet first made with this kit were under
+    // with `learnCharacter` on 2026-10-16, the light again on 2026-10-17 with switched lights counted as the
+    // maps start (47 of the 94 have them; the rest is as it was). The two maps of a gauntlet first made with this kit were under
     // them where a player said they looked plain: the Barrow Road, "all straight lines" (walls 6.9% off the
     // grid, no slope, 4 levels, 10 textures), and the Old Orchard, lit evenly (152 on its floor, 2% in shadow)
     character: {
@@ -835,9 +836,9 @@ export default function masterSword({ game, folders, scripts = [], cache } = {})
         heightSpread: [257, 406, 637],
         textures: [27, 44, 67],
         sounds: [1, 6, 20],
-        shadow: [19, 39, 56],
-        brightest: [188, 241, 249],
-        lightMean: [29.8, 48.1, 73],
+        shadow: [17, 38, 55],
+        brightest: [188, 245, 250],
+        lightMean: [29.9, 49.3, 78],
         props: [0, 13, 36],
         lights: [5, 24, 43],
         music: [1, 2, 5],

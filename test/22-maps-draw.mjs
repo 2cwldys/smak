@@ -550,7 +550,7 @@ test("map-plan, map-view and map-views draw a compiled map and its source", () =
   refused(["map-view", mapFile, ...out, "--at", "func_wall"], /no place of its own/);
   refused(
     ["map-view", mapFile, ...out, "--light", "dim"],
-    /--light: steady or all \(or --no-light\), not dim/,
+    /--light: start or off or steady or all \(or --no-light\), not dim/,
   );
   refused(["map-view", mapFile, ...out, "--entities", "some"], /--entities: all, models, game, none/);
   refused(["map-view", mapFile, ...out, "--brightness", "0"], /--brightness: a number over 0/);

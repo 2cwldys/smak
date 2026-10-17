@@ -26,3 +26,4 @@ export * from "./light.mjs";
 export * from "./measure.mjs";
 export * from "./encounters.mjs";
 export * from "./character.mjs";
+export * from "./wiring.mjs";

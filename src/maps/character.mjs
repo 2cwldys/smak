@@ -172,7 +172,7 @@ export function characterAgainst(figures, reference, { most = PLAIN_MOST } = {})
   const counted = [...LOW_IS_PLAIN, ...HIGH_IS_PLAIN].filter(has).length;
   const warning =
     plain.length >= most
-      ? `the map looks plain beside ${reference.from ?? "the mod's maps"}: ${plain.length} of ${counted} figures are on the plain side of their middle half (${plain.map((each) => SAID[each.name][0]).join(", ")}). Its maps that players come back to have up to 3`
+      ? `the map looks plain beside ${reference.from ?? "the mod's maps"}: ${plain.length} of ${counted} figures are on the plain side of their middle half (${plain.map((each) => SAID[each.name][0]).join(", ")}); ${most} or more is a plain map (Master Sword's maps that players come back to have up to 3)`
       : null;
   return { plain: plain.map((each) => each.text), warning };
 }

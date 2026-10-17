@@ -264,6 +264,8 @@ export function measure(map, options = {}) {
   /** How far a level line runs from the eye one way before something solid. */
   const runOf = (from, [dx, dy]) => {
     const at = (length) => [from[0] + dx * length, from[1] + dy * length, from[2]];
+    // a compiled map's space finds where the line stops in one walk; brush source's, by halves
+    if (space.firstStop) return space.firstStop(from, at(far), precision) ?? far;
     if (space.sees(from, at(far))) return far;
     let near = 0;
     let beyond = far;

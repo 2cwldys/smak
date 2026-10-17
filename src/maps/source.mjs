@@ -943,6 +943,9 @@ export function subtract(solidBox, hole) {
  *
  * `texture`: `{ floor, ceiling, wall }` (or one for all): every piece of rock wears the floor on its top,
  * the ceiling on its underside and the wall on its sides, which is what is seen from inside a room.
+ * A room may bring its own, `{ min, max, texture }`: the rock it is seen from wears that instead (a shop's
+ * tiles behind a street's brick front, through one wall 16 thick). A piece of rock that faces two rooms
+ * of different textures on one side (the slab under two rooms side by side) is cut where they meet.
  * It returns the list of brushes.
  */
 export function carve(rooms, wall, texture) {
@@ -959,7 +962,65 @@ export function carve(rooms, wall, texture) {
   for (const room of rooms) rock = rock.flatMap((piece) => subtract(piece, room));
   const wears = roomTextures(texture);
   const everywhere = { top: wears.floor, bottom: wears.ceiling, sides: wears.wall };
-  return rock.map((piece) => box(piece.min, piece.max, everywhere));
+  if (!rooms.some((room) => room.texture !== undefined))
+    return rock.map((piece) => box(piece.min, piece.max, everywhere));
+  // each room's own, or the carve's; then each face of each piece by the room it is seen from
+  const own = rooms.map((room) => (room.texture === undefined ? wears : roomTextures(room.texture)));
+  const pieces = rock.flatMap((piece) => cutForRooms(piece, rooms, own));
+  return pieces.map((piece) => {
+    const sides = {};
+    for (const side of CARVE_SIDES) {
+      const seen = facingRooms(piece, side, rooms)[0];
+      const of = seen === undefined ? wears : own[seen];
+      sides[side.name] = side.name === "top" ? of.floor : side.name === "bottom" ? of.ceiling : of.wall;
+    }
+    return box(piece.min, piece.max, sides);
+  });
+}
+
+/** The six sides of a box of rock, as `box` names them: the axis, and whether it is the box's least end. */
+const CARVE_SIDES = [
+  { name: "west", axis: 0, least: true },
+  { name: "east", axis: 0, least: false },
+  { name: "south", axis: 1, least: true },
+  { name: "north", axis: 1, least: false },
+  { name: "bottom", axis: 2, least: true },
+  { name: "top", axis: 2, least: false },
+];
+
+/** The rooms (their numbers) a side of a piece of rock is seen from: a room whose opposite face lies on it. */
+function facingRooms(piece, side, rooms) {
+  const plane = side.least ? piece.min[side.axis] : piece.max[side.axis];
+  const found = [];
+  rooms.forEach((room, nth) => {
+    if ((side.least ? room.max : room.min)[side.axis] !== plane) return;
+    for (let i = 0; i < 3; i++)
+      if (i !== side.axis && !(room.min[i] < piece.max[i] && piece.min[i] < room.max[i])) return;
+    found.push(nth);
+  });
+  return found;
+}
+
+/** A piece of rock cut until no side of it is seen from two rooms that wear different textures. */
+function cutForRooms(piece, rooms, own) {
+  for (const side of CARVE_SIDES) {
+    const seen = facingRooms(piece, side, rooms);
+    if (new Set(seen.map((nth) => own[nth])).size < 2) continue;
+    // cut along the side, where the first of those rooms ends inside the piece
+    for (const i of [0, 1, 2]) {
+      if (i === side.axis) continue;
+      const room = rooms[seen[0]];
+      for (const at of [room.min[i], room.max[i]]) {
+        if (!(at > piece.min[i] && at < piece.max[i])) continue;
+        const low = { min: [...piece.min], max: [...piece.max] };
+        const high = { min: [...piece.min], max: [...piece.max] };
+        low.max[i] = at;
+        high.min[i] = at;
+        return [...cutForRooms(low, rooms, own), ...cutForRooms(high, rooms, own)];
+      }
+    }
+  }
+  return [piece];
 }
 
 // ── brushes changed ─────────────────────────────────────────────────────────

@@ -145,7 +145,7 @@ const LISTED_FLAGS = [
 ];
 // `map-entities` and `map-plan` print no more lines than this of one list unless told all of it is wanted
 const MARKS_PRINTED = 40;
-const LIGHTS = ["steady", "all"];
+const LIGHTS = ["start", "off", "steady", "all"];
 const MARKED = ["all", "models", "game", "none"];
 const DOORS = ["open", "closed"];
 const VIEWS = ["orbit", "first", ...Object.keys(smak.NAMED_VIEWS)];
@@ -1997,7 +1997,10 @@ function mapLight({ command, file, flags }) {
   const cell = flags.cell === undefined ? undefined : numberOf(flags, "cell");
   if (dark !== undefined && !(dark > 0)) fail(`${command}: --dark is a brightness, 1 to 255, not ${flags.dark}`);
   const reach = flags.walked ? maps.reachOf(bsp) : null;
-  const report = maps.lightReport(bsp, defined({ rooms, dark, cell, reach }));
+  const switched = flags.switched === undefined ? undefined : String(flags.switched);
+  if (switched !== undefined && !maps.SWITCHED.includes(switched))
+    fail(`${command}: --switched ${maps.SWITCHED.join(" or ")}, not ${flags.switched}`);
+  const report = maps.lightReport(bsp, defined({ rooms, dark, cell, reach, switched }));
   if (flags.json) {
     const { warnings, facts, ...rest } = report;
     console.log(JSON.stringify({ ...rest, warnings, facts }, null, 2));
@@ -2039,6 +2042,28 @@ async function mapSpawns({ command, file, flags, listed }) {
   process.exit(report.areas.some((area) => area.seen.length || area.fights.length) ? 1 : 0);
 }
 
+// ── map-wiring ─────────────────────────────────────────────────────────────
+/**
+ * map-wiring: what a map's entities are wired to do: its properties (doors by name), its switches and what
+ * each works in the end, its lifts, the places that heal or hurt, what is said over the map.
+ */
+async function mapWiring({ file, flags, listed }) {
+  const mod = await profileOf(flags, listed);
+  const report = maps.wiringOf(readEither(file), defined({ mod }));
+  if (flags.json) {
+    console.log(JSON.stringify(report, null, 1));
+    return;
+  }
+  if (flags.list) {
+    for (const property of report.properties)
+      console.log(`  property ${property.name.padEnd(24)} ${String(property.doors.length).padStart(2)} doors at ${property.at?.map(Math.round).join(" ") ?? "?"}${property.opens.length ? `  opened by ${property.opens.join(" ")}` : ""}`); // prettier-ignore
+    for (const one of report.switches)
+      console.log(`  ${one.kind} ${String(one.number).padStart(4)} ${one.classname.padEnd(20)} -> ${one.works.length ? one.works.map((work) => `${work.kind} ${work.number}`).join(", ") : "nothing"}`); // prettier-ignore
+  }
+  for (const fact of report.facts) console.log(`      ${fact}`);
+  for (const warning of report.warnings) console.log(`WARN  ${warning}`);
+}
+
 // ── map-character ──────────────────────────────────────────────────────────
 /**
  * map-character: a compiled map's character in numbers (character.mjs), held against its mod's maps (the
@@ -2047,11 +2072,14 @@ async function mapSpawns({ command, file, flags, listed }) {
  */
 async function mapCharacter({ command, file, flags, listed, rest }) {
   const mod = await profileOf(flags, listed);
-  const files = [file, ...(rest ?? [])].flatMap((each) =>
-    statSync(existing(each)).isDirectory()
+  // a folder stands for every map in it
+  const files = [file, ...(rest ?? [])].flatMap((each) => {
+    if (!existsSync(each)) fail(`no such file: ${each}`);
+    return statSync(each).isDirectory()
       ? readdirSync(each).filter((name) => /\.bsp$/i.test(name)).sort().map((name) => join(each, name))
-      : [each],
-  );
+      : [each];
+  });
+  if (!files.length) fail(`${command}: no .bsp in ${[file, ...(rest ?? [])].join(", ")}`);
   const measured = files.map((each) => ({
     name: basename(each).replace(/\.bsp$/i, ""),
     ...maps.characterOf(readCompiled(each).bsp, defined({ mod })),
@@ -2076,9 +2104,9 @@ async function mapCharacter({ command, file, flags, listed, rest }) {
   } else {
     const names = ["offGrid", "sloped", "levels", "heightSpread", "textures", "props", "sounds", "music", "lights", "lightMean", "shadow", "brightest"]; // prettier-ignore
     const width = Math.max(4, ...told.map((each) => each.name.length));
-    console.log(`${"".padEnd(width)}  ${names.map((name) => name.slice(0, 9).padStart(9)).join("")}`);
-    for (const each of told) console.log(`${each.name.padEnd(width)}  ${names.map((name) => String(each.figures[name] ?? "-").padStart(9)).join("")}`); // prettier-ignore
-    if (reference) console.log(`${"(q1-q3)".padEnd(width)}  ${names.map((name) => (reference.figures[name] ? `${reference.figures[name][0]}-${reference.figures[name][2]}` : "-").padStart(9)).join("")}`); // prettier-ignore
+    console.log(`${"".padEnd(width)}  ${names.map((name) => name.slice(0, 11).padStart(12)).join("")}`);
+    for (const each of told) console.log(`${each.name.padEnd(width)}  ${names.map((name) => String(each.figures[name] ?? "-").padStart(12)).join("")}`); // prettier-ignore
+    if (reference) console.log(`${"(q1-q3)".padEnd(width)}  ${names.map((name) => (reference.figures[name] ? `${reference.figures[name][0]}-${reference.figures[name][2]}` : "-").padStart(12)).join("")}`); // prettier-ignore
   }
   if (!reference) console.log("      no figures to hold it against: --mod <profile> with `character.figures`, or --against <file of --learn>"); // prettier-ignore
   for (const each of told) {
@@ -2595,7 +2623,7 @@ const COMMANDS = {
     help: `  map-views <bsp> -o out.png [--count 8] [--cols 4]   several views in one picture: from the places to start and the largest rooms
                                             (places to start that stand together get one view between them; a view that is nearly
                                             one colour is left out for the next largest room, and that is said)
-        (the three take --width --height --game <folder> --wad <file.wad> --no-light --light steady|all --brightness 1.55 --entities all|models|game|none (game: only what is drawn by its model or sprite, no boxes);
+        (the three take --width --height --game <folder> --wad <file.wad> --no-light --light start|off|steady|all --brightness 1.55 --entities all|models|game|none (game: only what is drawn by its model or sprite, no boxes);
          an entity that stands is drawn as the box it moves with: --body <class|targetname>=large|standing|crouching says which;
          --models draws the models that are named, from the --game folders, textured, in the body, skin, sequence, scale and
          angles their entities give (--no-model-scale: at their own size); --model <class|targetname|scriptfile>=models/x.mdl names one;
@@ -2660,19 +2688,32 @@ const COMMANDS = {
     help: `  wad-make <picture.png|.bmp> [more ...] -o out.wad   a .wad of pictures, each texture named after its file (15 letters at most,
                                             sides multiples of 16; a name that begins with { has holes where its PNG is see-through)`,
   },
+  "map-wiring": {
+    run: mapWiring,
+    own: true,
+    help: `  map-wiring <bsp|map> [--mod <profile>] [--list] [--json]
+                                            what the map's entities are wired to do, as a role-play map is judged: its properties
+                                            (the doors by name; doors of one name open together), its switches and triggers and what
+                                            each works in the end through relays (lights, sounds, lifts, doors, places that heal or
+                                            hurt), its trains and their stops, the names said over the map from many speakers, its
+                                            teleports, what comes back after it is broken. --list: each property and switch`,
+  },
   "map-light": {
     run: mapLight,
     own: true,
-    help: `  map-light <bsp> [--rooms rooms.json] [--dark 24] [--cell 128] [--walked] [--json]
+    help: `  map-light <bsp> [--rooms rooms.json] [--dark 24] [--cell 128] [--walked] [--switched start|off|on] [--json]
                                             the light on the map's floors, from its lightmaps, with no picture and no game: the mean
                                             of the samples the compiler stored (0 to 255), and what is dark of it: room by room
                                             (--rooms: { "name": { "min": [x, y, z], "max": [x, y, z] } }) or as the dark stretches
                                             of floor. The game lights what stands in a room by the floor under it. --walked: only
-                                            floor the walk test gets to. A draft's light (--fast) has no bounces: it is darker`,
+                                            floor the walk test gets to. A draft's light (--fast) has no bounces: it is darker.
+                                            A switched light counts as the map starts: on unless made to start dark
+                                            (spawnflags 1); --switched off or on counts them all one way`,
   },
   "map-character": {
     run: mapCharacter,
     own: true,
+    folder: true,
     help: `  map-character <bsp> [more .bsp or folders] [--mod <profile>] [--against figures.json] [--json]
                                             a map's character in numbers: walls off the grid, floor that slopes, floor levels, the
                                             spread of its heights, textures, props, sounds, music, lights, the light on the floor and

@@ -140,7 +140,7 @@ where it says so. Spread lists into the map: `brushes: [...carve(...), box(...)]
 
 | | |
 | --- | --- |
-| `carve(rooms, wall, texture)` | One block of rock round all the rooms (`{ min, max }` each), with the rooms taken out. Rooms that touch or overlap join; a doorway or a window is one more small room through the rock. **It cannot leak.** `texture`: `{ floor, ceiling, wall }`. Returns a list |
+| `carve(rooms, wall, texture)` | One block of rock round all the rooms (`{ min, max }` each), with the rooms taken out. Rooms that touch or overlap join; a doorway or a window is one more small room through the rock. **It cannot leak.** `texture`: `{ floor, ceiling, wall }`. A room may bring its own, `{ min, max, texture }`: the rock it is seen from wears it (a street's brick front, a shop's tiles behind it); a slab seen from two rooms of different textures is cut where they meet. Returns a list |
 | `hollow(min, max, wall, texture)` | A single sealed room: six walls around the space asked for. Returns the six, in order: floor, ceiling, west, east, south, north |
 | `subtract(box, hole)` | What is left of one `{ min, max }` box with another taken out: up to six boxes (data, not brushes) |
 

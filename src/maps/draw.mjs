@@ -46,6 +46,7 @@ import { shapeOf } from "./source.mjs";
 import { spaceOf, BODIES } from "./space.mjs";
 import { reachOf, storeyCuts } from "./reach.mjs";
 import { figuresOf } from "./figures.mjs";
+import { stylesCounted } from "./light.mjs";
 import { withMod } from "./mod.mjs";
 import { spritesOf, boardOf } from "./sprites.mjs";
 import { skyOf, skyColour } from "./sky.mjs";
@@ -138,13 +139,21 @@ const LIQUID_ALPHA = 0.62;
  */
 const BRIGHTNESS = 1.55;
 /**
- * The light styles a picture adds up, by its `light`: all under the number. Style 0 is always on; 1 to 31
- * are the game's own patterns (a torch that flickers), which are on by themselves and drawn at their full;
- * from 32 up are the lights a switch turns on and off.
+ * The light styles a picture adds up, by its `light`: a test of a style. Style 0 is always on; 1 to 31 are
+ * the game's own patterns (a torch that flickers), which are on by themselves and drawn at their full; from
+ * 32 up are the lights a switch turns on and off, which are on when the map starts unless made to start
+ * dark (`stylesAtStart` of light.mjs).
  */
-const STYLES_BELOW = { true: 32, steady: 1, all: 256 };
+const stylesOf = (bsp, light) =>
+  light === "steady"
+    ? (style) => style === 0
+    : stylesCounted(bsp, light === "all" ? "on" : light === "off" ? "off" : "start");
+const AS_IT_STARTS =
+  "lightmaps: the light as the map starts (the steady light, the flickering styles, and the switched lights not made to start dark)";
 const LIGHT_WORDS = {
-  true: "lightmaps: the steady light and the flickering styles (0 to 31)",
+  true: AS_IT_STARTS,
+  start: AS_IT_STARTS,
+  off: "lightmaps: the steady light and the flickering styles (0 to 31), every switched light off",
   steady: "lightmaps: the steady light alone (style 0)",
   all: "lightmaps: every style, the switched lights as if on",
 };
@@ -958,6 +967,7 @@ function sceneOf(bsp, { textures, folders, light = true, sky = true }) {
     return made;
   };
   const lit = light !== false && bsp.lumps.lighting.length > 0;
+  const counted = lit ? stylesOf(bsp, light) : null;
   const skyTexture = { ...flatTexture("sky", skyColourAsked), sky: skyPicture };
   const surfaces = new Array(bsp.faces.length);
   /** The face `index` as a surface; null for one that is never drawn (a tool's texture). */
@@ -984,18 +994,17 @@ function sceneOf(bsp, { textures, folders, light = true, sky = true }) {
         shade: special || light === false ? 1 : lit ? 0 : shadeOf(normal),
         kind: kind.sky ? "sky" : kind.water ? "liquid" : "face",
       };
-      if (lit && !special) surface.light = lightOf(bsp, face, STYLES_BELOW[light] ?? STYLES_BELOW.true);
+      if (lit && !special) surface.light = lightOf(bsp, face, counted);
       if (surface.light) surface.shade = 1;
     }
     surfaces[index] = surface;
     return surface;
   };
-  const below = STYLES_BELOW[light] ?? STYLES_BELOW.true;
   const lights = new Map();
   /** The light that falls on a thing standing at a point: `[r, g, b]` samples, or null (`lightUnder`). */
   const lightAt = (point) => {
     const at = point.join(" ");
-    if (!lights.has(at)) lights.set(at, lit ? lightUnder(bsp, point, below) : null);
+    if (!lights.has(at)) lights.set(at, lit ? lightUnder(bsp, point, counted) : null);
     return lights.get(at);
   };
   const scene = {
@@ -1018,11 +1027,11 @@ function sceneOf(bsp, { textures, folders, light = true, sky = true }) {
 /**
  * The light of the floor under a point, as the engine finds it for a model that stands there: the world's
  * tree is walked along the upright line down from the point, and at the first face the line passes through
- * that has light, the sample there is taken. `[r, g, b]`, the samples as stored (the styles under `below`
+ * that has light, the sample there is taken. `[r, g, b]`, the samples as stored (the styles `counted`
  * added up); null when the line meets no lit face within `LIGHT_REACH`. The floors of brush entities are
  * not asked.
  */
-function lightUnder(bsp, point, below) {
+function lightUnder(bsp, point, counted) {
   const [x, y] = point;
   const walk = (at, top, bottom) => {
     if (at < 0) return null;
@@ -1037,7 +1046,7 @@ function lightUnder(bsp, point, below) {
     if (before) return before;
     for (let nth = 0; nth < node.faceCount; nth++) {
       const face = bsp.faces[node.firstFace + nth];
-      const light = face ? lightOf(bsp, face, below) : null;
+      const light = face ? lightOf(bsp, face, counted) : null;
       if (!light) continue;
       const { s, t } = bsp.texinfo[face.texinfo];
       const across = Math.round((s[0] * x + s[1] * y + s[2] * cut + s[3] - light.originS) / LUXEL);
@@ -1052,13 +1061,13 @@ function lightUnder(bsp, point, below) {
 }
 
 /**
- * A face's light as the drawing reads it: its styles under `below` added up (one alone is the map's own
+ * A face's light as the drawing reads it: the styles `counted` added up (one alone is the map's own
  * bytes, not a copy); null for a face with none of them.
  */
-function lightOf(bsp, face, below) {
+function lightOf(bsp, face, counted) {
   const lightmap = faceLightmap(bsp, face);
   if (!lightmap) return null;
-  const wanted = lightmap.styles.filter((each) => each.style < below);
+  const wanted = lightmap.styles.filter((each) => counted(each.style));
   if (!wanted.length) return null;
   let rgb = wanted[0].rgb;
   if (wanted.length > 1) {
@@ -1327,9 +1336,10 @@ function marksNote(marked) {
  *                 0 looks up
  *   fov           degrees across (90)
  *   width, height the picture (640 x 480)
- *   light         true: the lightmaps: the light that is always on (style 0) with the game's flickering
- *                 styles (1 to 31: a torch) at their full. "steady": style 0 alone. "all": the switched
- *                 lights (32 and up) too, as if each were on. false: the textures as they are
+ *   light         true (or "start"): the lightmaps as the map starts: the light that is always on (style
+ *                 0), the game's flickering styles (1 to 31: a torch) at their full, and the switched
+ *                 lights (32 and up) not made to start dark. "off": every switched light off. "steady":
+ *                 style 0 alone. "all": every switched light on. false: the textures as they are
  *   brightness    what the light is multiplied by (1.55: about what the game shows; 1: the samples as the
  *                 compiler stored them; more, to look into a dark map)
  *   textures      map textures to wear by name where the map has no pixels of its own: `readWad(...).textures`
@@ -1383,7 +1393,7 @@ export function drawMap(bsp, options = {}) {
     const start = firstStart(scene.things);
     if (start) stand = { ...options, ...viewFrom(bsp, start.number), ...definedOnly(options) };
     else {
-      const [room] = largestRooms(bsp, 1);
+      const [room] = largestRooms(bsp, 1, scene.things.filter((thing) => thing.origin).map((thing) => thing.origin));
       if (!room) throw new Error("drawMap: the map has no place to start and no open room: give `from`");
       stand = { ...options, from: room.at };
       notes.push("the map has no place to start: looked at from the middle of its largest room");
@@ -1524,11 +1534,14 @@ function definedOnly({ to, yaw, pitch, fov }) {
 
 // ── the largest rooms ───────────────────────────────────────────────────────
 /**
- * The middles of a map's largest open places, to look from: `[{ at, leaf, size }]`, the largest first, no
- * two of them in sight of one another while such are to be had. A "room" is an empty leaf of the world's
- * tree by the size of its box; the eye is put 64 over the floor under its middle.
+ * The middles of a map's largest open places, to look from: `[{ at, leaf, size, things }]`, no two of them
+ * in sight of one another while such are to be had. A "room" is an empty leaf of the world's tree by the size
+ * of its box; the eye is put 64 over the floor under its middle. `points`: where the map's entities stand.
+ * A room with some of them in it comes before a larger one with none, and one with a floor under it before
+ * one with none: the largest empty leaves of a large map are as a rule the space under its sky or a void
+ * between its parts (a city's: the air over the roofs, black or all sky), which shows nothing of it.
  */
-function largestRooms(bsp, count) {
+function largestRooms(bsp, count, points = []) {
   const world = bsp.models[0];
   const candidates = [];
   for (let leaf = 1; leaf <= world.visLeaves && leaf < bsp.leaves.length; leaf++) {
@@ -1542,9 +1555,10 @@ function largestRooms(bsp, count) {
     const eye = floor === null ? middle[2] : Math.min(floor + EYE_OVER_FLOOR, maxs[2] - NEAR * 2);
     const at = [middle[0], middle[1], eye];
     if (contentsAt(bsp, at) !== CONTENTS.EMPTY) continue;
-    candidates.push({ at: at.map(Math.round), leaf: leafAt(bsp, at), size: size[0] * size[1] * size[2] });
+    const things = points.filter((point) => point.every((value, axis) => value >= mins[axis] && value <= maxs[axis])).length; // prettier-ignore
+    candidates.push({ at: at.map(Math.round), leaf: leafAt(bsp, at), size: size[0] * size[1] * size[2], things, floored: floor !== null }); // prettier-ignore
   }
-  candidates.sort((a, b) => b.size - a.size);
+  candidates.sort((a, b) => (b.things > 0) - (a.things > 0) || b.floored - a.floored || b.size - a.size);
   const chosen = [];
   // first those that no chosen room sees; then, when the map is all one open place, those far from the chosen
   for (const room of candidates) {
@@ -1668,7 +1682,8 @@ export function viewsOf(bsp, options = {}) {
         `${groups.length - most} more places to start (or groups of them) have no view: \`count\` gives them half its cells at the most`,
       );
     const wanted = Math.max(1, Math.floor((count - fromStarts.length) / FOUR_WAYS.length));
-    const rooms = largestRooms(bsp, wanted + ROOMS_SPARE);
+    const points = scene.things.filter((thing) => thing.origin).map((thing) => thing.origin);
+    const rooms = largestRooms(bsp, wanted + ROOMS_SPARE, points);
     const waysOf = (room) =>
       FOUR_WAYS.map((yaw) => ({ from: room.at, yaw, pitch: 0, name: `room ${pointText(room.at)}` }));
     stands = [...fromStarts, ...rooms.slice(0, wanted).flatMap(waysOf)].slice(0, Math.max(count, 1));

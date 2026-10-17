@@ -5,8 +5,9 @@
 // a chest, the player's own hands) by the light of the floor under it (the engine's R_LightPoint walks
 // down from the thing to the first lit face), so a dark floor is a room of dark things.
 //
-// WHAT THE NUMBERS ARE. A sample is the byte hlrad stored, 0 to 255 a colour, the styles that are on by
-// themselves added up (0, and the flickers 1 to 31); a floor's light here is the mean of its samples'
+// WHAT THE NUMBERS ARE. A sample is the byte hlrad stored, 0 to 255 a colour, the styles that are on when
+// the map starts added up (0, the flickers 1 to 31, and the switched lights not made to start dark: see
+// `stylesAtStart`); a floor's light here is the mean of its samples'
 // brightness (0.3 r + 0.59 g + 0.11 b). The game shows more than the bytes: Xash's GL renderer with its
 // defaults (gl_overbright 1; gamma, lightgamma 2.5, brightness 0: the engine's client/gamma.c makes a table
 // that is then a straight line) draws texture x sample x 2 / 255, cut off at white, and lifts the texture a
@@ -19,6 +20,7 @@
 // surface no lamp sees directly stays black, where the full compile fills it from the walls about it. A
 // report of a fast compile says how the DRAFT is lit, and is darker than the map will be.
 import { modelFaces, faceLightmap, facePolygon, faceNormal, LUXEL } from "./bsp.mjs";
+import { valueOf } from "./entities.mjs";
 
 /** A floor whose samples average under this (of 255) is said to be dark: see above. */
 export const DARK_FLOOR = 24;
@@ -34,7 +36,20 @@ const DIM_ROOMS_LEAST = 3;
 /** A face that looks this much upwards is a floor (the z of its normal): a slope a player stands on. */
 const FLOOR_LEAST = 0.7;
 /** The styles that are on by themselves: 0, and the game's own flickers. From 32 up a switch turns them on. */
-const STYLES_ON = 32;
+export const SWITCHED_FROM = 32;
+/**
+ * The classes that own a switched style, and the flag that makes one start dark. The SDK's dlls/lights.cpp,
+ * CLight::Spawn (light, light_spot, light_environment are all CLight): a light whose style is 32 or more
+ * sets that style "a" (off) when its spawnflags have SF_LIGHT_START_OFF (1), and its pattern, or "m" (on),
+ * when not. hlcsg gives every light that has a targetname a style of 32 or more (one a name) and writes it
+ * into the entity's `style`. A style no entity sets is drawn on by the engine (an empty lightstyle is 256).
+ * So a switched light is ON when the map starts unless it was made to start dark: in a role-play city,
+ * where nearly every room's lamp has a switch, they are nearly all on.
+ */
+const LIGHT_CLASSES = ["light", "light_spot", "light_environment"];
+const START_OFF = 1;
+/** How the switched styles are counted: as the map starts, all off, or all on. */
+export const SWITCHED = ["start", "off", "on"];
 /** The grid a map with no rooms named is looked over on, in units, and how far apart in height two cells
  *  of one patch may be (a stair's steps are one place). */
 const CELL = 128;
@@ -88,16 +103,46 @@ function insideFace(polygon, normal, point, slack) {
 }
 
 /**
- * The samples of the world's floors, each where it is: `each(point, brightness, area)` is called with the
- * sample's place in the map, its brightness 0 to 255 and the square units of floor it stands for.
+ * The light styles on when the map starts, from its light entities (above):
+ * `{ on(style), dark: [styles that start dark], switched: [every style of 32 or more the lights name] }`.
  */
-function floorSamples(bsp, each) {
+export function stylesAtStart(bsp) {
+  const flags = new Map();
+  for (const entity of bsp.entities ?? []) {
+    if (!LIGHT_CLASSES.includes(valueOf(entity, "classname"))) continue;
+    const style = Number.parseInt(valueOf(entity, "style") ?? "", 10);
+    if (!(style >= SWITCHED_FROM)) continue;
+    const startsOff = (Number.parseInt(valueOf(entity, "spawnflags") ?? "0", 10) & START_OFF) !== 0;
+    // the last light to spawn sets the style; a style is told dark only when every light of it starts dark
+    flags.set(style, (flags.get(style) ?? true) && startsOff);
+  }
+  const dark = [...flags].filter(([, off]) => off).map(([style]) => style).sort((a, b) => a - b);
+  const off = new Set(dark);
+  return { on: (style) => !off.has(style), dark, switched: [...flags.keys()].sort((a, b) => a - b) };
+}
+
+/** Which styles a count adds up, by `switched` (`SWITCHED`): a test of a style. */
+export function stylesCounted(bsp, switched = "start") {
+  if (!SWITCHED.includes(switched))
+    throw new Error(`switched: ${SWITCHED.join(", ")}, not ${JSON.stringify(switched)}`);
+  if (switched === "on") return () => true;
+  if (switched === "off") return (style) => style < SWITCHED_FROM;
+  const start = stylesAtStart(bsp);
+  return (style) => style < SWITCHED_FROM || start.on(style);
+}
+
+/**
+ * The samples of the world's floors, each where it is: `each(point, brightness, area)` is called with the
+ * sample's place in the map, its brightness 0 to 255 and the square units of floor it stands for. `counted`
+ * says which styles are added up (`stylesCounted`).
+ */
+function floorSamples(bsp, each, counted) {
   for (const face of modelFaces(bsp, 0)) {
     const normal = faceNormal(bsp, face);
     if (normal[2] < FLOOR_LEAST) continue;
     const light = faceLightmap(bsp, face);
     if (!light) continue;
-    const on = light.styles.filter((style) => style.style < STYLES_ON);
+    const on = light.styles.filter((style) => counted(style.style));
     if (!on.length) continue;
     const texinfo = bsp.texinfo[face.texinfo];
     const plane = bsp.planes[face.plane];
@@ -166,6 +211,8 @@ const summed = (sum) => ({
  *   cell    the grid, in units (128)
  *   reach   what `reachOf` gave for the map: only floor a player walks is counted (a roof, a ledge nobody
  *           gets to and the floor under a pillar say nothing of how the map plays)
+ *   switched  the lights a switch works: "start" (the default) as they are when the map starts, on unless
+ *           made to start dark (`stylesAtStart`); "off" all off; "on" all on
  * Returns {
  *   lit       false for a map with no light data (compiled without hlrad: the game draws it fully bright)
  *   floor     { area, mean, least, most, darkShare }: all of it. `mean` is of the samples as stored, 0 to 255
@@ -177,8 +224,9 @@ const summed = (sum) => ({
  * }
  * A map's light is what its compile made it: of a draft (`fast`) it is direct light only (see above).
  */
-export function lightReport(bsp, { rooms = null, dark = DARK_FLOOR, cell = CELL, reach = null } = {}) {
+export function lightReport(bsp, { rooms = null, dark = DARK_FLOOR, cell = CELL, reach = null, switched = "start" } = {}) { // prettier-ignore
   if (!bsp?.faces || !bsp.lumps) throw new Error("lightReport: a compiled map, as readBsp gives it");
+  const counted = stylesCounted(bsp, switched);
   const warnings = [];
   const facts = [];
   const lit = bsp.lumps.lighting.length > 0;
@@ -201,7 +249,14 @@ export function lightReport(bsp, { rooms = null, dark = DARK_FLOOR, cell = CELL,
     const key = `${Math.floor(point[0] / cell)} ${Math.floor(point[1] / cell)} ${Math.round(point[2] / SAME_STOREY)}`;
     if (!cells.has(key)) cells.set(key, tally());
     count(cells.get(key), point, brightness, area, dark);
-  });
+  }, counted);
+  const start = stylesAtStart(bsp);
+  if (start.switched.length)
+    facts.push(
+      switched === "start"
+        ? `${start.switched.length} switched light styles, counted as the map starts: ${start.switched.length - start.dark.length} on${start.dark.length ? `, ${start.dark.length} made to start dark (${some(start.dark.map(String))})` : ""}`
+        : `${start.switched.length} switched light styles, all counted ${switched}`,
+    );
   const floor = summed(all);
   facts.push(
     all.area

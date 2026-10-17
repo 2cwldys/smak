@@ -130,8 +130,16 @@ const light = maps.lightReport(bsp, { rooms: { hall: { min, max }, tomb: { min, 
 ```
 
 ```
-smak map-light map.bsp [--rooms rooms.json] [--dark 24] [--walked]
+smak map-light map.bsp [--rooms rooms.json] [--dark 24] [--walked] [--switched start|off|on]
 ```
+
+**Switched lights count as the map starts.** hlcsg gives every light that has a name a style of 32 or more,
+for a switch to turn it on and off. Half-Life's CLight::Spawn (dlls/lights.cpp) sets such a style ON when the
+map starts, unless the light's spawnflags have 1 ("initially dark"). `stylesAtStart(bsp)` reads which start
+dark; `lightReport` (`switched: "start"`, the default), the views (`light: true`) and `map-character` count
+the rest as on. Before 0.18.0 they counted every switched light off, and a role-play map, where nearly
+every room's lamp has a switch, read black. `switched: "off"` (`--switched off`, `--light off`) is that
+old count; `"on"` (`--light all`) every switch on.
 
 A room is **dark** when its floor's samples average under 24 of 255 (this kit's own line), and **dim** when
 it has under 0.6 of the light of the map's middling room: the eye settles to the rooms it came through.

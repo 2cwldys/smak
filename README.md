@@ -4,7 +4,7 @@ Tools for making and changing GoldSrc models (`.mdl`: Half-Life and its mods), b
 coding agent such as Claude Code. You say what you want; the agent writes small scripts with this kit, draws the
 result into pictures to check its own work, and hands you a `.mdl` to try in the game.
 
-Version 0.17.0. An early release, made for an agent to work. For the person it has two pages in the browser: a
+Version 0.18.0. An early release, made for an agent to work. For the person it has two pages in the browser: a
 **viewer** that shows any two models side by side, turning and playing their animations together, and an
 **editor** for touching up a model by hand (its animations, events and textures; not its shape), on a project
 file the agent can work on too (`editor/README.md`).
@@ -102,7 +102,7 @@ body 0: `info` shows the body numbers, and `--body N` picks one.
 | `viewer/` | The page that shows models side by side, and its small server. |
 | `editor/` | The page for re-timing and re-posing animations, events and textures by hand, its server, and the same edits from a terminal. |
 | `examples/` | Seven scripts, one for each kind of work; the seventh makes a small map. |
-| `profiles/` | One mod's profile (Master Sword Classic's), as an example of what a mod's own is: what its maps' entities are checked against. No part of the kit's core, and it holds no game content. |
+| `profiles/` | Two mods' profiles (Master Sword Classic's, and The Specialists' with its role-play cities), as examples of what a mod's own is: what its maps' entities are checked against. No part of the kit's core, and they hold no game content. |
 | `mcp/` | The kit as an MCP server, for a client with no shell: `mcp/README.md`. |
 | `test/` | The kit checking itself: `selftest.mjs` runs the files beside it, one an area. `test/fixtures/` holds the kit's own small map. |
 
@@ -121,6 +121,17 @@ body 0: `info` shows the body numbers, and `--body N` picks one.
   the game is the real test.
 - Many models give the left and right side of the body the same pixels of a texture. A mark painted on one side
   then shows on the other; the kit reports how much of each texture is shared.
+
+## What changed in 0.18.0
+
+- **A second game's maps**: The Specialists and the Havoc9 community's role-play cities read, and a city block
+  built like them. `profiles/specialists.mjs` (its arenas, and as `specialists-roleplay.mjs` the cities).
+- **What a map is wired to do** (`smak map-wiring`): properties by door name, switches and what they work,
+  lifts, alarms, places that heal; the slips.
+- **Switched lights count as the map starts** (on unless made to start dark), in `map-light`,
+  `map-character` and the views: a city of lamp switches no longer reads black.
+- **Rooms carved in their own textures**; `map-measure` eight times faster on a large map; `map-views` looks
+  where something is.
 
 ## What changed in 0.17.0
 
