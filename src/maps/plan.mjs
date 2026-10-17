@@ -22,7 +22,7 @@ import { checkEntities as checkAgainstMod } from "./rules.mjs";
  *   key, value    letters in an entity's key and in its value, as hlcsg and the engine read them
  *   brushes       brushes in one map, as hlcsg counts them
  */
-export const SOURCE_LIMITS = { range: 4096, textureName: 15, key: 31, value: 1023, brushes: 32768 };
+export const SOURCE_LIMITS = { range: 4096, textureName: 15, key: 31, value: 1023, brushes: 32768, switchedLights: 32 };
 
 /** The compilers' own textures (their zhlt.wad, which compileMap adds itself): never looked for in the given list. */
 const TOOL_TEXTURES = [
@@ -406,6 +406,18 @@ function checkEntities(map, { range, starts }, { errors, warnings, facts }, used
     warnings.push(
       "nothing lights it (no light, light_spot, light_environment or info_texlights): hlrad will leave it black",
     );
+  // a light with a name is switched: hlcsg gives each name a style of its own from 32 to 63 (the engine has
+  // 64 styles, MAX_LIGHTSTYLES; the first 32 are the game's patterns) and stops with "Exceeded
+  // MAX_SWITCHED_LIGHTS" past 32 names
+  const switched = new Set(
+    entities.filter((entity) => /^light/.test(entity.classname ?? "") && entity.targetname).map((entity) => String(entity.targetname)),
+  );
+  if (switched.size > SOURCE_LIMITS.switchedLights)
+    errors.push(
+      `${switched.size} names of lights: a light with a name is switched, and a map holds ${SOURCE_LIMITS.switchedLights} switched names at the most (hlcsg: "Exceeded MAX_SWITCHED_LIGHTS"). Give lights that switch together one name, or leave some lamps always on`,
+    );
+  else if (switched.size)
+    facts.push(`${switched.size} of the ${SOURCE_LIMITS.switchedLights} names a map may give its switched lights`);
   for (const entity of entities.filter((one) => one.classname === "info_texlights"))
     for (const key of Object.keys(entity)) {
       if (["classname", "origin", "brushes"].includes(key)) continue;

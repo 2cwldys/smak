@@ -289,3 +289,13 @@ test("The Specialists' profile: made from the game's folder, its starts, its pro
   const command = runSmak("map-character", join(FIXTURES, "tworooms.bsp"), "--mod", roleplay, "--game", join(game, "ts"), "--game", join(game, "valve")); // prettier-ignore
   sure(/role-play cities/.test(command), command);
 });
+
+test("checkPlan: more than 32 names of lights is refused before the compile (MAX_SWITCHED_LIGHTS)", () => {
+  const brushes = maps.carve([{ min: [-64, -64, 0], max: [512, 64, 128] }], 16, "WALL");
+  const lamps = (count, named) => Array.from({ length: count }, (_, i) => maps.light([i * 8, 0, 64], { targetname: named(i) }));
+  const over = maps.checkPlan({ worldspawn: {}, brushes, entities: [maps.playerStart([0, 0, 0], 0), ...lamps(33, (i) => `flat${i}`)] }); // prettier-ignore
+  sure(over.errors.some((error) => /^33 names of lights: .*32 switched names at the most/.test(error)), over.errors.join(" | "));
+  // lights that share a name share a style: forty lamps under two names are two
+  const shared = maps.checkPlan({ worldspawn: {}, brushes, entities: [maps.playerStart([0, 0, 0], 0), ...lamps(40, (i) => `hall${i % 2}`)] }); // prettier-ignore
+  sure(!shared.errors.length && shared.facts.includes("2 of the 32 names a map may give its switched lights"), shared.facts.join(" | ")); // prettier-ignore
+});

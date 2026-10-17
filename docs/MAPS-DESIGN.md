@@ -163,6 +163,11 @@ community's cities on The Specialists, read on 2026-10-17 (`profiles/specialists
   between two corners that wait to be fired again, the doors after it); an oven that kills; healing pads
   (`trigger_hurt` with `dmg` under 0); an alarm said from eleven speakers; windows that come back.
 
+- **Switches are rationed.** A light with a name is switched, and the compilers hold 32 such names in a
+  map (each a light style of its own, 32 to 63): the cities have 11 to 14 lamp switches each. Give the
+  flats a switch and leave shops, halls and streets lit always; lamps that switch together share a name.
+  `checkPlan` refuses a 33rd.
+
 `smak map-wiring` reads all of this; `smak map-character --mod profiles/specialists-roleplay.mjs` holds a
 map's figures against the cities.
 

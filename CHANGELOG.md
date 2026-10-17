@@ -3,6 +3,13 @@
 The newest first. A version that changes what a model's file looks like, or that a model made before needs
 mending for, says so under **Mind**.
 
+## 0.18.1 (2026-10-17)
+
+- **No more than 32 switched lights.** `checkPlan` refuses a map whose lights carry more than 32 names: hlcsg
+  gives each its own light style from 32 to 63 and stops with "Exceeded MAX_SWITCHED_LIGHTS" (found building
+  a city of 40 flats and shops, each with a lamp switch); under it, it says how many of the 32 are used.
+  docs/MAPS-DESIGN.md: switches are rationed in a role-play city.
+
 ## 0.18.0 (2026-10-17)
 
 A second game's maps. The kit was made on Master Sword; it was turned on The Specialists and on three
