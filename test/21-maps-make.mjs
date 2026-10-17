@@ -240,6 +240,36 @@ test("an arch, a bend, stairs and terrain are runs of sound convex pieces that l
     "steps of 32 are not refused",
   );
 
+  // a ramp laid on the nosings: every step's front top edge on its slope, the foot one tread before the first
+  // riser, the head at the top; the steps themselves as they were without it
+  for (const [min, max, high, options] of [
+    [[80, 0, 64], [344, 64, 240], "+x", { tread: 24, top: false }],
+    [[464, 0, 0], [528, 64, 64], "-x", { tread: 16, top: false }],
+    [[0, 0, 0], [64, 160, 80], "+y", {}],
+    [[0, 0, 0], [64, 160, 80], "-y", {}],
+  ]) {
+    const plain = stairs(min, max, high, "A", options);
+    const ramped = stairs(min, max, high, "A", { ...options, ramp: "CLIP" });
+    sure(ramped.length === plain.length + 1, `${high}: the ramp is not one brush more`);
+    const ramp = ramped.at(-1);
+    sure(ramp.faces.every((face) => face.texture === "CLIP"), `${high}: the ramp is not all CLIP`);
+    sure(!shapeOf(ramp).faults.length, `${high}: the ramp is not a sound brush: ${shapeOf(ramp).faults.join("; ")}`);
+    const axis = high.endsWith("x") ? 0 : 1;
+    const sign = high.startsWith("+") ? 1 : -1;
+    for (const step of plain) {
+      const shape = shapeOf(step);
+      const nose = [...shape.min];
+      nose[axis] = sign > 0 ? shape.min[axis] : shape.max[axis];
+      nose[1 - axis] = (shape.min[1 - axis] + shape.max[1 - axis]) / 2;
+      nose[2] = shape.max[2];
+      const under = [...nose];
+      under[2] -= 0.5;
+      const over = [...nose];
+      over[2] += 0.5;
+      sure(source.holds(ramp, under) && !source.holds(ramp, over), `${high}: a step's nosing at ${nose} is not on the ramp`);
+    }
+  }
+
   // terrain that hangs from a lid at 288: two brushes a cell, each reaching its three heights
   const height = (x, y) => 200 + ((x + y) % 48) + 0.4;
   const rock = terrain({ min: [0, 0], max: [128, 64], step: [64, 64], base: 288, height, texture: "A" });

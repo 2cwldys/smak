@@ -3,6 +3,14 @@
 The newest first. A version that changes what a model's file looks like, or that a model made before needs
 mending for, says so under **Mind**.
 
+## 0.18.2 (2026-10-17)
+
+- **Stairs that are walked, not climbed.** `stairs(..., { ramp: "CLIP" })` adds a wedge laid on the steps'
+  nosings, from one tread before the first riser to the top: a player walks up it smoothly, shots and grenades
+  (which CLIP does not stop) still meet the steps. Where the box has no room before the first riser the ramp
+  stands on a lip of one step there. Found when Havoc9 played a city built with the kit: its box stairs were
+  "hard to navigate"; their own cities' stairs are box steps too (16 high, treads of 23 to 45), with no ramps.
+
 ## 0.18.1 (2026-10-17)
 
 - **No more than 32 switched lights.** `checkPlan` refuses a map whose lights carry more than 32 names: hlcsg

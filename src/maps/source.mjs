@@ -743,8 +743,18 @@ function ringPieces({ centre, radius, outer, angles, pieces, snap }, from, to, t
  *                floor. A run too short for them is refused. With `top: false` and no tread, the run is
  *                shared among the steps there are. A slab of `top: false` stands on the box's floor
  * With `top: false` the highest step comes first in the list.
+ *
+ * `ramp: "CLIP"` (or any texture) adds, last in the list, a wedge laid on the steps' nosings, from the floor
+ * one step's depth before the first riser to the top: a player walks up it smoothly instead of climbing
+ * each step (what boxy stairs "feel wrong" for), while shots and grenades, which a CLIP brush does not
+ * stop, still meet the steps. Where the box has no room before the first riser, the foot of the ramp is
+ * the box's low side, and the ramp a little steeper.
  */
-export function stairs(min, max, high, texture, { steps, rise = 16, top = true, tread } = {}) {
+export function stairs(min, max, high, texture, { steps, rise = 16, top = true, tread, ramp } = {}) {
+  if (ramp !== undefined) {
+    const flight = stairs(min, max, high, texture, { steps, rise, top, tread });
+    return [...flight, stairRamp(min, max, high, ramp, { steps, rise, top, tread })];
+  }
   const side = SIDES[high];
   if (!side) throw new Error(`stairs: the high side is "+x", "-x", "+y" or "-y", not ${high}`);
   for (let i = 0; i < 3; i++)
@@ -800,6 +810,37 @@ export function stairs(min, max, high, texture, { steps, rise = 16, top = true, 
     brushes.push(box(low, top, texture));
   }
   return brushes;
+}
+
+/** The ramp `stairs` lays on its steps with `ramp`: from one step's depth before the first riser to the top. */
+function stairRamp(min, max, high, texture, { steps, rise = 16, top = true, tread }) {
+  const side = SIDES[high];
+  const count = steps ?? Math.ceil((max[2] - min[2]) / rise);
+  const length = max[side.axis] - min[side.axis];
+  const deep = tread ?? (top ? length / count : length / (count - 1));
+  const edge = side.sign > 0 ? max[side.axis] : min[side.axis];
+  const lowSide = side.sign > 0 ? min[side.axis] : max[side.axis];
+  // the nosings lie on one line: it is at the top where the highest step's front is (the box's high side,
+  // where the upper floor is the last step), and at the floor `count` steps' depth before that
+  const head = top ? edge - side.sign * deep : edge;
+  const foot = head - side.sign * count * deep;
+  if (side.sign * (foot - lowSide) >= 0) {
+    const low = [...min];
+    const upper = [...max];
+    low[side.axis] = Math.min(foot, head);
+    upper[side.axis] = Math.max(foot, head);
+    return wedge(low, upper, high, texture);
+  }
+  // no room before the first riser: the ramp stays on the nosings and stands on a lip at the box's low side
+  const lip = min[2] + ((max[2] - min[2]) * side.sign * (lowSide - foot)) / (count * deep);
+  const outline = [
+    [lowSide, min[2]],
+    [head, min[2]],
+    [head, max[2]],
+    [lowSide, lip],
+  ];
+  const across = side.axis === 0 ? 1 : 0;
+  return prism(across, outline, min[across], max[across], texture);
 }
 
 /**
