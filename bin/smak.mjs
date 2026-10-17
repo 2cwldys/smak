@@ -7,7 +7,7 @@
 // How this file is laid out: the arguments are read in one place (parseArgs), each command is a function that
 // is handed { command, file, rest, flags, src }, and COMMANDS, after them, maps a command's name to its
 // function and to its lines of the help.
-import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync, readdirSync } from "node:fs";
 import { join, dirname, basename, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import * as smak from "../src/index.mjs";
@@ -2007,6 +2007,87 @@ function mapLight({ command, file, flags }) {
   for (const warning of report.warnings) console.log(`WARN  ${warning}`);
 }
 
+// ── map-spawns ─────────────────────────────────────────────────────────────
+/**
+ * map-spawns: how each spawn area's monsters come into the map (encounters.mjs): what fires the area, which
+ * monsters can be seen appearing, which come back soon, which races fight, how far a reward appears from
+ * the death that brings it. With -o, the plan with a line from where a player stands in each trigger to
+ * each monster seen from it. Exit code 1 when a monster can be seen appearing or races fight.
+ */
+async function mapSpawns({ command, file, flags, listed }) {
+  const mod = await profileOf(flags, listed);
+  if (!mod?.spawns)
+    fail(`${command}: --mod <profile> whose \`spawns\` says how the mod's spawn areas work (profiles/mastersword.mjs has one)`); // prettier-ignore
+  const map = readEither(file);
+  const report = maps.spawnsOf(map, { mod, ...defined({ sight: numberOf(flags, "sight"), quick: numberOf(flags, "quick"), near: numberOf(flags, "near"), far: numberOf(flags, "far") }) }); // prettier-ignore
+  if (flags.json) console.log(JSON.stringify(report, (key, value) => (value === Infinity ? "endless" : value), 1));
+  else {
+    console.log(maps.spawnsTable(report));
+    for (const fact of report.facts) console.log(`      ${fact}`);
+    for (const warning of report.warnings) console.log(`WARN  ${warning}`);
+  }
+  if (flags.o) {
+    const lines = report.areas.flatMap((area) =>
+      area.seen.map((each) => ({ from: each.eye, to: area.templates.find((template) => template.number === each.number).at })), // prettier-ignore
+    );
+    const only = [...new Set(report.areas.flatMap((area) => [...area.by.map((source) => source.number), ...area.templates.map((template) => template.number)]).filter((number) => number !== undefined))]; // prettier-ignore
+    const options = { ...pictureOptions(file, flags, listed), ...defined({ z: numberOf(flags, "z"), mod }), lines, only, legend: true }; // prettier-ignore
+    const picture = isSource(file) ? maps.planOfSource(map, options) : maps.planOf(map, options);
+    if (flags.json) save(flags.o, smak.png(picture.width, picture.height, picture.rgba));
+    else savePicture(flags.o, picture, `the plan: the spawn areas' monsters and what fires them, a line from a trigger to each monster seen appearing from it (${lines.length})`); // prettier-ignore
+  }
+  process.exit(report.areas.some((area) => area.seen.length || area.fights.length) ? 1 : 0);
+}
+
+// ── map-character ──────────────────────────────────────────────────────────
+/**
+ * map-character: a compiled map's character in numbers (character.mjs), held against its mod's maps (the
+ * profile's `character.figures`, or --against a file `--learn` wrote). Several maps: their figures side by
+ * side. --learn: the figures of the maps given (files or folders of .bsp) as a reference, written to -o.
+ */
+async function mapCharacter({ command, file, flags, listed, rest }) {
+  const mod = await profileOf(flags, listed);
+  const files = [file, ...(rest ?? [])].flatMap((each) =>
+    statSync(existing(each)).isDirectory()
+      ? readdirSync(each).filter((name) => /\.bsp$/i.test(name)).sort().map((name) => join(each, name))
+      : [each],
+  );
+  const measured = files.map((each) => ({
+    name: basename(each).replace(/\.bsp$/i, ""),
+    ...maps.characterOf(readCompiled(each).bsp, defined({ mod })),
+  }));
+  if (flags.learn) {
+    const to = need(command, flags.o, "-o figures.json");
+    const reference = maps.learnCharacter(measured, defined({ from: flags.from }));
+    save(to, Buffer.from(JSON.stringify(reference, null, 1)));
+    console.log(`${to}: the figures of ${measured.length} maps, [lower quartile, median, upper quartile] each`);
+    for (const [name, [low, middle, high]] of Object.entries(reference.figures)) console.log(`      ${name.padEnd(13)} ${low}  ${middle}  ${high}`); // prettier-ignore
+    return;
+  }
+  const reference = flags.against ? JSON.parse(readFileSync(existing(flags.against), "utf8")) : mod?.character?.figures ? mod.character : null; // prettier-ignore
+  const told = measured.map((each) => ({ ...each, ...maps.characterAgainst(each.figures, reference) }));
+  if (flags.json) {
+    console.log(JSON.stringify(told.map(({ name, figures, plain, warning }) => ({ name, figures, plain, warning })), null, 1)); // prettier-ignore
+    return;
+  }
+  if (told.length === 1) {
+    console.log(`${files[0]}:`);
+    for (const fact of told[0].facts) console.log(`      ${fact}`);
+  } else {
+    const names = ["offGrid", "sloped", "levels", "heightSpread", "textures", "props", "sounds", "music", "lights", "lightMean", "shadow", "brightest"]; // prettier-ignore
+    const width = Math.max(4, ...told.map((each) => each.name.length));
+    console.log(`${"".padEnd(width)}  ${names.map((name) => name.slice(0, 9).padStart(9)).join("")}`);
+    for (const each of told) console.log(`${each.name.padEnd(width)}  ${names.map((name) => String(each.figures[name] ?? "-").padStart(9)).join("")}`); // prettier-ignore
+    if (reference) console.log(`${"(q1-q3)".padEnd(width)}  ${names.map((name) => (reference.figures[name] ? `${reference.figures[name][0]}-${reference.figures[name][2]}` : "-").padStart(9)).join("")}`); // prettier-ignore
+  }
+  if (!reference) console.log("      no figures to hold it against: --mod <profile> with `character.figures`, or --against <file of --learn>"); // prettier-ignore
+  for (const each of told) {
+    const who = told.length > 1 ? `${each.name}: ` : "";
+    for (const text of each.plain) console.log(`PLAIN ${who}${text}`);
+    if (each.warning) console.log(`WARN  ${who}${each.warning}`);
+  }
+}
+
 // ── map-measure, map-compare ───────────────────────────────────────────────
 /**
  * A name for each of several maps: those of --names (a,b,c), or each file's own name without its ending,
@@ -2588,6 +2669,30 @@ const COMMANDS = {
                                             (--rooms: { "name": { "min": [x, y, z], "max": [x, y, z] } }) or as the dark stretches
                                             of floor. The game lights what stands in a room by the floor under it. --walked: only
                                             floor the walk test gets to. A draft's light (--fast) has no bounces: it is darker`,
+  },
+  "map-character": {
+    run: mapCharacter,
+    own: true,
+    help: `  map-character <bsp> [more .bsp or folders] [--mod <profile>] [--against figures.json] [--json]
+                                            a map's character in numbers: walls off the grid, floor that slopes, floor levels, the
+                                            spread of its heights, textures, props, sounds, music, lights, the light on the floor and
+                                            its shadow; held against the mod's own maps (the profile's character.figures, or
+                                            --against): PLAIN, a figure under their lower quartile where low is plain (over the upper,
+                                            for the floor's light); WARN, five or more such. Several maps: side by side.
+  map-character <bsp or folders ...> --learn -o figures.json [--from "words"]
+                                            the figures of those maps as [lower quartile, median, upper quartile], for --against`,
+  },
+  "map-spawns": {
+    run: mapSpawns,
+    own: true,
+    help: `  map-spawns <bsp|map> --mod <profile> [--game <folder> ...] [--scripts <folder>] [-o plan.png] [--json]
+                                            how each spawn area's monsters come: at the start, on arrival, or fired, and by what (a
+                                            trigger walked into, a button, a breakable, a death, an area cleared, a script), followed
+                                            back through relays and counters. SEEN: monsters with a clear line from a player's eyes in
+                                            the trigger that brings them (--sight 3000 units). QUICK: back at their own spot under
+                                            --quick 60 s. FIGHT: races that attack each other, near (--near 1024) and in one band.
+                                            A reward over --far 1024 units from the death that brings it. -o: the plan, a line from
+                                            each trigger to each monster seen. Exit code 1 on SEEN or FIGHT`,
   },
   "map-measure": {
     run: mapMeasure,

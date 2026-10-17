@@ -3,6 +3,41 @@
 The newest first. A version that changes what a model's file looks like, or that a model made before needs
 mending for, says so under **Mind**.
 
+## 0.17.0 (2026-10-16)
+
+Maps a player likes. A player walked the first two maps an agent made with this kit and said the items were good
+but the maps not: one "all straight lines, nothing unique", and in the other monsters that appeared in front of
+him, wolves and boars of one terrace that fought each other, and the reward back at the start. The game's own
+100 maps were measured with the kit, eleven read closely, and what they do is now a guide, two checks and a kit
+of recipes.
+
+- **How a map's monsters come.** `spawnsOf(map, { mod })` and `smak map-spawns`: each spawn area, how it comes
+  (at the start, on arrival, fired) and by what (a trigger walked into, a button, a breakable, a death, an area
+  cleared, a script), followed back through relays, counters and multi_managers. It warns of monsters a player in
+  the trigger that brings them could see appear (a clear line through the world, closed doors and the brush
+  entities that hide), of monsters back at their own spot within a minute of dying, of races that attack each
+  other on one spawn, and of a reward far from the death that brings it; `-o` draws a line from each trigger to
+  each monster seen from it. Its warnings are also `map-check --mod`'s. The profile's new `spawns` says how a
+  mod's spawn areas work; Master Sword's reads its races from the pack's races.script and each monster's script
+  (`raceTable`, `raceRelation`, `scriptRace`), and the names a script fires (`usetrigger`).
+- **A map's character in numbers.** `characterOf(bsp)` and `smak map-character`: walls off the grid, floor that
+  slopes, floor levels, the spread of the floor's height, textures, props, sounds, music, lights, and the floor's
+  light, its shadow and its brightest; held against the mod's own maps (`characterAgainst`, the profile's new
+  `character.figures`): a PLAIN line for each figure on the plain side of their middle half, and a warning on
+  five or more. `learnCharacter` (`--learn`) makes the figures from any folder of maps; Master Sword's profile
+  carries those of its 94 maps.
+- **The guide**: docs/MAPS-DESIGN.md, the rules of thumb for shape, height, landmarks, light, dressing, a map's
+  own touch, monsters, races and rewards, with the game's numbers.
+- **The recipes**: kits/encounterkit.mjs, `recipesOf(mod)`: an area filled ahead out of sight, areas filled on
+  arrival, a breakable that releases monsters, waves, things counted that open a way, a reward where the fight
+  was won, a chance and one of several at random (the profile's new `recipes`).
+- `planOf` and `planOfSource` take `lines`: lines of one's own over the plan.
+- New: src/maps/encounters.mjs, src/maps/character.mjs, kits/encounterkit.mjs, docs/MAPS-DESIGN.md, test 55.
+
+**Mind**: `map-check --mod` with a profile that has `spawns` (Master Sword's) now says the encounters' warnings
+too: a map that passed with no warning may now have some. `checkEntities(map, { encounters: false })` leaves them
+out.
+
 ## 0.16.0 (2026-10-16)
 
 A long run that goes on, and a fight that knows what it cannot reach. A run of 98 minutes through two maps, from

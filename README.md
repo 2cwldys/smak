@@ -4,7 +4,7 @@ Tools for making and changing GoldSrc models (`.mdl`: Half-Life and its mods), b
 coding agent such as Claude Code. You say what you want; the agent writes small scripts with this kit, draws the
 result into pictures to check its own work, and hands you a `.mdl` to try in the game.
 
-Version 0.16.0. An early release, made for an agent to work. For the person it has two pages in the browser: a
+Version 0.17.0. An early release, made for an agent to work. For the person it has two pages in the browser: a
 **viewer** that shows any two models side by side, turning and playing their animations together, and an
 **editor** for touching up a model by hand (its animations, events and textures; not its shape), on a project
 file the agent can work on too (`editor/README.md`).
@@ -121,6 +121,16 @@ body 0: `info` shows the body numbers, and `--body N` picks one.
   the game is the real test.
 - Many models give the left and right side of the body the same pixels of a texture. A mark painted on one side
   then shows on the other; the kit reports how much of each texture is shared.
+
+## What changed in 0.17.0
+
+- **Maps a player likes** (docs/MAPS-DESIGN.md): rules of thumb read from a game's own 100 maps, for shape,
+  height, light, dressing, monsters and rewards.
+- **How the monsters come** (`smak map-spawns`): what fires each spawn area, monsters seen appearing, back too
+  soon, races at war on one spawn, a reward far from its fight; also among `map-check --mod`'s warnings.
+- **A map's character** (`smak map-character`): its ground, dressing and light against the mod's own maps.
+- **Recipes** for encounters (kits/encounterkit.mjs): fill ahead out of sight, on arrival, a surprise, waves,
+  a count, a reward where it was won.
 
 ## What changed in 0.16.0
 

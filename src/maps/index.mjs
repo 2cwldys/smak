@@ -24,3 +24,5 @@ export * from "./sky.mjs";
 export * from "./draw.mjs";
 export * from "./light.mjs";
 export * from "./measure.mjs";
+export * from "./encounters.mjs";
+export * from "./character.mjs";

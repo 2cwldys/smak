@@ -167,3 +167,35 @@ msmonster_skeleton  spawnarea road1_spawn  reqhp "0;150"  reqhp_none "150;500"  
 
 Measured: maps/barrowroad (msr-web) had 18 such warnings, each a place meant to be empty in the middle band;
 with `reqhp_none` on its templates (its monsters the same) its `checkPlan` and `checkBsp` say 0 warnings.
+
+## How the monsters come, and how the map looks
+
+Added after a player walked the first two maps of a series made with this kit (2026-10-16): monsters
+appeared in front of him, wolves and boars of one terrace fought each other, the reward appeared back at the
+start, and one of the maps was "all straight lines". `docs/MAPS-DESIGN.md` has what the game's own maps do
+instead; these are its two checks.
+
+**`spawnsOf(map, { mod })`** (`smak map-spawns`, and among `map-check --mod`'s warnings) reads a mod's spawn
+areas by the profile's `spawns` (encounters.mjs has each field; Master Sword's profile has them all): how each
+area comes (`start`, `arrival`, `fired`) and the first things that fire it (`touch`, `use`, `break`, `start`,
+`death`, `cleared`, `script`, `arrival`, `nothing`), followed back through relays, counters and
+multi_managers. It warns of:
+
+| | what | told when |
+| --- | --- | --- |
+| SEEN | monsters a player standing in the trigger that brings them could see appear | a clear line from eyes on a grid over the trigger's floor to the monster's chest, within `sight` (3000); through the world, closed doors and the brush entities that hide |
+| QUICK | monsters back at their own spot soon after they die | more than one life, back under `quick` (60) s |
+| FIGHT | races that attack each other on one spawn | two templates of one area, of bands that can be there together, within `near` (1024), one's race attacking the other's (the profile's `relation`) |
+| far reward | a reward far from the death that brings it | over `far` (1024) units from the dying monster's spot |
+
+Measured on Master Sword's 100 maps: 1597 of the 3533 monsters fired by a trigger can be seen appearing
+(45%), 51 areas hold races at war; nine seconds for all hundred. On the Old Orchard (msr-web): 87 of 87 on its
+terraces seen, from 333 units; 85 back after 8-20 s; three terraces of four or five races, wolves (`rogue`)
+attacking everything; the chest 1854 units from the warden.
+
+**`characterOf(bsp, { mod })`** (`smak map-character`) measures walls off the grid, floor that slopes,
+floor levels, the spread of the floor's height, textures, props, sounds, music, lights, and the floor's light
+(mean, shadow, brightest); `characterAgainst(figures, reference)` tells each figure on the plain side of the
+mod's middle half (`plain`) and warns when five or more are. Master Sword's figures (94 maps) are in its
+profile; `learnCharacter` (`map-character --learn`) makes them from any folder of maps. The Barrow Road had 8
+plain figures and the Old Orchard 6; of the game's maps players come back to, none has more than 3.

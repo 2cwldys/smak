@@ -604,8 +604,11 @@ two documents of their own: `docs/MAPS.md` (a compiled map read and checked, its
 files, its pictures: `drawMap`, `planOf`, `viewsOf`, `compareOf`, `drawSource`, `planOfSource`, `sectionOf`, `storeysOf`,
 `openingViews`, what they draw of the game's files: `figuresOf`, `spritesOf`, `readSpr`, `skyOf`, `readTga`,
 the walk test: `reachOf`, `spaceOf`, `restOf`, `storeyCuts`, a map in numbers: `measure`, `measureTable`, and a map's entities against its
-mod: `checkEntities`, `definitionsOf`, `learnEntities`, `classesOfDll`, `GOLDSRC`, `loadMod`) and
-`docs/MAPS-MAKING.md` (brushes, entities, the `.map` file, the plan check, a mod's profile and the compile).
+mod: `checkEntities`, `definitionsOf`, `learnEntities`, `classesOfDll`, `GOLDSRC`, `loadMod`),
+`docs/MAPS-MAKING.md` (brushes, entities, the `.map` file, the plan check, a mod's profile and the compile)
+and `docs/MAPS-DESIGN.md` (what makes a map good to look at and to play, as rules of thumb and recipes; how a
+map's monsters come: `spawnsOf`, `spawnsTable`; its character in numbers: `characterOf`, `characterAgainst`,
+`learnCharacter`).
 
 ## Playing a map in the game (`src/play.mjs`, exported as `play`)
 
@@ -751,5 +754,6 @@ Each takes a description and returns `{ tris, image }`. Their file headers list 
 | `axe(spec)`, `crescent`, `flared`, `wrap`, `bolts` from `kits/axekit.mjs` | A haft with one or more bits. `haft: true`. Texture 1024x512. |
 | `blunt(spec)`, `toward` from `kits/bluntkit.mjs` | A haft with turned parts on it: clubs, bats, hammers, maces. `haft: true`. |
 | `bow(spec)`, `through` from `kits/bowkit.mjs` | A bent stave and its string. `rig: "nearest"`. Texture 1024x256. |
+| `recipesOf(mod)` from `kits/encounterkit.mjs` | Not a model: a map's encounters wired, as entities for `writeMap` (`area`, `monster`, `trigger`, `line`, `fillAhead`, `onArrival`, `surprise`, `waves`, `counted`, `rewardOnDeath`, `chance`, `oneOf`). `docs/MAPS-DESIGN.md`. |
 
 The kits paint large. Bring a picture down with `shrink(image, 2)` or `4` before `indexed` for GoldSrc.

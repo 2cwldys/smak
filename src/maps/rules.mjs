@@ -35,6 +35,7 @@ import { isCompiled } from "./space.mjs";
 import { brushModelOf } from "./entities.mjs";
 import { listedWads } from "./wad.mjs";
 import { GOLDSRC, modOf, definitionsFor, isNamed } from "./mod.mjs";
+import { spawnsOf } from "./encounters.mjs";
 
 /** How many of one kind of fault are listed before the rest are counted. */
 const LISTED = 8;
@@ -794,6 +795,12 @@ export function checkEntities(map, options = {}) {
   const tools = { names, mod, definitions, folders, finder: folders?.length ? fileFinder(folders) : null };
   checkRules({ entities, live, names, gathered, tools }, mod);
   checkFiles(live, mod, folders, !isCompiled(map), gathered);
+  // how the monsters come (encounters.mjs): for a mod whose profile says how its spawn areas work
+  if (mod.spawns && options.encounters !== false) {
+    const encounters = spawnsOf(map, { mod });
+    for (const text of encounters.warnings) gathered.say("warning", text);
+    for (const text of encounters.facts) gathered.say("fact", text);
+  }
   if (live.length < entities.length) {
     const off = new Map();
     for (const entity of entities)

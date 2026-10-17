@@ -12,7 +12,7 @@ map made from brushes in a script and compiled; texture files (`.wad`) read and 
 
 This file is the whole briefing. `docs/API.md` lists every function; `docs/ENGINES.md` covers GoldSrc against Xash;
 `docs/MAPS.md` (a compiled map, and the pictures of maps) and `docs/MAPS-MAKING.md` (brushes and the compile) hold
-the vocabulary for maps.
+the vocabulary for maps; `docs/MAPS-DESIGN.md` what makes one good to look at and to play.
 
 ## What it needs
 
@@ -134,6 +134,12 @@ node bin/smak.mjs wad-make <pictures...> -o out.wad   a .wad from PNG or BMP pic
 node bin/smak.mjs map-compile <file.map> -o out.bsp --wad a.wad [--wadinclude] [--fast] [--vhlt <folder>]
 node bin/smak.mjs map-compile <file.map> ... [--timeout 600 | --timeout hlvis=600,hlrad=1200] [--progress]   a stage seen and stopped
 node bin/smak.mjs map-light <bsp> [--rooms rooms.json]   the light on the floors, room by room: what the game lights a figure by
+node bin/smak.mjs map-spawns <bsp|map> --mod <profile> [-o plan.png]   how each spawn area's monsters come, and by what; those
+                                                   seen appearing from the trigger that brings them (SEEN), back soon at their own
+                                                   spot (QUICK), races that attack each other on one spawn (FIGHT), a reward far
+                                                   from the death that brings it; exit code 1 on SEEN or FIGHT (docs/MAPS-DESIGN.md)
+node bin/smak.mjs map-character <bsp> [more] [--mod <profile>]   its ground, textures, props, sounds and light in numbers,
+                                                   held against the mod's own maps: PLAIN figures, and a warning on five or more
 node bin/smak.mjs scripts <script folders, maps...> --mod <profile> [--shipped <folder>]
                                                    each script of one's own: replaces a game's, is named, or is named by nothing
 node bin/smak.mjs item <piece.mjs> --mod <profile> --game <mod> --family <name> --name <word> -o dir [--pictures]
@@ -1005,6 +1011,10 @@ node bin/smak.mjs map-plan work/gatecity.bsp -o plan.png                        
 
 `examples/07-a-small-map.mjs` is the template; `docs/MAPS-MAKING.md` has the vocabulary (rooms carved out of
 rock so that nothing can leak, boxes, stairs, arches, cylinders, lights, starts) and the sizes a player needs.
+**Before the first brush, read `docs/MAPS-DESIGN.md`**: a map that parses, compiles and is walked end to end
+can still be one a player calls "all straight lines" and leaves. It has the rules of thumb (shape, height,
+landmarks, light, sound, monsters, rewards), read from a game's own maps, and the recipes
+(`kits/encounterkit.mjs`) that bring monsters in out of sight.
 
 1. **Describe it in a script**: rooms as `{ min, max }` boxes of empty space (`maps.carve`), what stands in
    them, the entities. `maps.writeMap` gives the `.map`'s text.
@@ -1035,7 +1045,9 @@ rock so that nothing can leak, boxes, stairs, arches, cylinders, lights, starts)
 7. **Draw the result and look**: `smak map-plan`, `map-views`, `map-view` on the `.bsp`. Now the textures and
    the baked light are there: a lamp's colour, a room left dark, a grate's holes; with `--game` and `--models`,
    the sky, the sprites and the models as the game will show them. `smak map-check` and
-   `smak map-reach` too: the compiled map is walked by its own clip hulls.
+   `smak map-reach` too: the compiled map is walked by its own clip hulls. For a mod with spawn areas,
+   `smak map-spawns --mod` (no monster seen appearing, no races at war on one spawn, the reward where the
+   fight was won) and `smak map-character --mod` (no five figures on the plain side of the mod's own maps).
 8. **The game is the real test.** Tell the person the file, where it goes (`<mod>/maps/`, its `.wad` beside the
    mod's unless the compile was `--wadinclude`), and `map <name>` in the console. A mod may want its own
    entities to start a player (Master Sword: `ms_player_begin` and `ms_player_spawn`): its profile's `starts`

@@ -1816,6 +1816,8 @@ function drawDot(canvas, [x, y], radius, colour) {
       canvas.rgba.set(far <= radius ? [...colour, 255] : [0, 0, 0, 255], (row * canvas.width + column) * 4);
     }
 }
+/** The colour of a line a caller asks a plan for, unless it says. */
+const LINE_COLOUR = [255, 64, 160];
 /** A line on the canvas. */
 const line = (canvas, from, to, colour) =>
   drawLine(canvas.rgba, canvas.width, canvas.height, from, to, [...colour, 255]);
@@ -2191,6 +2193,8 @@ const frameFacts = (frame) => ({
  *                  was found; the ways asked for
  *                  (`to`) are lines, and each opening has its number (`o3`)
  *   only           a list of entity numbers: no other entity is marked
+ *   lines          `[{ from: [x, y], to: [x, y], colour: [r, g, b] }]`: lines of one's own over the plan
+ *                  (`smak map-spawns`: from where a player stands in a trigger to each monster seen from it)
  *   and `light`, `brightness`, `textures`, `folders` as `drawMap` takes them: a floor is its texture's mean
  *   colour under the map's own light, so a dark room is dark on the plan.
  *
@@ -2270,6 +2274,12 @@ export function planOf(bsp, options = {}) {
           figures: figured.figures,
           sprites: figured.sprites,
         });
+  // lines of the caller's own (a trigger to the monster seen from it), over everything
+  for (const each of options.lines ?? []) {
+    if (!Array.isArray(each?.from) || !Array.isArray(each?.to))
+      throw new Error("lines: [{ from: [x, y], to: [x, y], colour: [r, g, b] }]");
+    line(canvas, planPixel(frame, each.from), planPixel(frame, each.to), each.colour ?? LINE_COLOUR);
+  }
   const kinds = Object.keys(MARK_COLOURS).filter((kind) => marks.some((mark) => mark.kind === kind));
   const words = cut === undefined ? "seen from above" : `cut at z ${cut}`;
   const bar = drawPlanFoot(canvas, frame, kinds, words);
@@ -2515,6 +2525,11 @@ export function planOfSource(map, options = {}) {
           figures: figured.figures,
           sprites: sprited.sprites,
         });
+  for (const each of options.lines ?? []) {
+    if (!Array.isArray(each?.from) || !Array.isArray(each?.to))
+      throw new Error("lines: [{ from: [x, y], to: [x, y], colour: [r, g, b] }]");
+    line(canvas, planPixel(frame, each.from), planPixel(frame, each.to), each.colour ?? LINE_COLOUR);
+  }
   const kinds = Object.keys(MARK_COLOURS).filter((kind) => marks.some((mark) => mark.kind === kind));
   const bar = drawPlanFoot(canvas, frame, kinds, `source  cut at z ${cut}`);
   const facts = {

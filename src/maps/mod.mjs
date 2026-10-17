@@ -42,6 +42,13 @@
 //                   named ({ shipped, loose, ofEntity, aliases, started }: scripts.mjs), so that one's own
 //                   scripts can be placed against the game's: which replace one, which are new and named,
 //                   which are named by nothing (`scriptsPlaced`, `smak scripts`)
+//     spawns        how the mod's maps bring monsters in: the classes of a spawn area and a template, their
+//                   keys, a template's script and race, which races attack which (encounters.mjs, `spawnsOf`,
+//                   `smak map-spawns`). None: the mod has no spawn areas the kit reads
+//     recipes       { text, chance, oneOf, counter }: the classes kits/encounterkit.mjs wires with
+//     character     { from, props, sounds, music, figures }: what counts as a prop, a sound and music, and
+//                   the mod's own maps' figures, [lower quartile, median, upper quartile] each
+//                   (character.mjs, `smak map-character`)
 //     items         { name: family }: the families of held items, each as `addItem` of src/items.mjs takes one
 //                   (which files, bodyparts and bones a kind of item is shown from, and the game's own
 //                   thing each new one is laid on); `smak item --family <name>` reads them here

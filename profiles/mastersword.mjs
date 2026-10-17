@@ -216,6 +216,49 @@ export function scriptModel(script, textOf) {
   return null;
 }
 
+// ── races ───────────────────────────────────────────────────────────────────
+// Who attacks whom is the pack's races.script: each race registered with its allies and its enemies
+// (`reg.race.allies`, `reg.race.enemies`, "all" for every race). The source, server/stats/races.cpp,
+// CRaceManager::Relationship: the allies are read first, then the enemies; neither, and the two leave each
+// other alone. Only one side has to hate for a fight: a wolf (rogue) attacks a boar (wildanimal), and the
+// boar answers.
+/** The race table of races.script's text: `{ race: { allies: [...], enemies: [...] } }`. */
+export function raceTable(text) {
+  const races = {};
+  for (const block of String(text ?? "").split(/\bregisterrace\b/)) {
+    const field = (name) => new RegExp(`reg\\.race\\.${name}\\s+(\\S+)`).exec(block)?.[1];
+    const name = field("name");
+    if (!name) continue;
+    const list = (value) => (value ?? "").split(";").map((each) => each.trim().toLowerCase()).filter(Boolean);
+    races[name.toLowerCase()] = { allies: list(field("allies")), enemies: list(field("enemies")) };
+  }
+  return races;
+}
+/** What a monster of race `a` does to one of race `b`: "ally", "hates" or "none". */
+export function raceRelation(races, a, b) {
+  const own = races[a];
+  if (!own || !races[b]) return "none";
+  const holds = (list) => list.includes("all") || list.includes(b);
+  return holds(own.allies) ? "ally" : holds(own.enemies) ? "hates" : "none";
+}
+/**
+ * A monster script's race as it spawns: the first `race <name>` of the script itself (a later one is a
+ * change of mind in an event: orc_base's `bo_zombie_mode` makes an orc undead), and else of the scripts it
+ * takes in, in their order. A name that is no race of the table (a variable, MY_OWNER_RACE) is passed over.
+ */
+export function scriptRace(script, textOf, races, deep = 0, taken = new Set()) {
+  const name = scriptName(script);
+  const text = textOf(name);
+  if (text === undefined || deep > INCLUDES_DEEP || taken.has(name)) return null;
+  taken.add(name);
+  for (const [word] of linesOf(text, "race")) if (races[word.toLowerCase()]) return word.toLowerCase();
+  for (const words of linesOf(text, "#include")) {
+    const race = scriptRace(words[words.length - 1], textOf, races, deep + 1, taken);
+    if (race) return race;
+  }
+  return null;
+}
+
 /** The scripts of a folder of loose scripts (and of its folders), named as the pack names them. */
 function looseScriptNames(folder, under = "") {
   const names = [];
@@ -630,6 +673,9 @@ export default function masterSword({ game, folders, scripts = [], cache } = {})
   const items = new Set(
     [...known].filter((name) => name.startsWith(ITEMS)).map((name) => name.slice(ITEMS.length)),
   );
+  // the race table and each script's race, read when first asked
+  let races = null;
+  const raceOf = new Map();
 
   // the FGD writes reqhp as a whole number ("Req. Total HP (min;max)" : 0), and the game reads "min;max":
   // the key is given its true kind on every class the FGD gives it to
@@ -758,6 +804,91 @@ export default function masterSword({ game, folders, scripts = [], cache } = {})
 
     // playing it (src/play.mjs): see PLAYING IT, above
     play: PLAY,
+
+    // The recipes of kits/encounterkit.mjs. The source: ms_text is a game_text (server/msmapents.cpp,
+    // LINK_ENTITY_TO_CLASS(ms_text, CGameText)); a trigger_relay or mstrig_relay with `random N` fires
+    // only when RANDOM_FLOAT(0, 99.9) < N (server/triggers.cpp, CTriggerRelay::Use; thornlands' orc raid
+    // has 5); a multi_manager with `random 1` fires one of its targets, chosen at random (CMultiManager,
+    // fFireRandom; orc_for's rnd_ambush1). The game's counters are brushes (kfortress's two).
+    recipes: {
+      text: "ms_text",
+      chance: { class: "trigger_relay", key: "random" },
+      oneOf: { class: "multi_manager", key: "random" },
+      counter: "brush",
+    },
+
+    // A map's character against the game's own (character.mjs, `smak map-character`): what is a prop, a
+    // sound and music here, and the figures of 94 of the game's 100 maps (all but char_recover,
+    // test_scripts, the three pvp_ maps and ms_soccer), [lower quartile, median, upper quartile], measured
+    // with `learnCharacter` on 2026-10-16. The two maps of a gauntlet first made with this kit were under
+    // them where a player said they looked plain: the Barrow Road, "all straight lines" (walls 6.9% off the
+    // grid, no slope, 4 levels, 10 textures), and the Old Orchard, lit evenly (152 on its floor, 2% in shadow)
+    character: {
+      from: "the game's 94 maps",
+      props: ["env_model"],
+      sounds: ["ambient_generic", "env_sound"],
+      music: ["msarea_music", "msarea_music_dynamic", "mstrig_music"],
+      figures: {
+        offGrid: [22, 34.4, 50.8],
+        sloped: [8.2, 15.4, 30.8],
+        levels: [7, 10, 13],
+        heightSpread: [257, 406, 637],
+        textures: [27, 44, 67],
+        sounds: [1, 6, 20],
+        shadow: [19, 39, 56],
+        brightest: [188, 241, 249],
+        lightMean: [29.8, 48.1, 73],
+        props: [0, 13, 36],
+        lights: [5, 24, 43],
+        music: [1, 2, 5],
+        floorArea: [9121724, 16127686, 25042429],
+        faces: [7808, 10547, 13967],
+      },
+    },
+
+    // How monsters come into a map (encounters.mjs, `spawnsOf`, `smak map-spawns`). The source,
+    // server/msmapents.cpp, CAreaMonsterSpawn: an area fills 3 s after the map starts unless `spawnstart 1`,
+    // then when it is fired (ResetUse); it fires `fireallperish` when every template has used up its lives.
+    // A template (msmonsterserver.cpp) names its area by `spawnarea`; `lives` 0 or none is without end; it
+    // comes back after delaylow-delayhigh seconds at its own origin; `reqhp` "min;max" its band;
+    // `killtarget` and `perishtarget` fire as it dies; `scriptfile` stands over `defscriptfile`, and with
+    // neither it is NPCs/default_human. The game fires game_playerspawn as a player enters the world
+    // (server/player/player.cpp): challs fills its nine halls by a trigger_relay of that name. A script
+    // fires a name by `usetrigger <name>`.
+    spawns: {
+      areas: AREAS,
+      templates: TEMPLATES,
+      area: "spawnarea",
+      waits: { key: "spawnstart", value: "1" },
+      cleared: "fireallperish",
+      dies: ["killtarget", "perishtarget"],
+      lives: "lives",
+      endless: ["0", ""],
+      delay: ["delaylow", "delayhigh"],
+      band: { key: "reqhp", separator: ";" },
+      script: (keys) => {
+        const name = keys.scriptfile || keys.defscriptfile;
+        return name ? scriptName(name) : keys.classname === "msworlditem_treasure" ? null : "npcs/default_human";
+      },
+      scriptKey: "scriptfile",
+      race: (script) => {
+        if (!races) races = raceTable(textOf("races"));
+        if (!raceOf.has(script)) raceOf.set(script, scriptRace(script, textOf, races));
+        return raceOf.get(script);
+      },
+      relation: (a, b) => {
+        if (!races) races = raceTable(textOf("races"));
+        return raceRelation(races, a, b);
+      },
+      // a chest: the class of one, or a script of chests/
+      reward: (script, keys) => keys.classname === "msworlditem_treasure" || script.startsWith("chests/"),
+      arrival: ["game_playerspawn", "game_playerjoin"],
+      touches: ["trigger_once", "trigger_multiple"],
+      fires: (script) => {
+        const text = textOf(script);
+        return text === undefined ? [] : linesOf(text, "usetrigger").map((words) => words[0]);
+      },
+    },
 
     targets: {
       // perishtarget: fired on a monster's last death (the source, server/monsters/msmonsterserver.cpp,
