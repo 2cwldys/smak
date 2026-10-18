@@ -27,3 +27,7 @@ export * from "./measure.mjs";
 export * from "./encounters.mjs";
 export * from "./character.mjs";
 export * from "./wiring.mjs";
+export * from "./ground.mjs";
+export * from "./sketch.mjs";
+export * from "./pieces.mjs";
+export * from "./scene3d.mjs";

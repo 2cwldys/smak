@@ -14,8 +14,10 @@ and `smak map-spawns` (how its monsters come). Their recipes are `kits/encounter
 
 - **Walls off the grid.** A third of a good map's wall area runs along neither axis (the game's middle half:
   22% to 51%; its outdoor maps 45-50%). A rock that leans, a path that bends, a bank, a wall that follows a
-  hill. Rooms of axis-aligned boxes read as rooms, however they are textured. `maps.prism`, `maps.wedge`,
-  `maps.bend` and `maps.terrain` make such shapes.
+  hill. Rooms of axis-aligned boxes read as rooms, however they are textured. `maps.carvePlan` carves spaces
+  of any outline (`maps.path` and `maps.curve` for streets and tracks that bend; a person's drawing through
+  `smak sketch`, docs/MAPS-SKETCH.md); `maps.turned`, `maps.prism`, `maps.wedge`, `maps.bend` and
+  `maps.terrain` (standing, for a cliff) make the rest.
 - **Floor that slopes.** 8% to 31% of the floor area. Ramps, banks, uneven ground.
 - **Heights.** 7 to 13 distinct floor levels (32 units apart, each holding 2% of the floor), a spread of 250
   to 640 units. Height gives views: from a terrace the yard you came from, from a stair the hall you will

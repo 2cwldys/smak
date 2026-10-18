@@ -134,13 +134,34 @@ where it says so. Spread lists into the map: `brushes: [...carve(...), box(...)]
 | `arch(axis, { centre, radius, outer, angles, pieces }, from, to, texture)` | A curve of straight convex pieces, one brush each. `outer` a number: a ring (a vault, a curved wall). `outer: { min, max }`: what is left of that rectangle outside the curve, the masonry round an arched opening. `centre`, `min` and `max` are two numbers each, the other two axes in order as for `prism`: through a wall along x, `(y, z)`. An arch over a doorway 64 wide from y 128 to 192, springing at z 80: `arch("x", { centre: [160, 80], radius: 32, outer: { min: [128, 80], max: [192, 112] } }, 384, 416, texture)`, with the doorway carved 112 high. Returns a list |
 | `bend({ centre, inner, outer, floor, ceiling, wall, angles, pieces }, texture)` | The shell of a passage that turns in plan: floor, ceiling, two walls. Its ends are open and flat; at multiples of 90 degrees they meet a box-shaped room exactly. Returns a list |
 | `stairs(min, max, high, texture, { steps, rise, top, tread, ramp })` | The box filled with steps climbing towards `high`. A step over 18 is refused. Returns a list. As it always was, the highest step is level with the top of the box (where the upper floor goes on, it is only more floor) and the run is shared among the steps (off the grid when it does not divide). `top: false`: no such step, the last riser climbs onto the upper floor, each step a slab of its own tread; `tread: 24`: each step that deep, laid from the high side, so that the steps stay on the grid (the box's run over them is floor); `ramp: "CLIP"`: a CLIP wedge on the nosings, last in the list, so that the flight is walked up smoothly (shots still meet the steps) |
-| `terrain({ min, max, step, base, height, texture })` | Carved rock: a grid in plan, two triangles a cell, one brush a triangle from the flat `base` to `height(x, y)`. `base` above the heights hangs it from a ceiling; below, it is ground. Returns a list |
+| `terrain({ min, max, step, base, height, texture, axis })` | Carved rock: a grid in plan, two triangles a cell, one brush a triangle from the flat `base` to `height(x, y)`. `base` above the heights hangs it from a ceiling; below, it is ground. `axis: "x"` or `"y"` stands it up: a cliff's face, a cave's rough wall (`min`, `max`, `step` and `height(a, b)` then in the other two axes, as a prism's). Returns a list |
 
 ### Rooms
 
 | | |
 | --- | --- |
 | `carve(rooms, wall, texture)` | One block of rock round all the rooms (`{ min, max }` each), with the rooms taken out. Rooms that touch or overlap join; a doorway or a window is one more small room through the rock. **It cannot leak.** `texture`: `{ floor, ceiling, wall }`. A room may bring its own, `{ min, max, texture }`: the rock it is seen from wears it (a street's brick front, a shop's tiles behind it); a slab seen from two rooms of different textures is cut where they meet. Returns a list |
+| `carvePlan(spaces, wall, texture)` | `carve` for spaces of any outline: each `{ outline, floor, ceiling, texture }` (or `outlines`: several that join; `rings`: one with holes, a yard round a well). The walls follow the outlines at any angle; what is not a space is rock, so **it cannot leak**. A space whose ceiling wears `sky` is open to it (the rock over it is sky all round, as the compilers want). Overlapping and touching spaces join; a corner that turns less than a degree is made straight. Returns a list of upright convex prisms |
+| `path(points, width, { ends, mitre })` | A street, a tunnel, a track: the outline `width` wide along a line of points, mitred at each corner, to be a space's `outlines` |
+| `curve(points, { pieces, closed })` | A smooth line through points (a track that bends, a river's bank); `closed`: an outline |
+| `circle(centre, radius, { sides })` | A round outline (a plaza, a well, a tower) |
+| `readSvgSketch`, `readPngSketch`, `sketchSpaces`, `sketchMap` | A map from a drawing: `docs/MAPS-SKETCH.md` (and `smak sketch`) |
+| `convexPieces(space)` | A space's ground cut in convex outlines: a brush that fills its shape (water, a trigger, a floor of its own) |
+| `slope: { rise, toward }` on a space | Its floor a ramp across it (`slopePlane(space)` gives its height at a point) |
+
+### Pieces made to measure
+
+Each returns brushes; each refuses, in words, what a player could not walk.
+
+| | |
+| --- | --- |
+| `spiralStairs({ centre, inner, outer, from, to, start, turn, rise, tread, thick, column, texture })` | Steps round a column, each at most `rise` (16) up, `tread` (32) deep at their middle; refused when the turn above leaves less than a player's height. → `{ brushes, top }` |
+| `bridge({ from, to, z, width, thick, rails, piers, ground, texture })` | A deck at any angle with railings, and piers down to `ground` |
+| `railing(points, { z, height, thick, texture })` | A rail along a line, a post at each corner |
+| `balcony({ wall: [a, b], depth, z, rails, texture })` | A floor standing out to the left of the wall's line a → b, railed round |
+| `brokenWall({ from, to, thick, bottom, top, low, pieces, gaps, seed, texture })` | A ruin's wall: a jagged top, `gaps` of it fallen |
+| `rockWall({ from, to, bottom, top, depth, cell, seed, texture })` | Rough rock standing out to the left of a line: a straight wall made a cave's or a cliff's (in a `func_detail`) |
+| `additions(edited, made)`, `mergeMaps(...maps)` | What a person added to a map the kit made (by the brushes' planes, however the editor wrote them), and maps as one |
 | `hollow(min, max, wall, texture)` | A single sealed room: six walls around the space asked for. Returns the six, in order: floor, ceiling, west, east, south, north |
 | `subtract(box, hole)` | What is left of one `{ min, max }` box with another taken out: up to six boxes (data, not brushes) |
 
@@ -149,6 +170,7 @@ where it says so. Spread lists into the map: `brushes: [...carve(...), box(...)]
 | | |
 | --- | --- |
 | `moved(brushes, [x, y, z])` | A brush or a list, moved; the pictures move with their faces |
+| `turned(brushes, degrees, pivot, { axis, lock, snap })` | A brush or a list turned anticlockwise (seen from above) about `pivot`: a house at an angle to its street, a part of a map turned. The pictures turn with their faces unless `lock: false`. At other than a quarter turn the planes are off the grid, as an angle is |
 | `snapped(brush, grid)` | Every point of its planes rounded to the grid; refused if that breaks it |
 | `offGrid(brush, grid, tolerance)` | The points of its planes that are off the grid |
 | `shapeOf(brush)` | The brush worked out from its planes as the compiler does it: `{ faces, corners, min, max, volume, faults }` |
@@ -407,14 +429,16 @@ out, mod })` with `play.browserDriver({ url, playwright })`, which resolves to `
 - **No curves but by pieces.** A cylinder is a prism of flat sides; an arch is a run of wedges. Twelve sides
   read as round at a room's scale. Their corners fall off the grid (`snap: 1` rounds them, at the cost of a
   slightly uneven outline); keep such pieces as furniture inside a sealed room.
-- **`carve` cuts boxes.** A room that is not a box is carved as a box and shaped with pieces put into it:
+- **`carve` cuts boxes; `carvePlan` cuts outlines in plan.** With `carvePlan` a room is any shape in plan,
+  upright walls at any angle, between a flat floor and a flat ceiling. A sloped floor or a vault is still a
+  piece put in (`terrain`, `wedge`, `arch`). With `carve`, a room that is not a box is carved as a box and shaped with pieces put into it:
   chamfers along a tunnel make it an octagon, a `terrain` hung under the ceiling makes it a cave, an `arch`
   in a doorway makes it arched. All the rock wears one set of textures; to give a room its own, line it with
   thin boxes of another texture (16 thick, inside the carved space).
 - **No brush is cut by another.** Two brushes may overlap, and the compiler sorts it out, but the kit has no
   "subtract this shape from that one" beyond a box from a box.
 - **Texture alignment is per face, by numbers.** There is no "fit" or "wrap round the corner": see the fitting
-  sum above. Brushes turned in space are not offered (`moved` only).
+  sum above. Brushes are turned about an upright axis (or x or y) with `turned`, their pictures with them.
 - **Compile times.** A few rooms: seconds. `hlvis` grows steeply with open space and with detail the world is
   cut by: put small pieces (beams, lanterns, posts) in a `func_wall` or `func_illusionary` so they do not cut
   the world, when a map grows slow. `fast: true` for drafts; each program has a timeout (2 minutes for hlcsg

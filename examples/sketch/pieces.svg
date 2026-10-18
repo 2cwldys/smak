@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Every piece a sketch can ask for: a cave of rough rock, a ramp, a yard open to the sky with a chasm and a
+     bridge over it, a spiral stair in a tower up to a loft. Textures are Half-Life's (valve/halflife.wad). -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" width="1800" height="1000" viewBox="0 0 1800 1000">
+  <g inkscape:groupmode="layer" inkscape:label="ground">
+    <path inkscape:label="cave floor=0 height=256 rough=28 light=260 texture=OUT_DIRT1,OUT_RK3,OUT_RK3" style="fill:#7a6a5a"
+      d="M 80,300 C 120,140 360,120 520,220 L 600,260 L 600,420 C 480,560 220,600 120,500 Z" />
+    <rect inkscape:label="ramp floor=0 height=320 slope=96 toward=east texture=OUT_GRVL2" x="600" y="260" width="400" height="160" style="fill:#a09070" />
+    <path inkscape:label="yard floor=96 ceiling=sky texture=OUT_GRND1,sky,OUT_WALL5" style="fill:#90b070"
+      d="M 1000,120 L 1700,80 L 1740,880 L 1000,900 Z" />
+    <rect inkscape:label="chasm floor=-256 ceiling=sky texture=OUT_RK3,sky,OUT_RK3" x="1000" y="420" width="740" height="200" style="fill:#303030" />
+    <path inkscape:label="kind=bridge z=96 width=96 texture=OUT_WD" style="fill:none;stroke:#8a5a2a;stroke-width:96" d="M 1300,380 L 1360,660" />
+    <circle inkscape:label="kind=start yaw=0 floor=0" cx="250" cy="330" r="16" style="fill:#00ff00" />
+  </g>
+  <g inkscape:groupmode="layer" inkscape:label="tower">
+    <circle inkscape:label="tower kind=spiral floor=96 to=352 texture=CRETE2_FLR01,CRETE3_CEIL01,CRETE2_WALL01" cx="1550" cy="260" r="150" style="fill:#c0a080" />
+    <rect inkscape:label="loft floor=352 height=128 texture=CRETE2_FLR01,CRETE3_CEIL01,CRETE2_WALL01 light=200" x="1380" y="90" width="340" height="180" style="fill:#d0b090" />
+  </g>
+</svg>

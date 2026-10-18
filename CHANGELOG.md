@@ -3,6 +3,39 @@
 The newest first. A version that changes what a model's file looks like, or that a model made before needs
 mending for, says so under **Mind**.
 
+## 0.19.0 (2026-10-17)
+
+Ground that bends, and a map from a drawing. The study of the game's maps measured what made the kit's maps
+read as "all straight lines": `carve` cut only boxes, no brush could be turned, rock was a floor only. The
+owner asked for a way to sketch a map's shapes and have the kit build them.
+
+- **`carvePlan(spaces, wall, texture)`**: `carve` for spaces of any outline in plan (concave, with holes,
+  several that overlap), carved from one block of rock so that the map cannot leak. The rock is cut in strips
+  at every corner and crossing and joined again into convex pieces; each face wears the texture of the space
+  it is seen from; planes are written through the outlines' own whole points. A brush with a face of sky is
+  sky all round (VHLT took a brush of sky and stone for neither: the map compiled with no inside and no light).
+- **`path`, `curve`, `circle`**: a street or a track along a line, mitred at its corners (a tight bend's loop
+  cut off); a smooth line through points; a round outline.
+- **`turned(brushes, degrees, pivot)`**: brushes turned about an axis, their pictures with them.
+- **`terrain({ axis })`**: rock stood up, a cliff's face or a cave's wall.
+- **Pieces made to measure** (`src/maps/pieces.mjs`): `spiralStairs` (refused with no headroom under the turn
+  above, a step over 18 or a tread too narrow), `bridge` at any angle with rails and piers, `railing`,
+  `balcony`, `brokenWall`, `rockWall` (rough rock along a line, its pictures laid on each face).
+- **Sloped floors**: a space's `slope: { rise, toward }`; `convexPieces(space)`, `slopePlane(space)`.
+- **Drawn again, the hand's work kept**: `additions(edited, made)` finds what a person added in an editor
+  (by the brushes' planes); `smak sketch` keeps it when it writes the map again (`<name>.smak.map` is its
+  copy); `mergeMaps`.
+- **The map viewer** (`smak map-viewer`, `viewer/map.html`): a .bsp, a .map or a sketch in 3D in the browser,
+  textured and lit, its entities as their models with the way each faces, floors coloured by height, ceilings
+  and clips hidden or shown, reloaded as the file changes. `sceneOf3d` makes the scene.
+- **Things held against the world** (`propsOf`, `smak map-props`): stuck or buried in solid, floating,
+  standing on another model, the nose to a wall; warnings and notes apart; `--views` a picture of each.
+- **A map from a drawing** (`docs/MAPS-SKETCH.md`): `readSvgSketch` (Inkscape: labels and layers as keys,
+  paths, curves, arcs, holes, transforms, a stroke as a corridor), `readPngSketch` (Paint: a legend of
+  colours, black lines as walls, colours painted side by side joined), `sketchSpaces`, `sketchMap`, and
+  `smak sketch <svg|png> -o out.map --legend legend.json`. Keys `slope`, `toward`, `rough`; kinds `spiral`
+  and `bridge`. `examples/sketch/` has a village, a Paint drawing and every piece in one.
+
 ## 0.18.2 (2026-10-17)
 
 - **Stairs that are walked, not climbed.** `stairs(..., { ramp: "CLIP" })` adds a wedge laid on the steps'

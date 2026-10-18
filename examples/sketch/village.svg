@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" width="1600" height="1400" viewBox="0 0 1600 1400">
+  <g inkscape:groupmode="layer" inkscape:label="ground floor=0" id="layer1">
+    <path id="path12" inkscape:label="plaza ceiling=sky texture=OUT_PAVE1,sky,OUT_WALL5"
+      style="fill:#c8c8c8;stroke:none"
+      d="M 480,600 A 320,320 0 0 1 1120,600 A 320,320 0 0 1 480,600 Z M 760,560 L 840,560 L 870,610 L 840,660 L 760,660 L 730,610 Z" />
+    <path id="path14" inkscape:label="street ceiling=sky texture=OUT_GRND1,sky,OUT_WALL7"
+      style="fill:none;stroke:#8a6a40;stroke-width:160"
+      d="M 640,820 C 420,1040 220,940 120,1240" />
+    <circle id="circle20" inkscape:label="kind=start yaw=270" cx="700" cy="420" r="20" style="fill:#00ff00" />
+  </g>
+  <g inkscape:groupmode="layer" inkscape:label="house floor=16 height=160" id="layer2">
+    <polygon id="polygon30" inkscape:label="house texture=CRETE3_FLR04,CRETE3_CEIL01,CRETE2_WALL01 light=220"
+      points="1180,300 1520,240 1560,560 1380,590 1400,760 1200,780" style="fill:#d06040" />
+    <rect id="rect31" inkscape:label="door height=112" x="1100" y="560" width="120" height="64" style="fill:#d06040" />
+  </g>
+  <text x="40" y="60" style="fill:#000">notes are left out: text is no shape</text>
+</svg>

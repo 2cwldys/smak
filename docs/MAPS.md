@@ -547,6 +547,30 @@ jumping player gets into and not out of. Nobody looked at any of these in the ga
 map means them, and some may be the test's own misses. **None of it was measured against the game**: it is
 geometry, with the engine's numbers.
 
+## In 3D, and the things in it (`src/maps/scene3d.mjs`, `viewer/map-serve.mjs`)
+
+`sceneOf3d(map, { folders, mod })` makes a map a scene for a page that draws in 3D: the world's faces as
+triangles grouped by texture (each wound so that its normal is its face's), a compiled map's lightmaps packed
+into one picture with each corner's place on it, brush source's textures from the .wad files its worldspawn
+lists or the game's folders hold, tools' faces (clip, origin, trigger) and brush entities' faces apart, and
+each point entity as its model (posed by its `angles`, `body`, `skin`, `sequence`, `scale`, as the pictures
+draw it: `figuresOf`) or its box. `smak map-viewer` serves it to the browser: walked through with the mouse
+and the keys, floors coloured by height, ceilings and clips shown or hidden, an arrow the way each entity
+faces, a click on a thing says what it is; it loads again as its file changes (a sketch, a .map saved from an
+editor, a .bsp compiled again). It is for the person; an agent looks with `map-view` and `map-props`.
+
+`propsOf(map, options)` holds each point entity that has a model or a body against the world: the share of
+its box in solid (looked into 4 units from its sides), the gap under its foot, and how far a wall is in
+front, behind, left and right by the way it faces. A **warning** is wrong wherever it is: a thing that walks
+(an NPC, a monster, a start) stuck in solid, a prop buried (over half its box; a thin one, a vest on a rack,
+is laid against a wall), a prop that floats with no side on a wall and nothing under it. A **note** is what a
+mapper may mean and a look tells: a prop partly in a wall (a sword stuck in a rack), its nose to a wall with
+room behind it (turned the wrong way, when its model's front is +x, as most are: the check found the
+dumpsters of a city built with the kit turned to the wall, as a player had seen), a thing that walks placed
+over the floor (most games drop it), a prop standing on another model (a candle on a table). On the game's
+own gatecity: 3 warnings and 116 notes in 182 things, which is why notes are to be looked at, not mended
+blindly. `smak map-props --views <folder>` draws each from the side with the most room.
+
 ## A map in numbers (`src/maps/measure.mjs`)
 
 A new map is judged against one the game already has before anyone plays it: a map whose middling place is

@@ -12,7 +12,8 @@ map made from brushes in a script and compiled; texture files (`.wad`) read and 
 
 This file is the whole briefing. `docs/API.md` lists every function; `docs/ENGINES.md` covers GoldSrc against Xash;
 `docs/MAPS.md` (a compiled map, and the pictures of maps) and `docs/MAPS-MAKING.md` (brushes and the compile) hold
-the vocabulary for maps; `docs/MAPS-DESIGN.md` what makes one good to look at and to play.
+the vocabulary for maps; `docs/MAPS-DESIGN.md` what makes one good to look at and to play; `docs/MAPS-SKETCH.md`
+a map from a person's drawing (an SVG or a PNG).
 
 ## What it needs
 
@@ -145,6 +146,14 @@ node bin/smak.mjs map-spawns <bsp|map> --mod <profile> [-o plan.png]   how each 
                                                    from the death that brings it; exit code 1 on SEEN or FIGHT (docs/MAPS-DESIGN.md)
 node bin/smak.mjs map-character <bsp> [more maps or folders] [--mod <profile>]   its ground, textures, props, sounds and light in numbers,
                                                    held against the mod's own maps: PLAIN figures, and a warning on five or more
+node bin/smak.mjs map-props <bsp|map> [--mod <profile>] [--game ...] [--views dir]   each prop, NPC, monster, chest and start
+                                                   held against the world: WARN stuck or buried in solid, a prop floating; NOTE partly
+                                                   in a wall, its nose to a wall (turned the wrong way?), standing on another model.
+                                                   --views: a picture of each, from the side with room. Look at the NOTEs' pictures
+node bin/smak.mjs map-viewer <bsp|map|svg|png> [--mod <profile>] [--game ...]   the map in 3D in the person's browser, its
+                                                   entities as their models with the way each faces, what map-props says marked;
+                                                   reloads as the file changes. For the person: you look with map-view and map-props
+node bin/smak.mjs sketch <svg|png> -o out.map [--legend legend.json]   a map from a person's drawing (docs/MAPS-SKETCH.md)
 node bin/smak.mjs scripts <script folders, maps...> --mod <profile> [--shipped <folder>]
                                                    each script of one's own: replaces a game's, is named, or is named by nothing
 node bin/smak.mjs item <piece.mjs> --mod <profile> --game <mod> --family <name> --name <word> -o dir [--pictures]

@@ -1,0 +1,28 @@
+{
+  "scale": 8,
+  "texture": {
+    "floor": "OUT_GRND1",
+    "ceiling": "sky",
+    "wall": "OUT_WALL5"
+  },
+  "colours": {
+    "#c0c0c0": {
+      "name": "plaza",
+      "floor": 0,
+      "ceiling": "sky",
+      "texture": "OUT_PAVE1,sky,OUT_WALL5"
+    },
+    "#8c643c": {
+      "name": "lane",
+      "floor": 0,
+      "ceiling": "sky"
+    },
+    "#dc2828": {
+      "name": "room",
+      "floor": 16,
+      "height": 128,
+      "light": 200,
+      "texture": "CRETE3_FLR04,CRETE3_CEIL01,CRETE2_WALL01"
+    }
+  }
+}

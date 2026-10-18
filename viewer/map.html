@@ -1,0 +1,447 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SMAK map viewer</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #1b1d22; color: #dde; font: 13px system-ui, sans-serif; }
+  canvas { display: block; width: 100%; height: 100%; outline: none; }
+  #panel { position: absolute; top: 8px; left: 8px; width: 250px; max-height: calc(100% - 16px); overflow: auto;
+    background: rgba(20, 22, 28, 0.88); border: 1px solid #333a46; border-radius: 6px; padding: 8px 10px; }
+  #panel h1 { font-size: 14px; margin: 0 0 4px; }
+  #panel label { display: block; margin: 2px 0; cursor: pointer; }
+  #panel .row { display: flex; gap: 6px; margin: 6px 0; flex-wrap: wrap; }
+  #panel button { background: #2c3340; color: #dde; border: 1px solid #455064; border-radius: 4px; padding: 3px 7px; cursor: pointer; }
+  #panel button:hover { background: #38414f; }
+  #warned div, #found div { cursor: pointer; padding: 2px 0; border-bottom: 1px solid #2a2f39; }
+  #warned div:hover, #found div:hover { color: #fff; }
+  .bad { color: #ff8a7a; } .muted { color: #8892a2; } .note { color: #e6c46a; }
+  #info { position: absolute; right: 8px; top: 8px; width: 300px; background: rgba(20, 22, 28, 0.9); border: 1px solid #333a46;
+    border-radius: 6px; padding: 8px 10px; display: none; white-space: pre-wrap; font: 12px ui-monospace, monospace; }
+  #help { position: absolute; left: 8px; bottom: 8px; color: #8892a2; font-size: 12px; }
+  #error { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); background: #4a1f1f; color: #fdd;
+    padding: 12px 16px; border-radius: 6px; display: none; max-width: 60%; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<canvas id="view" tabindex="0"></canvas>
+<div id="panel">
+  <h1 id="name">…</h1>
+  <div id="facts" class="muted"></div>
+  <div class="row">
+    <button id="top">From above</button><button id="start">From the start</button>
+  </div>
+  <label><input type="checkbox" id="heights"> Floors coloured by height</label>
+  <label><input type="checkbox" id="lit" checked> Light (a compiled map's)</label>
+  <label><input type="checkbox" id="ceilings" checked> Ceilings and sky</label>
+  <label><input type="checkbox" id="tools"> Clip and tools' brushes</label>
+  <label><input type="checkbox" id="things" checked> Entities</label>
+  <label><input type="checkbox" id="arrows" checked> The way each faces</label>
+  <label>Brightness <input type="range" id="bright" min="0.5" max="4" step="0.05" value="1.55"></label>
+  <div><b>Find</b> <input id="find" placeholder="class, name or model" style="width: 140px"></div>
+  <div id="found"></div>
+  <div style="margin-top: 6px"><b>To look at</b> <span id="count" class="muted"></span></div>
+  <div id="warned"></div>
+  <div id="notes" class="note"></div>
+</div>
+<div id="info"></div>
+<div id="error"></div>
+<div id="help">Drag: look · WASD / arrows: move · Space / C: up, down · Shift: faster · wheel: forward · click a thing: what it is · it reloads when the file changes</div>
+<script>
+"use strict";
+const canvas = document.getElementById("view");
+const gl = canvas.getContext("webgl", { antialias: true });
+const $ = (id) => document.getElementById(id);
+if (!gl) document.body.textContent = "This browser has no WebGL.";
+
+// ── shaders ──
+const VERTEX = `
+attribute vec3 position; attribute vec2 uv; attribute vec2 luv; attribute vec3 normal;
+uniform mat4 matrix; varying vec2 vUv; varying vec2 vLuv; varying vec3 vNormal; varying float vZ;
+void main() { vUv = uv; vLuv = luv; vNormal = normal; vZ = position.z; gl_Position = matrix * vec4(position, 1.0); }`;
+const FRAGMENT = `
+precision mediump float;
+uniform sampler2D picture; uniform sampler2D lightmap; uniform bool lit; uniform bool hasLight; uniform bool heights;
+uniform float bright; uniform float alpha; uniform vec2 zRange; uniform int kind;
+varying vec2 vUv; varying vec2 vLuv; varying vec3 vNormal; varying float vZ;
+vec3 ramp(float t) { return mix(mix(vec3(0.15,0.35,0.95), vec3(0.2,0.85,0.4), clamp(t*2.0,0.0,1.0)), vec3(0.98,0.45,0.2), clamp(t*2.0-1.0,0.0,1.0)); }
+void main() {
+  if (kind == 2) { gl_FragColor = vec4(0.55, 0.72, 0.92, 1.0); return; }           // sky
+  vec4 texel = texture2D(picture, vUv);
+  if (texel.a < 0.5) discard;
+  vec3 colour = texel.rgb;
+  float shade = 0.62 + 0.38 * abs(dot(normalize(vNormal), normalize(vec3(0.35, 0.55, 0.76))));
+  if (heights && vNormal.z > 0.7) colour = ramp((vZ - zRange.x) / max(1.0, zRange.y - zRange.x));
+  else if (heights) colour = vec3(0.62);
+  vec3 light = vec3(shade);
+  if (heights) { gl_FragColor = vec4(colour * shade, alpha); return; }               // heights: the shape alone
+  if (lit && hasLight && vLuv.x >= 0.0) light = texture2D(lightmap, vLuv).rgb * bright;
+  else if (lit && hasLight && vLuv.x < -1.5) light = vec3(0.08);
+  if (kind == 3) light = vec3(shade * 0.9);                                         // a model
+  gl_FragColor = vec4(colour * light, alpha);
+}`;
+const LINE_VERTEX = `attribute vec3 position; attribute vec3 colour; uniform mat4 matrix; varying vec3 vColour;
+void main() { vColour = colour; gl_Position = matrix * vec4(position, 1.0); }`;
+const LINE_FRAGMENT = `precision mediump float; varying vec3 vColour; void main() { gl_FragColor = vec4(vColour, 1.0); }`;
+
+function program(vertex, fragment) {
+  const made = gl.createProgram();
+  for (const [type, text] of [[gl.VERTEX_SHADER, vertex], [gl.FRAGMENT_SHADER, fragment]]) {
+    const shader = gl.createShader(type);
+    gl.shaderSource(shader, text);
+    gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(shader));
+    gl.attachShader(made, shader);
+  }
+  gl.linkProgram(made);
+  return made;
+}
+const faces = program(VERTEX, FRAGMENT);
+const lines = program(LINE_VERTEX, LINE_FRAGMENT);
+
+// ── matrices (z up, as the game) ──
+function perspective(fov, aspect, near, far) {
+  const f = 1 / Math.tan(fov / 2), n = 1 / (near - far);
+  return [f / aspect, 0, 0, 0, 0, f, 0, 0, 0, 0, (far + near) * n, -1, 0, 0, 2 * far * near * n, 0];
+}
+function multiply(a, b) {
+  const out = new Array(16).fill(0);
+  for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) for (let k = 0; k < 4; k++) out[c * 4 + r] += a[k * 4 + r] * b[c * 4 + k];
+  return out;
+}
+function lookFrom(eye, forward) {
+  const up = [0, 0, 1];
+  const f = norm(forward);
+  let s = norm(cross(f, up));
+  if (!isFinite(s[0])) s = [1, 0, 0];
+  const u = cross(s, f);
+  return [s[0], u[0], -f[0], 0, s[1], u[1], -f[1], 0, s[2], u[2], -f[2], 0, -dot(s, eye), -dot(u, eye), dot(f, eye), 1];
+}
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const norm = (a) => { const l = Math.hypot(...a) || 1; return a.map((v) => v / l); };
+
+// ── the camera ──
+const camera = { eye: [0, 0, 0], yaw: 0, pitch: 0 };
+const forwardOf = () => {
+  const y = (camera.yaw * Math.PI) / 180, p = (camera.pitch * Math.PI) / 180;
+  return [Math.cos(p) * Math.cos(y), Math.cos(p) * Math.sin(y), Math.sin(p)];
+};
+
+// ── the scene ──
+let scene = null, drawn = [], lineBuffer = null, lineCount = 0, lightTexture = null, version = null;
+const textures = [];
+function textureFrom(url, nearest) {
+  const texture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([128, 128, 128, 255]));
+  const image = new Image();
+  image.onload = () => {
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+    const power = (image.width & (image.width - 1)) === 0 && (image.height & (image.height - 1)) === 0;
+    if (power && !nearest) { gl.generateMipmap(gl.TEXTURE_2D); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR); }
+    else gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, power ? gl.REPEAT : gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, power ? gl.REPEAT : gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, nearest ? gl.LINEAR : gl.NEAREST);
+  };
+  image.src = url;
+  return texture;
+}
+function buffer(data) {
+  const made = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, made);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
+  return made;
+}
+/** A batch made ready to draw: its buffers, and a normal for each corner (its triangle's). */
+function ready(batch, kindNumber, owner) {
+  const p = batch.positions;
+  const normals = [];
+  for (let at = 0; at < p.length; at += 9) {
+    const a = [p[at], p[at + 1], p[at + 2]], b = [p[at + 3], p[at + 4], p[at + 5]], c = [p[at + 6], p[at + 7], p[at + 8]];
+    const n = norm(cross([b[0] - a[0], b[1] - a[1], b[2] - a[2]], [c[0] - a[0], c[1] - a[1], c[2] - a[2]]));
+    normals.push(...n, ...n, ...n);
+  }
+  const luv = batch.luv ?? new Array((p.length / 3) * 2).fill(-1);
+  return {
+    count: p.length / 3, texture: batch.texture, kind: kindNumber, alpha: batch.alpha ?? 1, owner,
+    position: buffer(p), uv: buffer(batch.uv), luv: buffer(luv), normal: buffer(normals),
+    ceiling: normals.length && normals[2] < -0.5,
+  };
+}
+const KINDS = { face: 0, entity: 0, liquid: 1, sky: 2, model: 3, additive: 3, tool: 4 };
+const THING_COLOURS = { start: [0.2, 1, 0.3], monster: [1, 0.35, 0.3], npc: [1, 0.6, 0.2], item: [1, 0.9, 0.2], light: [1, 1, 0.6] };
+
+async function load(keepCamera) {
+  const answer = await fetch("/scene").then((r) => r.json());
+  if (answer.error) { $("error").textContent = answer.error; $("error").style.display = "block"; return; }
+  $("error").style.display = "none";
+  scene = answer;
+  textures.length = 0;
+  scene.textures.forEach((_, n) => textures.push(textureFrom(`/tex/${n}.png?v=${scene.version}`)));
+  lightTexture = scene.lightmap ? textureFrom(`/lightmap.png?v=${scene.version}`, true) : null;
+  drawn = [];
+  for (const batch of scene.world) {
+    // faces looking down are split from the rest, so that ceilings can be hidden
+    drawn.push(...splitCeilings(batch).map((part) => ready(part, KINDS[batch.kind] ?? 0, null)));
+  }
+  for (const thing of scene.things) for (const batch of thing.batches) drawn.push(ready(batch, 3, thing));
+  buildLines();
+  $("name").textContent = scene.name;
+  $("facts").textContent = `${scene.compiled ? "compiled" : "source, unlit"} · ${scene.triangles} triangles · ${scene.things.length} entities`;
+  const warned = scene.things.filter((thing) => thing.props?.warnings.length || thing.props?.notes.length);
+  warned.sort((a, b) => b.props.warnings.length - a.props.warnings.length);
+  const bad = warned.filter((thing) => thing.props.warnings.length).length;
+  $("count").textContent = `(${bad} warnings, ${warned.length - bad} notes)`;
+  $("warned").innerHTML = "";
+  for (const thing of warned) {
+    const row = document.createElement("div");
+    const wrong = thing.props.warnings.length;
+    row.innerHTML = `<span class="${wrong ? "bad" : "note"}">${thing.number} ${thing.classname}</span> ${thing.props.file ?? thing.targetname ?? ""}<br><span class="muted">${(wrong ? thing.props.warnings : thing.props.notes)[0]}</span>`;
+    row.onclick = () => goTo(thing);
+    $("warned").appendChild(row);
+  }
+  $("notes").textContent = (scene.notes ?? []).join("\n");
+  if (!keepCamera) fromStart();
+}
+/** A batch cut in two: its triangles that look down (ceilings), and the rest. */
+function splitCeilings(batch) {
+  if (batch.kind === "tool") return [batch];
+  const parts = [{ ...batch, positions: [], uv: [], luv: batch.luv ? [] : null, isCeiling: false }, { ...batch, positions: [], uv: [], luv: batch.luv ? [] : null, isCeiling: true }];
+  const p = batch.positions;
+  for (let t = 0; t < p.length / 9; t++) {
+    const a = p.slice(t * 9, t * 9 + 3), b = p.slice(t * 9 + 3, t * 9 + 6), c = p.slice(t * 9 + 6, t * 9 + 9);
+    const n = norm(cross([b[0] - a[0], b[1] - a[1], b[2] - a[2]], [c[0] - a[0], c[1] - a[1], c[2] - a[2]]));
+    const part = parts[n[2] < -0.5 || batch.kind === "sky" ? 1 : 0];
+    part.positions.push(...p.slice(t * 9, t * 9 + 9));
+    part.uv.push(...batch.uv.slice(t * 6, t * 6 + 6));
+    if (part.luv) part.luv.push(...batch.luv.slice(t * 6, t * 6 + 6));
+  }
+  return parts.filter((part) => part.positions.length);
+}
+function buildLines() {
+  const data = [];
+  const line = (a, b, colour) => data.push(...a, ...colour, ...b, ...colour);
+  const box = (min, max, colour) => {
+    const c = (i) => [i & 1 ? max[0] : min[0], i & 2 ? max[1] : min[1], i & 4 ? max[2] : min[2]];
+    for (const [i, j] of [[0, 1], [2, 3], [4, 5], [6, 7], [0, 2], [1, 3], [4, 6], [5, 7], [0, 4], [1, 5], [2, 6], [3, 7]]) line(c(i), c(j), colour);
+  };
+  for (const thing of scene.things) {
+    const holdsEye = thing.min && thing.max && [0, 1, 2].every((i) => camera.eye[i] >= thing.min[i] - 4 && camera.eye[i] <= thing.max[i] + 4);
+    if (holdsEye) continue;
+    const bad = thing.props?.warnings.length || thing.props?.notes.length;
+    const colour = thing.props?.warnings.length ? [1, 0.25, 0.2] : bad ? [1, 0.65, 0.15] : THING_COLOURS[thing.kind] ?? [0.6, 0.8, 1];
+    const min = thing.min ?? thing.origin.map((v) => v - 8), max = thing.max ?? thing.origin.map((v) => v + 8);
+    if (!thing.batches.length || bad) box(min, max, colour);
+    thing.arrow = null;
+    if (thing.yaw !== undefined) {
+      const y = (thing.yaw * Math.PI) / 180;
+      const length = Math.max(24, Math.min(64, Math.max(max[0] - min[0], max[1] - min[1])));
+      const from = [thing.origin[0], thing.origin[1], (thing.min ? thing.min[2] : thing.origin[2]) + 4];
+      const to = [from[0] + Math.cos(y) * length, from[1] + Math.sin(y) * length, from[2]];
+      const side = [-Math.sin(y) * 6, Math.cos(y) * 6];
+      thing.arrow = [from, to, side];
+    }
+  }
+  const arrows = [];
+  for (const thing of scene.things) if (thing.arrow) {
+    const [from, to, side] = thing.arrow;
+    const back = [to[0] - (to[0] - from[0]) * 0.25, to[1] - (to[1] - from[1]) * 0.25, to[2]];
+    const yellow = [1, 0.85, 0.1];
+    arrows.push(...from, ...yellow, ...to, ...yellow, ...to, ...yellow, ...[back[0] + side[0], back[1] + side[1], back[2]], ...yellow, ...to, ...yellow, ...[back[0] - side[0], back[1] - side[1], back[2]], ...yellow);
+  }
+  lineCount = { boxes: data.length / 6, arrows: arrows.length / 6 };
+  lineBuffer = buffer([...data, ...arrows]);
+}
+
+// ── drawing ──
+let eyeWas = "";
+function draw() {
+  requestAnimationFrame(draw);
+  move();
+  // the boxes are drawn again when the eye goes into or out of one (the one it is in is not drawn)
+  if (scene) {
+    const inside = scene.things.filter((t) => t.min && t.max && [0, 1, 2].every((i) => camera.eye[i] >= t.min[i] - 4 && camera.eye[i] <= t.max[i] + 4)).map((t) => t.number).join();
+    if (inside !== eyeWas) { eyeWas = inside; buildLines(); }
+  }
+  const width = canvas.clientWidth, height = canvas.clientHeight;
+  if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
+  gl.viewport(0, 0, width, height);
+  gl.clearColor(0.1, 0.11, 0.13, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  if (!scene) return;
+  const size = Math.max(...scene.bounds.max.map((v, i) => v - scene.bounds.min[i]));
+  const matrix = multiply(perspective((75 * Math.PI) / 180, width / height, 2, Math.max(8192, size * 3)), lookFrom(camera.eye, forwardOf()));
+  gl.enable(gl.DEPTH_TEST);
+  gl.useProgram(faces);
+  const u = (name) => gl.getUniformLocation(faces, name);
+  gl.uniformMatrix4fv(u("matrix"), false, matrix);
+  gl.uniform1i(u("lit"), $("lit").checked ? 1 : 0);
+  gl.uniform1i(u("hasLight"), lightTexture ? 1 : 0);
+  gl.uniform1i(u("heights"), $("heights").checked ? 1 : 0);
+  gl.uniform1f(u("bright"), Number($("bright").value));
+  gl.uniform2f(u("zRange"), scene.floors?.[0] ?? scene.bounds.min[2], scene.floors?.[1] ?? scene.bounds.max[2]);
+  gl.uniform1i(u("picture"), 0);
+  gl.uniform1i(u("lightmap"), 1);
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, lightTexture);
+  const attribute = (name, from, size) => { const at = gl.getAttribLocation(faces, name); gl.bindBuffer(gl.ARRAY_BUFFER, from); gl.enableVertexAttribArray(at); gl.vertexAttribPointer(at, size, gl.FLOAT, false, 0, 0); };
+  const pass = (see) => {
+    for (const part of drawn) {
+      if (!see(part)) continue;
+      if (part.owner && !$("things").checked) continue;
+      if (part.ceiling && !$("ceilings").checked) continue;
+      if (part.kind === 4 && !$("tools").checked) continue;
+      gl.uniform1i(u("kind"), part.kind);
+      gl.uniform1f(u("alpha"), part.kind === 4 ? 0.3 : part.kind === 1 ? 0.6 : part.alpha);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, textures[part.texture]);
+      attribute("position", part.position, 3); attribute("uv", part.uv, 2); attribute("luv", part.luv, 2); attribute("normal", part.normal, 3);
+      gl.drawArrays(gl.TRIANGLES, 0, part.count);
+    }
+  };
+  gl.disable(gl.BLEND);
+  pass((part) => part.kind !== 4 && part.kind !== 1 && part.alpha >= 1);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  gl.depthMask(false);
+  pass((part) => part.kind === 4 || part.kind === 1 || part.alpha < 1);
+  gl.depthMask(true);
+  gl.disable(gl.BLEND);
+  if ($("things").checked && lineBuffer) {
+    gl.useProgram(lines);
+    gl.uniformMatrix4fv(gl.getUniformLocation(lines, "matrix"), false, matrix);
+    gl.bindBuffer(gl.ARRAY_BUFFER, lineBuffer);
+    const p = gl.getAttribLocation(lines, "position"), c = gl.getAttribLocation(lines, "colour");
+    gl.enableVertexAttribArray(p); gl.vertexAttribPointer(p, 3, gl.FLOAT, false, 24, 0);
+    gl.enableVertexAttribArray(c); gl.vertexAttribPointer(c, 3, gl.FLOAT, false, 24, 12);
+    gl.drawArrays(gl.LINES, 0, lineCount.boxes);
+    if ($("arrows").checked) gl.drawArrays(gl.LINES, lineCount.boxes, lineCount.arrows);
+  }
+}
+
+// ── moving ──
+const held = new Set();
+addEventListener("keydown", (e) => { if (e.target.tagName !== "INPUT") held.add(e.code); });
+addEventListener("keyup", (e) => held.delete(e.code));
+let last = performance.now();
+function move() {
+  const now = performance.now(), dt = Math.min(0.1, (now - last) / 1000);
+  last = now;
+  const speed = (held.has("ShiftLeft") || held.has("ShiftRight") ? 1600 : 450) * dt;
+  const f = forwardOf(), flat = norm([f[0], f[1], 0]), side = [flat[1], -flat[0], 0];
+  const go = (v, k) => { for (let i = 0; i < 3; i++) camera.eye[i] += v[i] * k; };
+  if (held.has("KeyW") || held.has("ArrowUp")) go(f, speed);
+  if (held.has("KeyS") || held.has("ArrowDown")) go(f, -speed);
+  if (held.has("KeyD") || held.has("ArrowRight")) go(side, speed);
+  if (held.has("KeyA") || held.has("ArrowLeft")) go(side, -speed);
+  if (held.has("Space")) camera.eye[2] += speed;
+  if (held.has("KeyC")) camera.eye[2] -= speed;
+}
+let dragging = null;
+canvas.addEventListener("mousedown", (e) => { dragging = { x: e.clientX, y: e.clientY, moved: false }; canvas.focus(); });
+addEventListener("mouseup", (e) => { if (dragging && !dragging.moved) pick(e); dragging = null; });
+addEventListener("mousemove", (e) => {
+  if (!dragging) return;
+  const dx = e.clientX - dragging.x, dy = e.clientY - dragging.y;
+  if (Math.abs(dx) + Math.abs(dy) > 2) dragging.moved = true;
+  camera.yaw -= dx * 0.25; camera.pitch = Math.max(-89, Math.min(89, camera.pitch - dy * 0.25));
+  dragging.x = e.clientX; dragging.y = e.clientY;
+});
+canvas.addEventListener("wheel", (e) => { e.preventDefault(); const f = forwardOf(); const k = -e.deltaY * (e.shiftKey ? 3 : 1); for (let i = 0; i < 3; i++) camera.eye[i] += f[i] * k; }, { passive: false });
+
+// ── a thing chosen ──
+function pick(e) {
+  if (!scene) return;
+  const rect = canvas.getBoundingClientRect();
+  const x = ((e.clientX - rect.left) / rect.width) * 2 - 1, y = 1 - ((e.clientY - rect.top) / rect.height) * 2;
+  const f = forwardOf(), s = norm(cross(f, [0, 0, 1])), up = cross(s, f);
+  const t = Math.tan((75 * Math.PI) / 360), aspect = rect.width / rect.height;
+  const ray = norm([0, 1, 2].map((i) => f[i] + s[i] * x * t * aspect + up[i] * y * t));
+  let best = null;
+  for (const thing of scene.things) {
+    const min = thing.min ?? thing.origin.map((v) => v - 8), max = thing.max ?? thing.origin.map((v) => v + 8);
+    let near = 0, far = Infinity;
+    for (let i = 0; i < 3; i++) {
+      const a = (min[i] - camera.eye[i]) / ray[i], b = (max[i] - camera.eye[i]) / ray[i];
+      near = Math.max(near, Math.min(a, b)); far = Math.min(far, Math.max(a, b));
+    }
+    if (near <= far && (!best || near < best.near)) best = { thing, near };
+  }
+  show(best?.thing);
+}
+function show(thing) {
+  if (!thing) { $("info").style.display = "none"; return; }
+  const p = thing.props;
+  const lines = [
+    `${thing.number}  ${thing.classname}`,
+    thing.targetname ? `name    ${thing.targetname}` : null,
+    thing.file ? `model   ${thing.file}` : null,
+    `origin  ${thing.origin.map((v) => Math.round(v)).join(" ")}`,
+    `angles  ${(thing.angles ?? [0, thing.yaw, 0]).map((v) => Math.round(v * 10) / 10).join(" ")}`,
+    p ? `walls   front ${p.clear.front ?? "-"}, back ${p.clear.back ?? "-"}, left ${p.clear.left ?? "-"}, right ${p.clear.right ?? "-"}` : null,
+    p ? `solid   ${Math.round(p.inSolid * 100)}% of its box${p.floats ? `; floats ${p.floats}` : ""}` : null,
+    ...(p?.warnings ?? []).map((w) => `! ${w}`),
+    ...(p?.notes ?? []).map((w) => `? ${w}`),
+  ].filter(Boolean);
+  $("info").textContent = lines.join("\n");
+  $("info").style.display = "block";
+}
+function goTo(thing) {
+  const min = thing.min ?? thing.origin, max = thing.max ?? thing.origin;
+  const centre = [0, 1, 2].map((i) => (min[i] + max[i]) / 2);
+  // from the way with the most room before a wall: in front of it when there is room there
+  const turn = { front: 0, left: 90, back: 180, right: -90 };
+  const clear = thing.props?.clear ?? {};
+  const room = (way) => clear[way] === undefined || clear[way] === null ? Infinity : clear[way];
+  const way = Object.keys(turn).reduce((best, each) => (room(each) > room(best) + 24 ? each : best), "front");
+  const y = (((thing.yaw ?? 0) + turn[way]) * Math.PI) / 180;
+  const size = Math.max(max[0] - min[0], max[1] - min[1]);
+  const away = Math.max(24, Math.min(size / 2 + 110, size / 2 + room(way) - 12));
+  camera.eye = [centre[0] + Math.cos(y) * away, centre[1] + Math.sin(y) * away, centre[2] + 50];
+  const look = norm([centre[0] - camera.eye[0], centre[1] - camera.eye[1], centre[2] - camera.eye[2]]);
+  camera.yaw = (Math.atan2(look[1], look[0]) * 180) / Math.PI;
+  camera.pitch = (Math.asin(look[2]) * 180) / Math.PI;
+  show(thing);
+}
+function fromStart() {
+  const start = scene.things.find((thing) => /info_player_start|info_player_deathmatch|ms_player/i.test(thing.classname));
+  if (start) { camera.eye = [start.origin[0], start.origin[1], start.origin[2] + 28]; camera.yaw = start.yaw ?? 0; camera.pitch = 0; }
+  else fromAbove();
+}
+function fromAbove() {
+  const { min, max } = scene.bounds;
+  const size = Math.max(max[0] - min[0], max[1] - min[1]);
+  camera.eye = [(min[0] + max[0]) / 2, min[1] - size * 0.15, max[2] + size * 0.75];
+  camera.yaw = 90; camera.pitch = -62;
+}
+$("top").onclick = fromAbove;
+$("start").onclick = fromStart;
+$("find").oninput = () => {
+  const word = $("find").value.trim().toLowerCase();
+  $("found").innerHTML = "";
+  if (!word || !scene) return;
+  for (const thing of scene.things.filter((t) => [t.classname, t.targetname, t.file].some((v) => v && v.toLowerCase().includes(word))).slice(0, 40)) {
+    const row = document.createElement("div");
+    row.textContent = `${thing.number} ${thing.classname} ${thing.targetname ?? ""} ${thing.file ? thing.file.split("/").pop() : ""}`;
+    row.onclick = () => goTo(thing);
+    $("found").appendChild(row);
+  }
+};
+
+// ── the file watched ──
+async function watch() {
+  try {
+    const now = await fetch("/version").then((r) => r.json());
+    if (version === null) { version = now.version; await load(false); }
+    else if (now.version !== version) { version = now.version; await load(true); }
+  } catch {}
+  setTimeout(watch, 1000);
+}
+watch();
+draw();
+</script>
+</body>
+</html>

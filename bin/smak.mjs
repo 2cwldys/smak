@@ -33,6 +33,9 @@ const BODIES_LISTED = 6;
 const BONES_LISTED = 4;
 // the flags that are followed by a value: one given with nothing after it is said, not guessed at
 const VALUE_FLAGS = [
+  "plan",
+  "views",
+  "wall",
   "seq",
   "frame",
   "body",
@@ -2261,6 +2264,131 @@ function mapCompile({ command, file, flags, listed }) {
   process.exit(result.bsp ? 0 : 1);
 }
 
+// ── a map from a sketch ────────────────────────────────────────────────────
+/** A sketch read and made a map's source, as `smak sketch` and `map-viewer` do: `{ map, sketch, wads }`. */
+function sketchOf(command, file, flags, listed) {
+  if (flags.legend === true) fail(`${command}: --legend needs the legend's file after it`);
+  const legend = flags.legend === undefined ? {} : JSON.parse(readFileSync(existing(flags.legend), "utf8"));
+  const scale = numberOf(flags, "scale") ?? legend.scale;
+  let shapes;
+  if (/\.svg$/i.test(file))
+    shapes = maps.readSvgSketch(readFileSync(file, "utf8"), defined({ scale, grid: legend.grid }));
+  else if (/\.png$/i.test(file)) {
+    if (!legend.colours) fail(`${command}: a PNG is read by its colours: give --legend with "colours"`);
+    shapes = maps.readPngSketch(readFileSync(file), defined({ colours: legend.colours, scale }));
+  } else fail(`${command}: a sketch is an .svg or a .png, not ${basename(file)}`);
+  const sketch = maps.sketchSpaces(shapes, legend);
+  const wads = (listed.wad ?? legend.wad ?? []).map(existing);
+  const map = maps.sketchMap(sketch, {
+    wall: numberOf(flags, "wall") ?? legend.wall ?? 16,
+    texture: flags.texture ?? legend.texture ?? "rock",
+    sun: legend.sun,
+    worldspawn: wads.length ? { wad: wads } : {},
+  });
+  return { map, sketch, wads };
+}
+
+/**
+ * sketch: a drawing (an SVG from Inkscape, a PNG painted in flat colours) made a map's source: its shapes
+ * read as spaces by the legend and their labels, carved from one block of rock, and written as a .map.
+ */
+function sketchCommand({ command, file, flags, listed }) {
+  const to = need(command, flags.o, "-o out.map");
+  if (!/\.map$/i.test(to)) fail(`${command}: -o names the .map to write, not ${basename(to)}`);
+  const { map, sketch, wads } = sketchOf(command, file, flags, listed);
+  // what the person added by hand to the map written last time (in J.A.C.K., to the .map itself) is kept:
+  // the kit's own copy of what it wrote says what was the kit's
+  const own = to.replace(/\.map$/i, ".smak.map");
+  const made = maps.writeMap(map);
+  let kept = null;
+  if (flags.keep !== false && existsSync(to) && existsSync(own)) {
+    kept = maps.additions(maps.readMap(readFileSync(to, "utf8")), maps.readMap(readFileSync(own, "utf8")));
+    map.brushes.push(...kept.brushes);
+    map.entities.push(...kept.entities);
+  } else if (flags.keep !== false && existsSync(to) && !existsSync(own))
+    fail(`${command}: ${basename(to)} is there and was not written by smak sketch (no ${basename(own)} beside it): give another -o, or take it away`);
+  save(own, made);
+  save(to, maps.writeMap(map));
+  if (kept) console.log(`      kept what was added by hand: ${kept.brushes.length} brushes, ${kept.entities.length} entities`);
+  for (const space of sketch.spaces)
+    console.log(`      ${String(space.name).padEnd(16)} floor ${space.floor}, ceiling ${space.ceiling}`);
+  console.log(
+    `      ${sketch.spaces.length} spaces, ${sketch.starts.length || 1} places to start, ${sketch.lights.length} lamps; ${map.brushes.length} brushes`,
+  );
+  for (const left of sketch.skipped) console.log(`WARN  left out: ${left.label || "a shape"}: ${left.why}`);
+  const plan = maps.checkPlan(map, { wads });
+  for (const warning of plan.warnings) console.log(`WARN  ${warning}`);
+  for (const error of plan.errors) console.log(`ERROR ${error}`);
+  if (flags.plan !== undefined) {
+    const picture = maps.planOfSource(map, {});
+    savePicture(flags.plan, picture, "the sketch's map from above; +y is up the picture");
+  }
+  console.log(`${to}: written (map-compile it; map-reach on the .bsp walks it)`);
+}
+
+// ── map-viewer, map-props ──────────────────────────────────────────────────
+/**
+ * map-viewer: a map in 3D in the browser, reloaded as its file changes. A sketch (.svg, .png) is made a map
+ * each time, as `smak sketch` makes it.
+ */
+async function mapViewer({ command, file, flags, listed }) {
+  const { serveMapViewer } = await import("../viewer/map-serve.mjs");
+  const sketch = /\.(svg|png)$/i.test(file);
+  const load = sketch ? () => sketchOf(command, file, flags, listed).map : () => readEither(file);
+  const files = [file, ...(flags.legend && flags.legend !== true ? [flags.legend] : [])];
+  const options = defined({ folders: gameFolders(file, listed), mod: await profileOf(flags, listed) });
+  await serveMapViewer({ load, files, name: basename(file), options, ...defined({ port: numberOf(flags, "port") }) });
+  await new Promise(() => {});
+}
+
+/**
+ * map-props: each point entity with a model or a body held against the world: in a wall, floating, its nose
+ * to a wall. --views: a picture of each warned one, from in front of it.
+ */
+async function mapProps({ command, file, flags, listed }) {
+  const map = readEither(file);
+  const options = defined({ folders: gameFolders(file, listed), mod: await profileOf(flags, listed) });
+  const { props, warned, noted } = maps.propsOf(map, options);
+  if (flags.json) {
+    const numbers = (list) => list.map((prop) => prop.number);
+    console.log(JSON.stringify({ props, warned: numbers(warned), noted: numbers(noted) }, null, 1));
+    return;
+  }
+  const shown = flags.all ? props : [...warned, ...noted].sort((a, b) => a.number - b.number);
+  for (const prop of shown) {
+    const clear = Object.entries(prop.clear).map(([way, distance]) => `${way} ${distance ?? "-"}`).join(", ");
+    console.log(
+      `${String(prop.number).padStart(4)}  ${prop.classname.padEnd(18)} ${(prop.file ?? prop.targetname ?? "").padEnd(22)} ${placeText(prop.origin).padEnd(18)} yaw ${String(prop.yaw).padEnd(6)} walls: ${clear}`,
+    );
+    for (const warning of prop.warnings) console.log(`WARN        ${warning}`);
+    for (const note of prop.notes) console.log(`NOTE        ${note}`);
+  }
+  console.log(`      ${props.length} entities with a model or a body; ${warned.length} warned, ${noted.length} with a note to look at${flags.all ? "" : " (--all lists every one)"}`);
+  if (flags.views !== undefined && flags.views !== true && warned.length + noted.length) {
+    mkdirSync(flags.views, { recursive: true });
+    const draw = isSource(file) ? maps.drawSource : maps.drawMap;
+    for (const prop of [...warned, ...noted].slice(0, 60)) {
+      const centre = [0, 1, 2].map((axis) => (prop.min[axis] + prop.max[axis]) / 2);
+      // from the way with the most room before a wall: in front of it when there is room there
+      const turn = { front: 0, left: 90, back: 180, right: -90 };
+      const roomiest = Object.keys(turn).reduce((best, way) =>
+        (prop.clear[way] ?? Infinity) > (prop.clear[best] ?? Infinity) + 24 ? way : best, "front");
+      const yaw = ((prop.yaw + turn[roomiest]) * Math.PI) / 180;
+      const size = Math.max(prop.max[0] - prop.min[0], prop.max[1] - prop.min[1]);
+      const away = Math.min(size / 2 + 96, size / 2 + (prop.clear[roomiest] ?? Infinity) - 8);
+      const from = [centre[0] + Math.cos(yaw) * away, centre[1] + Math.sin(yaw) * away, centre[2] + 40];
+      const to = join(flags.views, `${prop.number}_${prop.classname}.png`);
+      try {
+        const picture = draw(map, { folders: options.folders, mod: options.mod, models: true, from, to: centre, entities: "all" });
+        save(to, smak.png(picture.width, picture.height, picture.rgba));
+        console.log(`${to}  from its ${roomiest} (${roomiest === "front" ? "the way it faces" : "the most room"}), looking at it`);
+      } catch (error) {
+        console.log(`      ${prop.number}: no view: ${error.message}`);
+      }
+    }
+  }
+}
+
 // ── play ───────────────────────────────────────────────────────────────────
 /**
  * play: a map seen in the game itself, in a browser build of the engine at an address. The steps are checked
@@ -2758,6 +2886,35 @@ const COMMANDS = {
                                             is cut at, one for all or one for each map in order, - for a map seen from above. Without
                                             --scale: the largest at which all fit 1920 x 1080 (--width --height). No entity is marked
                                             unless --entities says (with what map-plan takes: --game, --mod, --no-light ...)`,
+  },
+  sketch: {
+    run: sketchCommand,
+    own: true,
+    help: `  sketch <file.svg|file.png> -o out.map [--legend legend.json] [--scale units] [--wall 16] [--texture NAME] [--wad <file.wad> ...] [--plan out.png] [--no-keep]
+                                            a map's source from a drawing: each shape a space (floor, ceiling, texture, a lamp) by its
+                                            label ("hall floor=0 ceiling=256"), its layer's, its colour in the legend or its name there;
+                                            in an SVG a line with a stroke and no fill is a corridor of its width; in a PNG each colour
+                                            the legend names is a space, and white, black and others are rock. Made again over a .map
+                                            a person added to (in J.A.C.K.), what they added is kept (out.smak.map is the kit's own
+                                            copy; --no-keep: not kept). docs/MAPS-SKETCH.md`,
+  },
+  "map-viewer": {
+    run: mapViewer,
+    own: true,
+    help: `  map-viewer <bsp|map|svg|png> [--game <folder> ...] [--mod <profile>] [--legend legend.json] [--port 8099]
+                                            the map in 3D in the browser: walked through with the mouse and the keys, textured (and
+                                            lit, compiled), its entities as their models with an arrow the way each faces, those in
+                                            a wall, floating or facing a wall marked; floors coloured by height; ceilings and clips
+                                            shown or hidden. It loads again when the file changes (a sketch is made a map each time)`,
+  },
+  "map-props": {
+    run: mapProps,
+    own: true,
+    help: `  map-props <bsp|map> [--game <folder> ...] [--mod <profile>] [--all] [--json] [--views <folder>]
+                                            each prop, NPC, monster, chest and start held against the world: the share of its box
+                                            in solid, the gap under it, how far a wall is in front, behind and aside by the way it
+                                            faces; warned: in a wall, floating, its nose to a wall with room behind (turned the
+                                            wrong way?). --views: a picture of each warned one from in front of it`,
   },
   "map-compile": {
     run: mapCompile,

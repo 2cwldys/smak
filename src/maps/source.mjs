@@ -853,8 +853,13 @@ function stairRamp(min, max, high, texture, { steps, rise = 16, top = true, trea
  * corners exactly and no crack opens between them; the diagonal alternates from cell to cell, so that the
  * rock has no grain; and a height that meets the base, or lies on the other side of it from the rest, is
  * refused in words, since the brush there would have no thickness. It returns the list of brushes.
+ *
+ * `axis: "x"` or `"y"` stands it up: the heights run along that axis and `min`, `max`, `step` and
+ * `height(a, b)` are in the other two, in their order as a prism's ((y, z) along x, (x, z) along y). A
+ * cliff's face, a cave's rough wall, a bank of rock beside a path.
  */
-export function terrain({ min, max, step, base, height, texture, grid = 1 }) {
+export function terrain({ min, max, step, base, height, texture, grid = 1, axis = "z" }) {
+  const along = axisIndex(axis, "terrain");
   if (!(step?.[0] > 0 && step?.[1] > 0)) throw new Error(`terrain: step is [x, y], both over 0, not ${step}`);
   if (!(max[0] > min[0] && max[1] > min[1])) throw new Error("terrain: no size: max is not beyond min");
   const marks = [0, 1].map((i) => {
@@ -900,8 +905,8 @@ export function terrain({ min, max, step, base, height, texture, grid = 1 }) {
             );
         }
         const points = [
-          ...triangle.map(([x, y]) => [x, y, base]),
-          ...triangle.map(([x, y], corner) => [x, y, heights[corner]]),
+          ...triangle.map((point) => placed(along, base, point)),
+          ...triangle.map((point, corner) => placed(along, heights[corner], point)),
         ];
         const faces = [
           [0, 1, 2],
@@ -1084,6 +1089,60 @@ export function moved(brushes, by, { lock = true } = {}) {
       v: shifted(face.v, face.scale[1]),
       scale: [...face.scale],
     })),
+  };
+}
+
+/**
+ * A brush, or a list of them, turned `degrees` anticlockwise (seen from above, for the default axis "z")
+ * about `pivot` ([x, y, z]; only the two coordinates across the axis matter). A house set at an angle to
+ * its street, a wall that follows a hill, a whole part of a map turned. The pictures turn with their faces
+ * (texture lock) unless `lock` is false: then each face wears the world's axes again, as a new brush would.
+ * Turned at other than a quarter turn, the brush's planes are off the grid: that is what an angle is, and
+ * the compilers take it (`snap` rounds every point to that grid afterwards, where a plan wants it).
+ */
+export function turned(brushes, degrees, pivot = [0, 0, 0], { axis = "z", lock = true, snap = 0 } = {}) {
+  if (Array.isArray(brushes) && !brushes.faces)
+    return brushes.map((brush) => turned(brush, degrees, pivot, { axis, lock, snap }));
+  if (!Number.isFinite(degrees)) throw new Error(`turned: an angle in degrees, not ${degrees}`);
+  const about = [0, 0, 0];
+  about[axisIndex(axis, "turned")] = 1;
+  const angle = (degrees * Math.PI) / 180;
+  const centre = [0, 1, 2].map((i) => pivot[i] ?? 0);
+  const quarter = Math.abs(degrees / 90 - Math.round(degrees / 90)) < 1e-12;
+  const exact = (value) => (quarter ? (Math.round(value) === value ? value : tidy(value)) : tidy(value));
+  const turn = (vector) => turnAbout(vector, about, angle);
+  const place = (point) => {
+    const moved = plus(turn(sub(point, centre)), centre);
+    return moved.map((value) => (snap ? toGrid(value, snap) : exact(value)));
+  };
+  return {
+    faces: brushes.faces.map((face) => {
+      const points = face.points.map(place);
+      if (!lock) {
+        const plane = planeOf(points);
+        const axes = textureAxes(plane.normal, { rotation: face.rotation ?? 0 });
+        return {
+          ...face,
+          points,
+          u: [...axes.u, face.u[3]],
+          v: [...axes.v, face.v[3]],
+          scale: [...face.scale],
+        };
+      }
+      // the picture at a turned point is the one at the point before: s = p.u / scale + offset
+      const keep = (axisOf, scale) => {
+        const direction = turn(axisOf.slice(0, 3)).map(tidy);
+        const offset = axisOf[3] + (dot(centre, axisOf.slice(0, 3)) - dot(centre, direction)) / scale;
+        return [...direction, tidy(offset)];
+      };
+      return {
+        ...face,
+        points,
+        u: keep(face.u, face.scale[0]),
+        v: keep(face.v, face.scale[1]),
+        scale: [...face.scale],
+      };
+    }),
   };
 }
 

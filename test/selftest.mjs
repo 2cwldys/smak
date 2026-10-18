@@ -64,6 +64,8 @@ const areas = [
   "54-play-fight-reach", // an enemy a fight cannot get at (passed over, stopped at, gone to, shot at), a ranged weapon drawn and put back, a quiet without its line, a census, a walk that moves nobody
   "55-map-encounters", // how a spawn area's monsters come (fired by what, seen appearing, back soon, races at war, a far reward), the recipes, a map's character
   "56-map-roleplay", // switched lights as the map starts, rooms carved in textures of their own, a map's wiring, a line of sight in one walk, The Specialists' profile
+  "57-map-ground", // spaces of any outline carved, paths and curves, brushes turned, a cliff, maps from an SVG or a PNG sketch
+  "58-map-viewer", // a map as a 3D scene, props held against the world (stuck, floating, facing a wall), the map viewer served
   "19-example-and-kit-faults", // the examples' wrong arguments and refused models; the kits' fittings and rings
 ];
 

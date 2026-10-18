@@ -882,6 +882,13 @@ function thingsOfSource(map) {
   });
 }
 
+/**
+ * The entities of a map as the drawing reads them, a compiled map's or brush source's: `[{ number,
+ * classname, targetname, origin, yaw, pitch, angles, model, modelFile, script, pose, render, flags, kind,
+ * look }]` (in source, `brushes` too). For a picture or a scene of one's own (scene3d.mjs).
+ */
+export const thingsOf = (map) => (isCompiled(map) ? thingsOfBsp(map) : thingsOfSource(map));
+
 /** Whether this is a compiled map (what `readBsp` gives) and not brush source. */
 const isCompiled = (map) => Array.isArray(map?.faces) && Array.isArray(map?.leaves);
 
