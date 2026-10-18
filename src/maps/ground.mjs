@@ -22,8 +22,11 @@
 import { prism, planeOf, solid } from "./source.mjs";
 
 // ── constants ───────────────────────────────────────────────────────────────
-/** Two cuts along x nearer than this are one (units). */
-const SAME_CUT = 1e-4;
+/**
+ * Two cuts along x nearer than this are one (units), the whole one kept: a crossing a hair from a corner
+ * would leave a strip too thin for the compiler to work out.
+ */
+const SAME_CUT = 0.5;
 /** A piece thinner than this, or two points nearer, is nothing (units). */
 const NOTHING = 1e-4;
 /** A turn this small, in the cross product of two edges of length 1, is no turn: the points are in a line. */
@@ -230,6 +233,14 @@ const levelLine = (value) => ({
   b: [1, value],
 });
 
+/** The x where two lines (lineOf) cross, or null when they run side by side. */
+function crossingOfLines(p, q) {
+  const slope = (line) => (line.b[1] - line.a[1]) / (line.b[0] - line.a[0]);
+  const [m, n] = [slope(p), slope(q)];
+  if (Math.abs(m - n) < 1e-12) return null;
+  return (q.y(0) - p.y(0)) / (m - n);
+}
+
 /** Where two edges cross, strictly inside both: its x, or null. */
 function crossingX(p, q) {
   const r = [p.b[0] - p.a[0], p.b[1] - p.a[1]];
@@ -270,7 +281,16 @@ function rockInPlan(bounds, open, seen, tagOf, keepOpen = false) {
       if (x !== null) cuts.push(x);
     }
   cuts.sort((a, b) => a - b);
-  const xs = cuts.filter((x, i) => i === 0 || x - cuts[i - 1] > SAME_CUT);
+  const isWhole = (x) => Math.abs(x - Math.round(x)) < 1e-6;
+  const xs = [];
+  for (const x of cuts) {
+    const last = xs.length - 1;
+    if (last < 0 || x - xs[last] > SAME_CUT) xs.push(x);
+    else if (!isWhole(xs[last]) && isWhole(x)) xs[last] = x;
+  }
+  // the block's own ends stay where they are
+  xs[0] = cuts[0];
+  xs[xs.length - 1] = cuts[cuts.length - 1];
   const inOpen = (point) => open.some((space) => inPlan(space, point));
   const below = levelLine(bounds.min[1]);
   const above = levelLine(bounds.max[1]);
@@ -325,15 +345,18 @@ function rockInPlan(bounds, open, seen, tagOf, keepOpen = false) {
     }
     running = next;
   }
-  const outlines = pieces.map(({ low, high, x0, x1, tag }) => ({
-    tag,
-    ring: cleanRing([
-      [x0, low.y(x0)],
-      [x1, low.y(x1)],
-      [x1, high.y(x1)],
-      [x0, high.y(x0)],
-    ]).map((point) => point.map(tidy)),
-  }));
+  // two lines that cross within SAME_CUT of a cut may cross inside the strip: the piece ends at their crossing,
+  // or its outline would twist on itself
+  const ends = (low, high, x) => {
+    if (high.y(x) >= low.y(x)) return [[x, low.y(x)], [x, high.y(x)]];
+    const at = crossingOfLines(low, high) ?? x;
+    return [[at, low.y(at)], [at, low.y(at)]];
+  };
+  const outlines = pieces.map(({ low, high, x0, x1, tag }) => {
+    const [lowStart, highStart] = ends(low, high, x0);
+    const [lowEnd, highEnd] = ends(low, high, x1);
+    return { tag, ring: cleanRing([lowStart, lowEnd, highEnd, highStart]).map((point) => point.map(tidy)) };
+  });
   return joinConvex(outlines.filter(({ ring }) => ring.length >= 3 && signedArea(ring) > NOTHING));
 }
 
@@ -446,9 +469,14 @@ export function carvePlan(spaces, wall, texture) {
   };
   const low = Math.min(...made.map((space) => space.floor)) - wall;
   const high = Math.max(...made.map((space) => space.ceiling)) + wall;
-  const levels = [...new Set([low, high, ...made.flatMap((space) => [space.floor, space.ceiling])])].sort(
-    (a, b) => a - b,
-  );
+  const levels = [
+    ...new Set([
+      low,
+      high,
+      ...made.flatMap((space) => [space.floor, space.ceiling]),
+      ...made.flatMap((space) => (space.horizon > 0 ? [space.floor + space.horizon] : [])),
+    ]),
+  ].sort((a, b) => a - b);
   const fallback = wornBy(texture);
   // a space's own textures; a part it does not name (a yard that names only its sky) wears the carve's
   const worn = made.map(({ texture: own }) => {
@@ -463,7 +491,22 @@ export function carvePlan(spaces, wall, texture) {
   });
   /** The space (its number) seen from a point; -1 for none. */
   const seenFrom = (point) => spaceAt(made, point);
-  const wearing = (nth, part) => (nth < 0 ? fallback : worn[nth])[part];
+  // a face that looks at no space (the block's outside) never wears the sky: the brush would be sky all round,
+  // and the ground under an outdoor map with it
+  const outside = (part) =>
+    isSky(fallback[part])
+      ? ([fallback.wall, fallback.floor, fallback.ceiling].find((each) => !isSky(each)) ?? fallback[part])
+      : fallback[part];
+  const wearing = (nth, part) => (nth < 0 ? outside(part) : worn[nth][part]);
+  /** The outdoor space whose horizon is lowest: `{ nth, at }`, or null when none has one. */
+  const lowestHorizon = made.reduce((best, space, nth) => {
+    if (!(space.horizon > 0) || !isSky(worn[nth].ceiling)) return best;
+    const at = space.floor + space.horizon;
+    return best && best.at <= at ? best : { nth, at };
+  }, null);
+  /** Whether rock from z up, seen from outdoor space `nth`, is over its horizon: drawn as sky. */
+  const overHorizon = (nth, z) =>
+    nth >= 0 && made[nth].horizon > 0 && isSky(worn[nth].ceiling) && z >= made[nth].floor + made[nth].horizon;
 
   // every outline's edges, by their line, for the planes' whole points
   const lines = new Map();
@@ -506,8 +549,20 @@ export function carvePlan(spaces, wall, texture) {
           counts.set(nth, (counts.get(nth) ?? 0) + (nth < 0 ? 0.5 : 1));
         }
         const nth = [...counts.entries()].sort((p, q) => q[1] - p[1])[0][0];
-        return { out, wears: wearing(nth, "wall") };
+        return { out, nth, wears: wearing(nth, "wall") };
       });
+      // rock round outdoor spaces only, over their horizons: sky, so that the ground looks out over a land
+      // beyond and not up a cliff to the top of the map
+      // (rock that no space sees goes too, or it would hang in the sky its neighbours became)
+      const looking = sides.filter((side) => side.nth >= 0);
+      if (
+        lowestHorizon !== null &&
+        z0 >= lowestHorizon.at &&
+        looking.every((side) => overHorizon(side.nth, z0)) &&
+        over < 0 &&
+        (under < 0 || isSky(worn[under].ceiling))
+      )
+        for (const side of sides) side.wears = worn[(looking[0] ?? lowestHorizon).nth].ceiling;
       const key = JSON.stringify([outline, sides.map((side) => side.wears)]);
       const piece = before.get(key);
       if (piece && piece.z1 === z0) {
@@ -529,7 +584,7 @@ export function carvePlan(spaces, wall, texture) {
       const bottom = wearing(under, "ceiling");
       // a brush with a face of sky is sky all round: the compilers take a brush of mixed sky and stone for
       // neither, and the map is left with no inside and no light
-      const sky = [top, bottom].find(isSky);
+      const sky = [top, bottom, ...sides.map((side) => side.wears)].find(isSky);
       if (sky) return onWholePoints(prism(2, outline, z0, z1, sky), lines);
       const rule = (normal) => {
         if (normal[2] > 0.5) return top;
@@ -580,7 +635,8 @@ function slopeOf(space, wears) {
     solid(
       [
         ...ring.map(([x, y]) => [x, y, under]),
-        ...ring.map(([x, y]) => [x, y, Math.round(at(x, y) * 1000) / 1000]),
+        // the plane's own heights, not rounded: a ramp at an angle would have its corners off its plane
+        ...ring.map(([x, y]) => [x, y, at(x, y)]),
       ],
       (normal) =>
         normal[2] > 0.1

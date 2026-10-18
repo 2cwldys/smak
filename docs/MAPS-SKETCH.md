@@ -60,6 +60,7 @@ straightened; two colours painted side by side join.
 | `light` | brightness | A lamp in its middle, a little under its ceiling |
 | `slope` | units | Its floor a ramp that climbs this much across it, from `floor` on its lowest side (keep it under 45 degrees to walk it) |
 | `toward` | `east`, `north`, `west`, `south` or degrees | The way the slope climbs (0 east, 90 north) |
+| `horizon` | units | Outdoors (`ceiling=sky`): the rock round the space stands this high over its floor, and sky over it, so the place looks out over a land beyond and not up a cliff to the sky's height. Put it on the outdoor layer: `outdoors ceiling=sky horizon=320` |
 | `rough` | units | Its walls lined with rough rock standing out up to this much, where rock is behind them (not in its openings): a cave, a cliff. `cell` (48) is the size of the bumps |
 | `color` | `r,g,b` | The lamp's colour |
 | `kind` | `space`, `start`, `light`, `spiral`, `bridge`, `skip` | `start`: a place for players to start at its middle (with `floor`, `yaw`); `light`: a lamp at its middle at `z`; `spiral`: a round shaft with a spiral stair from `floor` to `to` (`steps`: the steps' texture, `inner`, `start` degrees, `turn` -1 for clockwise); `bridge`: a line with a stroke, a bridge of the stroke's width with its deck's top at `z` (`piers`, `ground`); `skip`: left out |

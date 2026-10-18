@@ -168,7 +168,7 @@ function ready(batch, kindNumber, owner) {
   return {
     count: p.length / 3, texture: batch.texture, kind: kindNumber, alpha: batch.alpha ?? 1, owner,
     position: buffer(p), uv: buffer(batch.uv), luv: buffer(luv), normal: buffer(normals),
-    ceiling: normals.length && normals[2] < -0.5,
+    ceiling: batch.isCeiling ?? (normals.length && normals[2] < -0.5),
   };
 }
 const KINDS = { face: 0, entity: 0, liquid: 1, sky: 2, model: 3, additive: 3, tool: 4 };
@@ -273,7 +273,11 @@ function draw() {
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   if (!scene) return;
   const size = Math.max(...scene.bounds.max.map((v, i) => v - scene.bounds.min[i]));
-  const matrix = multiply(perspective((75 * Math.PI) / 180, width / height, 2, Math.max(8192, size * 3)), lookFrom(camera.eye, forwardOf()));
+  // the near plane as far out as the camera is from the map: a depth buffer of 16 bits seen from far off
+  // otherwise cannot tell a floor from what lies under it, and the floor shows in patches
+  const away = Math.hypot(...camera.eye.map((v, i) => Math.max(0, scene.bounds.min[i] - v, v - scene.bounds.max[i])));
+  const near = Math.max(2, Math.min(256, away / 4));
+  const matrix = multiply(perspective((75 * Math.PI) / 180, width / height, near, Math.max(8192, size * 3) + away), lookFrom(camera.eye, forwardOf()));
   gl.enable(gl.DEPTH_TEST);
   gl.useProgram(faces);
   const u = (name) => gl.getUniformLocation(faces, name);

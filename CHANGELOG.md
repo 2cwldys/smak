@@ -3,6 +3,29 @@
 The newest first. A version that changes what a model's file looks like, or that a model made before needs
 mending for, says so under **Mind**.
 
+## 0.19.1 (2026-10-17)
+
+What the first draft of a map twice the orchard's size, drawn as a hill of terraces, found.
+
+- **`horizon`** (a space's key, and a sketch's): the rock round an outdoor space stands this high over its
+  floor, and sky is over it, so that the ground looks out over a land beyond and not up a cliff to the top
+  of the map (each space its own: a terrace's horizon is over its own floor). Rock that no space sees over the
+  lowest horizon is sky too, or it would hang in the sky its neighbours became.
+- **The sky no longer takes the ground**: a face of the carved block that looks at no space (its underside)
+  wore the carve's ceiling texture, `sky` in an outdoor map's legend (MAPS-SKETCH.md's own example), and the
+  brush with it became sky all round: the ground under every outdoor floor was sky.
+- **A ramp at an angle** (`slope` on a turned outline) had its top corners rounded off its own plane and was
+  refused as not convex.
+- **Two outlines crossing a hair from a corner** left a piece of rock that twisted on itself (VHLT: "brush
+  outside world"): cuts nearer than half a unit are one, the whole one kept, and a piece ends where its two
+  lines cross.
+- **`terrain`** of a length that is no whole number of steps made a last column a hair wide (rough rock along
+  a wall at an angle failed with "a face with no area").
+- **The map viewer**: a compiled face whose first three corners lie in a line (the compiler puts corners
+  along edges) was wound either way, so floors showed in patches with the ceilings hidden; "Ceilings and
+  sky" hid only some of the sky; the near plane moves out with the camera, so a map seen from far off keeps
+  its floors.
+
 ## 0.19.0 (2026-10-17)
 
 Ground that bends, and a map from a drawing. The study of the game's maps measured what made the kit's maps

@@ -864,7 +864,9 @@ export function terrain({ min, max, step, base, height, texture, grid = 1, axis 
   if (!(max[0] > min[0] && max[1] > min[1])) throw new Error("terrain: no size: max is not beyond min");
   const marks = [0, 1].map((i) => {
     const list = [];
-    for (let at = min[i]; at < max[i]; at += step[i]) list.push(at);
+    // counted, not added up step by step: the sum's error would leave a last column a hair wide
+    const count = Math.max(1, Math.ceil((max[i] - min[i]) / step[i] - 1e-6));
+    for (let k = 0; k < count; k++) list.push(min[i] + k * step[i]);
     list.push(max[i]);
     return list;
   });

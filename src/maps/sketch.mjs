@@ -706,6 +706,7 @@ export function sketchSpaces(shapes, legend = {}) {
       spaces.length,
     );
     if (Number.isFinite(keys.slope)) space.slope = { rise: keys.slope, toward: towardOf(keys.toward) };
+    if (Number.isFinite(keys.horizon)) space.horizon = keys.horizon;
     if (Number.isFinite(keys.rough))
       space.rough = { depth: keys.rough, cell: keys.cell ?? 48, seed: spaces.length + 1 };
     if (kind === "spiral") {
@@ -749,7 +750,9 @@ function towardOf(toward) {
 function roughWalls(space, others, texture) {
   const { depth, cell, seed } = space.rough;
   const brushes = [];
-  const z = (space.floor + space.ceiling) / 2;
+  // outdoors the rock stands to the horizon, and sky is over it
+  const top = space.horizon > 0 ? Math.min(space.ceiling, space.floor + space.horizon) : space.ceiling;
+  const z = (space.floor + top) / 2;
   let nth = 0;
   for (const ring of space.areas.flat())
     for (let i = 0; i < ring.length; i++) {
@@ -778,7 +781,7 @@ function roughWalls(space, others, texture) {
         if (!closed && from !== null) {
           const p = (u) => [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u];
           if ((t - from) * length >= ROUGH_LEAST)
-            brushes.push(...rockWall({ from: p(from), to: p(t), bottom: space.floor, top: space.ceiling, depth, cell, seed: seed * 101 + nth++, texture })); // prettier-ignore
+            brushes.push(...rockWall({ from: p(from), to: p(t), bottom: space.floor, top, depth, cell, seed: seed * 101 + nth++, texture })); // prettier-ignore
           from = null;
         }
       }

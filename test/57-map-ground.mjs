@@ -470,3 +470,52 @@ test("a sketch's slope, rough walls, spiral and bridge; additions by hand kept w
   const again = runSmak("sketch", svgFile, "-o", file);
   sure(/2 entities/.test(again), "and kept again the next time");
 });
+
+test("carvePlan outdoors: rock over a space's horizon is sky, the ground under it never is; a ramp at an angle; terrain of an odd length", () => {
+  const sky = { floor: "GRASS", ceiling: "sky" };
+  const spaces = [
+    { name: "yard", outline: [[0, 0], [512, 0], [512, 512], [0, 512]], floor: 0, ceiling: 640, texture: sky, horizon: 192 }, // prettier-ignore
+    { name: "terrace", outline: [[512, 0], [900, 0], [900, 512], [512, 512]], floor: 96, ceiling: 640, texture: sky, horizon: 192 }, // prettier-ignore
+    // a ramp turned 30 degrees, its corners on whole points that are not on its plane's own grid
+    { name: "ramp", outline: [[100, 100], [239, 180], [199, 249], [60, 169]], floor: 0, ceiling: 640, texture: sky, slope: { rise: 64, toward: 30 } }, // prettier-ignore
+  ];
+  // the carve's own ceiling is the sky, as a sketch's legend for an outdoor map has it
+  const brushes = maps.carvePlan(spaces, 16, { floor: "GRASS", ceiling: "sky", wall: "ROCK" });
+  sure(
+    brushes.every((brush) => !maps.shapeOf(brush).faults.length),
+    "every brush is sound, the ramp's too",
+  );
+  const named = (face) => (typeof face.texture === "string" ? face.texture : face.texture?.name);
+  const isSky = (brush) => brush.faces.some((face) => /^sky$/i.test(named(face)));
+  const box = (brush) => {
+    const points = maps.shapeOf(brush).faces.flatMap((face) => face.polygon);
+    return [0, 1, 2].map((i) => [Math.min(...points.map((p) => p[i])), Math.max(...points.map((p) => p[i]))]);
+  };
+  sure(
+    brushes.filter((brush) => box(brush)[2][1] <= 96).every((brush) => !isSky(brush)),
+    "nothing under the floors is sky (the block's underside looks at no space)",
+  );
+  // the rock west of the yard: rock to its horizon (192), sky over it
+  const west = brushes.filter((brush) => box(brush)[0][1] <= 0 && box(brush)[1][0] < 256 && box(brush)[1][1] > 256);
+  sure(
+    west.some((brush) => !isSky(brush) && box(brush)[2][1] === 192),
+    "rock beside the yard up to its horizon",
+  );
+  sure(
+    west.some((brush) => isSky(brush) && box(brush)[2][0] >= 192),
+    "sky over it",
+  );
+  // the terrace's horizon is its own: rock beside it to 96 + 192
+  const east = brushes.filter((brush) => box(brush)[0][0] >= 900);
+  sure(
+    east.some((brush) => !isSky(brush) && box(brush)[2][1] === 288),
+    `rock beside the terrace to 288: ${east.map((brush) => box(brush)[2].join("..")).join(", ")}`,
+  );
+  // a terrain whose length is no whole number of steps: no column a hair wide
+  const length = 498.8596997152606;
+  const rock = maps.terrain({ min: [0, 0], max: [length, 96], step: [length / 10, 48], base: 0, height: () => 24, texture: "ROCK" }); // prettier-ignore
+  sure(
+    rock.length === 40 && rock.every((brush) => !maps.shapeOf(brush).faults.length),
+    `ten columns of two rows, two prisms a cell, all sound (${rock.length})`,
+  );
+});

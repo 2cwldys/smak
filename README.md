@@ -4,7 +4,7 @@ Tools for making and changing GoldSrc models (`.mdl`: Half-Life and its mods), b
 coding agent such as Claude Code. You say what you want; the agent writes small scripts with this kit, draws the
 result into pictures to check its own work, and hands you a `.mdl` to try in the game.
 
-Version 0.19.0. An early release, made for an agent to work. For the person it has two pages in the browser: a
+Version 0.19.1. An early release, made for an agent to work. For the person it has two pages in the browser: a
 **viewer** that shows any two models side by side, turning and playing their animations together, and an
 **editor** for touching up a model by hand (its animations, events and textures; not its shape), on a project
 file the agent can work on too (`editor/README.md`).

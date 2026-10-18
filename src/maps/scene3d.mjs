@@ -201,10 +201,15 @@ function batches() {
   const push = ({ texture, kind, alpha = 1 }, polygon, uvs, luvs, normal) => {
     // wound anticlockwise seen from its front, so that the page's normal (its first corners' cross) is the face's
     if (normal && polygon.length >= 3) {
-      const [a, b, c] = polygon;
-      const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
-      const v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
-      const cross = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+      // the whole outline's turn (Newell's), not its first three corners': a compiled face often begins with
+      // three in a line (the compiler puts corners along an edge), and their cross is then any way at all
+      const cross = [0, 0, 0];
+      polygon.forEach((a, i) => {
+        const b = polygon[(i + 1) % polygon.length];
+        cross[0] += (a[1] - b[1]) * (a[2] + b[2]);
+        cross[1] += (a[2] - b[2]) * (a[0] + b[0]);
+        cross[2] += (a[0] - b[0]) * (a[1] + b[1]);
+      });
       if (cross[0] * normal[0] + cross[1] * normal[1] + cross[2] * normal[2] < 0) {
         polygon = [...polygon].reverse();
         uvs = [...uvs].reverse();
