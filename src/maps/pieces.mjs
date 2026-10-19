@@ -247,12 +247,9 @@ export function brokenWall({
     const h1 = fallen ? bottom + rubble : heights[i + 1];
     const a = at(from, along, (length * i) / pieces);
     const b = at(from, along, (length * (i + 1)) / pieces);
-    const corners = [
-      at(a, left, -thick / 2),
-      at(b, left, -thick / 2),
-      at(b, left, thick / 2),
-      at(a, left, thick / 2),
-    ].map(([x, y]) => [round(x, 0.001), round(y, 0.001)]);
+    // three corners rounded, the fourth from them: rounded alone, a sloped top's corners fall out of one plane
+    const [ar, br, al] = [at(a, left, -thick / 2), at(b, left, -thick / 2), at(a, left, thick / 2)].map(([x, y]) => [round(x, 0.001), round(y, 0.001)]); // prettier-ignore
+    const corners = [ar, br, [br[0] + al[0] - ar[0], br[1] + al[1] - ar[1]], al];
     const tops = [h0, h1, h1, h0];
     brushes.push(
       solid(
@@ -299,6 +296,101 @@ export function rockWall({ from, to, bottom, top, depth = 24, cell = 48, seed = 
   const rock = terrain({ min: [0, bottom], max: [length, top], step, base: 0, height: (u, v) => out(u, v), texture: worn, axis: "y", grid: 1 }); // prettier-ignore
   const angle = (Math.atan2(along[1], along[0]) * 180) / Math.PI;
   return moved(turned(rock, angle, [0, 0, 0]), [from[0], from[1], 0]);
+}
+
+/**
+ * A cliff standing along the line `from` → `to`, its back on the line and its face out to the LEFT of it:
+ * pieces 96 to 224 along (by `seed`), each a face leaning back at an angle of its own, from a foot `foot`
+ * units out at most (a third of it at least) up to a top of `top` and up to `rise` more, the tops changing
+ * from one joint to the next: a skyline that is not a line. Some pieces have a scree at their foot, lower and
+ * further out. A piece's foot keeps out of the `clear` boxes (`[{ min: [x, y], max: [x, y] }]`: a doorway, a
+ * house): there it stands near upright. The pieces overlap a little, so that no gap shows between them.
+ * Its tops are never under `top`: stood in front of a plumb wall that height, it hides it. It returns a list
+ * of brushes (put them in a func_detail).
+ */
+export function cliffWall({ from, to, bottom, top, rise = 96, foot = 96, seed = 1, texture, clear = [] }) {
+  const { length, along, left } = frameOf(from, to, "cliffWall");
+  if (!(top > bottom)) throw new Error("cliffWall: top over bottom");
+  if (!(foot >= 8)) throw new Error(`cliffWall: a foot of 8 at least, not ${foot}`);
+  const worn =
+    typeof texture === "string"
+      ? { name: texture, align: "face" }
+      : texture?.name
+        ? { align: "face", ...texture }
+        : texture;
+  const OVERLAP = 6;
+  // the joints along the line: pieces of 96 to 224, the last one stretched or shrunk to fit
+  const joints = [0];
+  for (let k = 0; joints.at(-1) < length; k++)
+    joints.push(joints.at(-1) + 96 + Math.round(hashed(k, 1, seed) * 128));
+  if (joints.length > 2 && length - joints.at(-2) < 64) joints.splice(joints.length - 2, 1);
+  joints[joints.length - 1] = length;
+  // a joint's top: the same for the two pieces that meet there, so the skyline is unbroken but jagged
+  // lower towards the stretch's ends, where it meets a doorway or another stretch round a corner
+  const topAt = (k) => {
+    const ends = Math.min(1, 0.35 + Math.min(joints[k], length - joints[k]) / 320);
+    return round(
+      top +
+        rise *
+          ends *
+          (0.1 + 0.9 * (0.15 * hashed(k, 2, seed) + 0.85 * smoothNoise(joints[k] / 420, 0.5, seed))),
+    );
+  };
+  const kept = (p) =>
+    !clear.some(
+      ({ min, max }) => p[0] > min[0] - 8 && p[0] < max[0] + 8 && p[1] > min[1] - 8 && p[1] < max[1] + 8,
+    );
+  const point = (u, out, z) => [...at(at(from, along, u), left, out).map((v) => round(v)), z];
+  const brushes = [];
+  for (let k = 0; k + 1 < joints.length; k++) {
+    const u0 = Math.max(0, joints[k] - OVERLAP);
+    const u1 = Math.min(length, joints[k + 1] + OVERLAP);
+    if (u1 - u0 < 16) continue;
+    const [t0, t1] = [topAt(k), topAt(k + 1)];
+    // how far its foot stands out, and its top: the face leans back from one to the other
+    const ends = Math.min(u0, length - u1) / 96;
+    let out = foot * (0.35 + 0.65 * hashed(k, 3, seed)) * Math.min(1, 0.3 + ends);
+    const brow = Math.round(Math.min(out * 0.5, 4 + 14 * hashed(k, 4, seed)));
+    const clearHere = (o) => kept(point(u0, o, bottom).slice(0, 2)) && kept(point(u1, o, bottom).slice(0, 2)) && kept(point((u0 + u1) / 2, o, bottom).slice(0, 2)); // prettier-ignore
+    while (out > 10 && !clearHere(out)) out *= 0.6;
+    out = Math.max(Math.round(out), brow + 4);
+    // the face is two facets meeting in a ridge somewhere along it, which stands out further (a buttress's
+    // edge): each facet leans back at its own angle. Some pieces bend half way up, the lower part steeper
+    const um = u0 + (u1 - u0) * (0.3 + 0.4 * hashed(k, 10, seed));
+    const ridge = Math.round(out * (1.15 + 0.35 * hashed(k, 11, seed)));
+    const tm = Math.round(Math.max(t0, t1) + rise * 0.08 * hashed(k, 12, seed));
+    const z0 = bottom - 8;
+    const facet = (ua, ub, ta, tb, outA, outB) => {
+      const bend = hashed(k + Math.round(ua), 5, seed) < 0.45;
+      const half = Math.round(bottom + (Math.min(ta, tb) - bottom) * (0.35 + 0.25 * hashed(k, 6, seed)));
+      const rows = bend
+        ? [
+            [z0, z0, outA, outB],
+            [half, half, Math.round(outA * 0.7), Math.round(outB * 0.7)],
+            [ta, tb, brow, brow],
+          ]
+        : [
+            [z0, z0, outA, outB],
+            [ta, tb, brow, brow],
+          ];
+      for (let r = 0; r + 1 < rows.length; r++) {
+        const [la, lb, oa, ob] = rows[r];
+        const [ha, hb, pa, pb] = rows[r + 1];
+        brushes.push(solid([point(ua, 0, la), point(ub, 0, lb), point(ua, oa, la), point(ub, ob, lb), point(ua, 0, ha), point(ub, 0, hb), point(ua, pa, ha), point(ub, pb, hb)], worn)); // prettier-ignore
+      }
+    };
+    facet(u0, um, t0, tm, out, ridge);
+    facet(um, u1, tm, t1, ridge, out);
+    // a scree at the foot of some: low, further out, its own slope
+    if (hashed(k, 7, seed) < 0.4 && u1 - u0 > 80) {
+      const far = Math.round(out + 24 + 40 * hashed(k, 8, seed));
+      const tall = Math.round(24 + 40 * hashed(k, 9, seed));
+      const [s0, s1] = [u0 + (u1 - u0) * 0.15, u1 - (u1 - u0) * 0.2];
+      if (kept(point(s0, far, bottom).slice(0, 2)) && kept(point(s1, far, bottom).slice(0, 2)))
+        brushes.push(solid([point(s0, out - 4, z0), point(s1, out - 4, z0), point(s0 + 16, far, z0), point(s1 - 16, far, z0), point(s0, out - 4, bottom + tall), point(s1, out - 4, Math.round(bottom + tall * 0.7))], worn)); // prettier-ignore
+    }
+  }
+  return brushes;
 }
 
 // ── a map added to by hand ──────────────────────────────────────────────────

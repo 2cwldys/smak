@@ -310,11 +310,25 @@ function sideOf(value, otherwise, what) {
 const pointText = (point) => point.map((value) => Math.round(value)).join(" ");
 
 // ── the picture being drawn ─────────────────────────────────────────────────
-/** A picture of one colour, with how near what each pixel shows is (nothing yet: Infinity). */
+/**
+ * A picture of one colour, with how near what each pixel shows is (nothing yet: Infinity) and what it shows
+ * (`shows`: 0 nothing, 1 a face, 2 the sky), and the texture it shows (`named`: an index into `names`, 0 none;
+ * a model's as `models/x.mdl#texture`).
+ */
 function newCanvas(width, height, colour) {
   const rgba = new Uint8ClampedArray(width * height * 4);
   for (let pixel = 0; pixel < width * height; pixel++) rgba.set([...colour, 255], pixel * 4);
-  return { width, height, rgba, nearness: new Float32Array(width * height).fill(Infinity) };
+  return { width, height, rgba, nearness: new Float32Array(width * height).fill(Infinity), shows: new Uint8Array(width * height), named: new Uint16Array(width * height), names: [""], nameAt: new Map() }; // prettier-ignore
+}
+/** The number a texture's name has in a canvas's `names`. */
+function nameIndex(canvas, name = "") {
+  let index = canvas.nameAt.get(name);
+  if (index === undefined) {
+    index = canvas.names.length;
+    canvas.names.push(name);
+    canvas.nameAt.set(name, index);
+  }
+  return index;
 }
 /** The picture as the kit hands pictures on. */
 const pictureOf = (canvas) => ({
@@ -358,15 +372,41 @@ function meanColour(pixels, palette, holes) {
   }
   return sum.map((value) => (counted ? Math.round(value / counted) : 0));
 }
+/**
+ * A smaller size of a texture with holes, from its largest: each pixel a hole where half its block is, else
+ * the block's first pixel that is not one.
+ */
+export function shrunkWithHoles(pixels, width, height, level) {
+  const size = 1 << level;
+  const [w, h] = [width >> level, height >> level];
+  const out = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++) {
+      let holes = 0;
+      let kept = HOLE;
+      for (let dy = 0; dy < size; dy++)
+        for (let dx = 0; dx < size; dx++) {
+          const index = pixels[(y * size + dy) * width + x * size + dx];
+          if (index === HOLE) holes++;
+          else if (kept === HOLE) kept = index;
+        }
+      out[y * w + x] = holes * 2 >= size * size ? HOLE : kept;
+    }
+  return out;
+}
 /** A map texture (miptex.mjs) as the drawing reads it: its sizes, its palette, its mean colour. */
 function readyTexture(texture) {
-  const sizes = texture.mips ?? [texture.pixels];
+  const holes = texture.holes ?? textureKind(texture.name).holes;
+  let sizes = texture.mips ?? [texture.pixels];
+  // some of the game's textures with holes have smaller sizes made without them (MSC's {ms_tree04 to 08): the
+  // engine makes its own from the largest, and so does the drawing, or a far tree is a box
+  if (holes && sizes.length > 1 && sizes[0].includes(HOLE) && sizes.slice(1).some((pixels) => !pixels.includes(HOLE)))
+    sizes = sizes.map((pixels, level) => (level ? shrunkWithHoles(sizes[0], texture.width, texture.height, level) : pixels));
   const levels = sizes.map((pixels, level) => ({
     width: texture.width >> level,
     height: texture.height >> level,
     pixels,
   }));
-  const holes = texture.holes ?? textureKind(texture.name).holes;
   return {
     name: texture.name,
     levels,
@@ -525,6 +565,7 @@ function placed(view, surface, shift, twoSided) {
 function fill(canvas, view, surface, shift, paint, table) {
   const place = placed(view, surface, shift, paint.twoSided);
   if (!place) return 0;
+  const named = canvas.named ? nameIndex(canvas, paint.name ?? surface.texture?.name) : 0;
   const { corners } = place;
   const [depthA, depthB, depthC] = place.depth;
   const [sA, sB, sC, sD] = place.s;
@@ -608,6 +649,7 @@ function fill(canvas, view, surface, shift, paint, table) {
         rgba[at * 4 + 1] = skyOut[1];
         rgba[at * 4 + 2] = skyOut[2];
         nearness[at] = near;
+        canvas.shows[at] = 2;
         drawn++;
         continue;
       }
@@ -680,6 +722,8 @@ function fill(canvas, view, surface, shift, paint, table) {
         rgba[o + 1] = green;
         rgba[o + 2] = blue;
         nearness[at] = near;
+        canvas.shows[at] = surface.kind === "sky" ? 2 : 1;
+        if (canvas.named) canvas.named[at] = named;
       } else if (paint.additive) {
         rgba[o] += red * solid;
         rgba[o + 1] += green * solid;
@@ -1162,7 +1206,8 @@ function drawModel(canvas, view, thing, figure, table, sample, later) {
       const turned = MODEL_AMBIENT + MODEL_DIRECT * Math.max(0, dot(normal, LAMP));
       lit = sample.map((value) => table[value] * turned);
     } else lit = [1, 1, 1].fill(shadeOf(normal));
-    const paint = { lit, alpha: look.alpha, additive: look.additive || texture.additive };
+    // named by its model too (`models/props/cart.mdl#wood`): what a view shows is told by what stands there
+    const paint = { lit, alpha: look.alpha, additive: look.additive || texture.additive, name: `${thing.modelFile ?? "model"}#${texture.name}` }; // prettier-ignore
     if (paint.alpha < 1 || paint.additive) later.push({ surface, shift: NO_SHIFT, paint });
     else fill(canvas, view, surface, NO_SHIFT, paint, table);
   }
@@ -1501,7 +1546,9 @@ export function drawMap(bsp, options = {}) {
     marked,
     notes,
   };
-  return { ...pictureOf(canvas), facts };
+  // how far each pixel's surface is along the view and what it is (0 nothing, 1 a face, 2 sky): for measures
+  // of what a player sees (a skyline, layers of distance)
+  return { ...pictureOf(canvas), facts, depth: canvas.nearness, shows: canvas.shows, named: canvas.named, names: canvas.names }; // prettier-ignore
 }
 
 /**

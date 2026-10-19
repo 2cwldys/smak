@@ -21,9 +21,10 @@
 // does not name are rock. Paint's outlines (a black line between two rooms) are walls. One pixel is
 // `scale` units (8 unless told: a picture 512 wide is a map 4096 wide).
 import { unpng } from "../image.mjs";
-import { carvePlan, path, pointIn, planSpace, spaceAt } from "./ground.mjs";
-import { spiralStairs, bridge, rockWall, mergeMaps } from "./pieces.mjs";
+import { carvePlan, path, pointIn, planSpace, spaceAt, slopePlane } from "./ground.mjs";
+import { spiralStairs, bridge, rockWall, cliffWall, mergeMaps } from "./pieces.mjs";
 import { light, playerStart, sunLight, brushEntity } from "./source.mjs";
+import { reliefOf } from "./relief.mjs";
 
 // ── constants ───────────────────────────────────────────────────────────────
 /** Points a curve of a drawing is cut into, for each curve. */
@@ -629,9 +630,15 @@ export function sketchSpaces(shapes, legend = {}) {
     }
     found.push({ shape, keys, kind, label });
   }
-  // "sky": over every height given
+  // "sky": over every height given, a cliff's top, and what a space asks room for under it (`sky`: trees)
   const heights = found.flatMap(({ keys }) =>
-    [keys.floor, keys.ceiling, keys.floor + (keys.height ?? 0)].filter(Number.isFinite),
+    [
+      keys.floor,
+      keys.ceiling,
+      keys.floor + (keys.height ?? 0),
+      keys.floor + (keys.horizon ?? 0) + (keys.cliff ?? 0),
+      keys.floor + (keys.sky ?? 0),
+    ].filter(Number.isFinite),
   );
   const sky = (heights.length ? Math.max(...heights) : 0) + SKY_OVER;
   const spaces = [];
@@ -709,6 +716,15 @@ export function sketchSpaces(shapes, legend = {}) {
     if (Number.isFinite(keys.horizon)) space.horizon = keys.horizon;
     if (Number.isFinite(keys.rough))
       space.rough = { depth: keys.rough, cell: keys.cell ?? 48, seed: spaces.length + 1 };
+    if (keys.cliff > 0) space.cliff = { rise: keys.cliff, foot: keys.foot ?? 96, seed: spaces.length + 1 };
+    const patch = keys.patch
+      ? []
+          .concat(keys.patch)
+          .flatMap((name) => String(name).split(","))
+          .filter(Boolean)
+      : [];
+    if (keys.relief > 0 || keys.bank > 0 || patch.length)
+      space.relief = { amp: keys.relief ?? 0, bank: keys.bank ?? 0, wide: keys.bumps ?? 640, seed: spaces.length + 1, patches: patch.map((texture) => ({ texture, share: (keys.patchShare ?? 0.15) / patch.length })) }; // prettier-ignore
     if (kind === "spiral") {
       const corners = space.areas.flat(2);
       const [x0, x1] = [Math.min(...corners.map((p) => p[0])), Math.max(...corners.map((p) => p[0]))];
@@ -743,31 +759,30 @@ function towardOf(toward) {
   return Number(toward);
 }
 
+/** Where a space's rock stands to: outdoors the rock stands to the horizon, and sky is over it. */
+const rockTop = (space) =>
+  space.horizon > 0 ? Math.min(space.ceiling, space.floor + space.horizon) : space.ceiling;
+
 /**
- * The faces of rough rock along a space's walls, inside it: along each side of its outline, where rock is
- * behind it (not where the side opens into another space: a doorway, the mouth of a cave).
+ * The stretches of a space's sides with rock behind them, each `{ from, to }` with the space to the LEFT of
+ * from → to: not where a side opens into another space (a doorway, the mouth of a cave, a terrace's edge).
  */
-function roughWalls(space, others, texture) {
-  const { depth, cell, seed } = space.rough;
-  const brushes = [];
-  // outdoors the rock stands to the horizon, and sky is over it
-  const top = space.horizon > 0 ? Math.min(space.ceiling, space.floor + space.horizon) : space.ceiling;
-  const z = (space.floor + top) / 2;
-  let nth = 0;
+function rockSides(space, others) {
+  const z = (space.floor + rockTop(space)) / 2;
+  const stretches = [];
   for (const ring of space.areas.flat())
     for (let i = 0; i < ring.length; i++) {
       let a = ring[i];
       let b = ring[(i + 1) % ring.length];
       const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
       if (length < ROUGH_LEAST) continue;
-      // the rock stands out to the left of a → b: the space's side
+      // the space is to the left of a → b
       let left = [-(b[1] - a[1]) / length, (b[0] - a[0]) / length];
       const middle = [(a[0] + b[0]) / 2 + left[0] * 2, (a[1] + b[1]) / 2 + left[1] * 2];
       if (spaceAt([space], [...middle, z]) < 0) {
         [a, b] = [b, a];
         left = [-left[0], -left[1]];
       }
-      // the stretches of the side with rock behind them
       const count = Math.max(1, Math.round(length / ROUGH_LEAST));
       const solidAt = (t) => {
         const p = [a[0] + (b[0] - a[0]) * t - left[0] * 4, a[1] + (b[1] - a[1]) * t - left[1] * 4];
@@ -780,13 +795,33 @@ function roughWalls(space, others, texture) {
         if (closed && from === null) from = t;
         if (!closed && from !== null) {
           const p = (u) => [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u];
-          if ((t - from) * length >= ROUGH_LEAST)
-            brushes.push(...rockWall({ from: p(from), to: p(t), bottom: space.floor, top, depth, cell, seed: seed * 101 + nth++, texture })); // prettier-ignore
+          if ((t - from) * length >= ROUGH_LEAST) stretches.push({ from: p(from), to: p(t) });
           from = null;
         }
       }
     }
-  return brushes;
+  return stretches;
+}
+
+/** The faces of rough rock along a space's walls, inside it, where rock is behind them. */
+function roughWalls(space, others, texture) {
+  const { depth, cell, seed } = space.rough;
+  const top = rockTop(space);
+  return rockSides(space, others).flatMap(({ from, to }, nth) =>
+    rockWall({ from, to, bottom: space.floor, top, depth, cell, seed: seed * 101 + nth, texture }),
+  );
+}
+
+/**
+ * The cliffs along a space's walls, inside it, where rock is behind them: leaning faces from the floor up to
+ * the rock's top and up to `rise` over it (`cliffWall`), their feet kept out of `clear`.
+ */
+function cliffWalls(space, others, texture, clear) {
+  const { rise, foot, seed } = space.cliff;
+  const top = rockTop(space);
+  return rockSides(space, others).flatMap(({ from, to }, nth) =>
+    cliffWall({ from, to, bottom: space.floor, top, rise, foot, seed: seed * 131 + nth, texture, clear }),
+  );
 }
 
 /** A colour of a light from a word "255,200,150" or a list; white when none. */
@@ -797,11 +832,13 @@ const lightColour = (color) =>
  * A map's source (what `writeMap` takes) from a sketch's spaces: the spaces carved (`carvePlan`, rock
  * `wall` thick, worn `texture` where a space brings none), a start for each `starts` (or one in the first
  * space when there are none), a lamp for each `lights`, and the sun when `sun` says (`{ yaw, pitch,
- * brightness, color }`) or any space is open to the sky.
+ * brightness, color }`) or any space is open to the sky. A space with `cliff` has leaning cliffs along its
+ * rock (`cliffWall`), their feet kept out of the `clear` boxes (`[{ min: [x, y], max: [x, y] }]`: houses,
+ * doorways, whatever the map will put by a wall).
  */
 export function sketchMap(
   { spaces, starts = [], lights = [], pieces = [] },
-  { wall = 16, texture = "rock", sun, worldspawn = {}, hand } = {},
+  { wall = 16, texture = "rock", sun, worldspawn = {}, hand, clear = [] } = {},
 ) {
   if (!spaces?.length)
     throw new Error("sketchMap: the sketch has no spaces (none with a floor and a ceiling)");
@@ -812,6 +849,23 @@ export function sketchMap(
   const floorOf = (space) => (typeof space.texture === "object" && !space.texture?.name ? space.texture.floor : space.texture) ?? fallback.floor ?? fallback.wall; // prettier-ignore
   const rough = spaces.filter((space) => space.rough).flatMap((space) => roughWalls(space, spaces.filter((other) => other !== space), wallOf(space))); // prettier-ignore
   if (rough.length) entities.push(brushEntity("func_detail", rough, { zhlt_detaillevel: 1 }));
+  const cliffs = spaces.filter((space) => space.cliff).flatMap((space) => cliffWalls(space, spaces.filter((other) => other !== space), wallOf(space), clear)); // prettier-ignore
+  if (cliffs.length) entities.push(brushEntity("func_detail", cliffs, { zhlt_detaillevel: 1 }));
+  // ground that rises and falls (relief.mjs): hummocks, and banks against the rock
+  const grounds = new Map();
+  for (const space of spaces.filter((each) => each.relief)) {
+    const others = spaces.filter((other) => other !== space);
+    const made = reliefOf({
+      space,
+      others,
+      sides: rockSides(space, others),
+      ...space.relief,
+      texture: floorOf(space),
+      clear,
+    });
+    grounds.set(space, made);
+    if (made.brushes.length) entities.push(brushEntity("func_detail", made.brushes, { zhlt_detaillevel: 1 }));
+  }
   for (const piece of pieces) {
     const home = spaces.find((space) => spaceAt([space], [...(piece.centre ?? piece.from), (piece.from ?? piece.z) + 1]) >= 0) ?? spaces[0]; // prettier-ignore
     if (piece.kind === "spiral")
@@ -831,5 +885,37 @@ export function sketchMap(
     entities.push(sunLight(at, { yaw, pitch, brightness, color: lightColour(color) }));
   }
   const made = { worldspawn, brushes, entities };
-  return hand ? mergeMaps(made, hand) : made;
+  const out = hand ? mergeMaps(made, hand) : made;
+  /**
+   * The ground's height at a place (x, y), near the height z (the floor of the space there that is nearest
+   * under it): its relief where it has one, the floor or its slope where not; null outside every space.
+   */
+  // each space with its rock and its ground, for what is strewn over it (scatter.mjs)
+  Object.defineProperty(out, "places", {
+    enumerable: false,
+    value: spaces.map((space) => {
+      const others = spaces.filter((other) => other !== space);
+      const relief = grounds.get(space);
+      const level = space.slope ? slopePlane(space).at : () => space.floor;
+      return {
+        space,
+        name: space.name,
+        sides: rockSides(space, others),
+        groundAt: relief ? relief.heightAt : level,
+      };
+    }),
+  });
+  Object.defineProperty(out, "groundAt", {
+    enumerable: false,
+    value: (x, y, z = Infinity) => {
+      const here = spaces.filter(
+        (space) => space.floor <= z && spaceAt([space], [x, y, space.floor + 1]) >= 0,
+      );
+      if (!here.length) return null;
+      const space = here.reduce((a, b) => (b.floor > a.floor ? b : a));
+      if (grounds.has(space)) return grounds.get(space).heightAt(x, y);
+      return space.slope ? slopePlane(space).at(x, y) : space.floor;
+    },
+  });
+  return out;
 }

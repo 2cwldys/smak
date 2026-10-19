@@ -3,6 +3,66 @@
 The newest first. A version that changes what a model's file looks like, or that a model made before needs
 mending for, says so under **Mind**.
 
+## 0.20.0 (2026-10-19)
+
+What Master Sword Rebirth's Thornlands showed an outdoor map wants (the orchard's second version, built with it).
+
+- **`cliffWall`** and the sketch's **`cliff`** key: an outdoor space's rock made cliffs of large faces leaning
+  back at angles of their own, two facets to a piece meeting in a ridge, some bent half way up, some with a
+  scree; the skyline uneven, never under the horizon. `sketchMap(..., { clear })` keeps their feet off houses
+  and doorways. Rough walls and cliffs find the rock along a side by one function (`rockSides`).
+- **`backdropModel`**: the land round a map as one studio model, a ring of hills from just outside its walls to
+  the far distance (fields and hedges, woods, haze of a colour given), seen over the walls: the engine draws a
+  model over the sky's faces. Two bodyparts, each under GoldSrc's 2048 points and normals.
+- **`reliefOf`** and the sketch's **`relief`**, **`bank`** keys: ground that rises and falls, hummocks and
+  banks against the rock, level where a space opens and in the `clear` boxes; on a slope, a bank in place of
+  a flat ramp. `sketchMap`'s result tells the ground's height anywhere (`groundAt`) and holds each space with
+  its rock and ground (`places`).
+- **`scatter`**, **`boulder`**, **`card`**, **`STREWN`**: grass, flowers, ferns, bushes and stones strewn as
+  the game's own maps strew them (read from them: clumped, thicker by the rock, so many to the floor), and a
+  fringe of grass along the rock's foot. The fringe takes several rows: a forest's edge of single trees,
+  flat and overlapping, and lines of trees before them (`textures`, `keepShape`, `tile`: a picture kept in
+  shape and repeated along a long card).
+- **`trail`**, **`smoothLine`**: a path worn into the ground, a ribbon over it wearing a picture of a path
+  turned to run along it, its corners cut, its middle over the ground and its edges under it.
+- **`reliefOf`**'s **`patches`** and the sketch's **`patch`**, **`patchShare`** keys: the ground's triangles
+  painted with another ground over a share of the floor, where a noise is highest.
+- **`ambience`**, **`HEARD`**: looping sounds strewn over spaces as the game's wild maps have them (so many to
+  the floor, a wind heard far at least once, birds by the wood). **`learnDetails`**, **`detailText`**: what
+  detail texture the game's own `_detail.txt` files give each texture, and a map's file written from that.
+- **`solid`** (from points): two faces all but in one plane (a crease of a hundredth of a degree, from corners
+  rounded to whole units) are made one; the compiler refused such a brush ("coplanar faces"). Cliffs met it.
+- **`scatter`**'s fringe: a picture too wide for a short side stands across it, past its corners, instead of
+  being left out (a forest's dark wall showed there).
+- **`dressRoom`**: a carved room dressed as the game's interiors are (measured room by room in 60 of its maps):
+  a battered base, a moulding, beams on corbels or pilasters and columns, a pitched ceiling with tie beams, an
+  inlaid floor, a dais, torches with fire and light, webs, moss and chains, and the things of its use (hall,
+  store, bedroom, kitchen, library, crypt) kept off its doorways. **`INTERIOR_SETS`**, **`pickSet`**,
+  **`chamfered`**: interiors' textures from ms_generic.wad, a room's picked by its seed; corners cut back.
+- **`dressRoom`'s `gallery`, `spots`, `doors`**: a second level in a room (a ledge up a wall, on posts, railed,
+  its stair along the wall with open floor before its foot; `loose` gives the steps back to be made to rise);
+  places by the walls kept for a builder's events; the base stopped at doorways and nothing hung or stood in
+  them. The torches are the game's own wall torch (**`TORCH`**, **`TORCH_SCALE`**), as MSC's maps hang it.
+- **`house`**: a town's house the way the game's towns build them (deralia, edana): a footing, brick under, a
+  jutting storey of timber and plaster over, windows painted on its facade pictures and fitted whole, a roof of
+  the kind's slope with eaves, gable, ridge and sometimes a chimney, a door of the kind's size with frame and
+  steps; places by its walls and over its door for what a town puts there. **`fence`**: posts and rails of
+  wood along a line, on the ground.
+- **`SIZES`**: what a door, a step, a roof's pitch, a room's height and a way's width come to in the game's maps
+  of each kind (read from 92 of them); **`ruin`**: a ruined house of broken walls sized by them, its door's
+  gap facing the way it is turned, stones fallen about it: a landmark to walk to.
+- **`brokenWall`** on a slant: its pieces' sloped tops stay in one plane (their corners were rounded one by
+  one, and a brush was refused as not convex).
+- The sketch's sky stands over its cliffs' tops (it stood 128 over the highest floor or ceiling given, and cut
+  the cliffs off flat at it), and over the **`sky`** key's height: room for tall trees.
+- **`drawMap`** gives each pixel's distance, whether it shows sky and which texture (`depth`, `shows`,
+  `named` into `names`): what a player sees, measured.
+- **`drawMap`** makes the smaller sizes of a texture with holes from its largest where the .wad's own lost
+  them (MSC's `{ms_tree04` to `08`): a far tree was drawn as a dark box, where the engine, which makes its own,
+  draws a tree (`shrunkWithHoles`).
+- **`learnEntities`** of a folder that is not there (a mod's overlay given first to `map-viewer --game`) learns
+  nothing, where it stopped the viewer.
+
 ## 0.19.1 (2026-10-17)
 
 What the first draft of a map twice the orchard's size, drawn as a hill of terraces, found.

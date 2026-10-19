@@ -294,6 +294,9 @@ export function solidPlanes(points, faces) {
  * (no volume) and when one of them is inside the solid the others make (they are then not the corners of a
  * convex solid).
  */
+/** Two faces whose normals agree this closely (cosine; within about a degree) are one plane to the compiler. */
+const NEAR_ONE = 0.9998;
+
 function hullPlanes(points) {
   const found = new Map();
   for (let i = 0; i < points.length; i++)
@@ -315,7 +318,16 @@ function hullPlanes(points) {
     throw new Error(
       `solid: its ${points.length} points lie in one plane or one line: a solid with no volume`,
     );
-  const faces = [...found.values()];
+  // two faces all but in one plane (corners rounded to whole units make a crease of a hundredth of a degree)
+  // are one to the compiler, which refuses the brush: the one with fewer corners goes, its corners kept on
+  // the other's face (they are within a unit of it)
+  const faces = [];
+  for (const face of [...found.values()].sort((a, b) => b.onIt.length - a.onIt.length)) {
+    const dist = dot(face.normal, face.onIt[0]);
+    const twin = faces.find((kept) => dot(kept.normal, face.normal) > NEAR_ONE && Math.abs(dot(kept.normal, face.onIt[0]) - dot(kept.normal, kept.onIt[0])) < 1 && Math.abs(dist - dot(face.normal, kept.onIt[0])) < 1); // prettier-ignore
+    if (twin) twin.onIt = [...new Set([...twin.onIt, ...face.onIt])];
+    else faces.push(face);
+  }
   const inside = points.find((point) => !faces.some((face) => face.onIt.includes(point)));
   if (inside)
     throw new Error(

@@ -814,3 +814,12 @@ await testAsync("the MCP server lists, describes, checks and draws maps", "mcp: 
   sure(/maps, maps-making/.test(wordsOf(await server.tool("guide"))), "the guide's list names the two");
   sure((await server.close()) === 0, "the server did not end cleanly");
 });
+
+test("shrunkWithHoles: a texture's smaller sizes made from its largest keep its holes (MSC's {ms_tree04 to 08 lost them)", () => {
+  // 4 x 4: the left half holes (255), the right half colour 7
+  const pixels = Uint8Array.from({ length: 16 }, (_, i) => (i % 4 < 2 ? 255 : 7));
+  const half = maps.shrunkWithHoles(pixels, 4, 4, 1);
+  sure(half.length === 4 && [...half].join() === "255,7,255,7", `the halves kept (${[...half]})`);
+  const one = maps.shrunkWithHoles(pixels, 4, 4, 2);
+  sure(one[0] === 255, "half holes or more: a hole");
+});

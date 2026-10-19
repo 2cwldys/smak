@@ -10,7 +10,7 @@
 //
 // Only each map's header and its entity text are read: a hundred maps take a second or two, and the answer
 // can be kept in a file (`cache`) that is read again as long as no map of the folder has changed.
-import { openSync, readSync, closeSync, statSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { openSync, readSync, closeSync, statSync, readdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join, basename } from "node:path";
 import { parseEntities } from "./entities.mjs";
 import { BSP_VERSION, HEADER_SIZE } from "./lumps.mjs";
@@ -158,9 +158,12 @@ function summed(classes) {
 /** The maps of a folder, or the files given, each with what tells a changed file from the same one. */
 function filesOf(source, except) {
   const left = new Set(except.map((name) => basename(name).toLowerCase()));
+  // a folder that is not there (a mod's overlay with no maps of its own) has no maps to learn from
   const paths = Array.isArray(source)
     ? source
-    : readdirSync(source)
+    : !existsSync(source)
+      ? []
+      : readdirSync(source)
         .filter((name) => /\.bsp$/i.test(name))
         .sort()
         .map((name) => join(source, name));

@@ -379,6 +379,8 @@ test("a mod's own maps teach its classes: how often, point or brush, each key wi
     refuses(() => maps.learnEntities(7), /the folder of a mod's \.bsp files, or a list/) === true,
     "a number",
   );
+  // a mod's overlay of models and scripts given first (map-viewer --game) has no maps/ of its own
+  sure(maps.learnEntities(join(MAPS, "no-such-folder")).maps === 0, "a folder that is not there: no maps, not a fault");
   sure(
     maps.entitiesOfFile(join(MAPS, "first.bsp")).length === tworooms.entities.length + 5,
     "one map's entities, fast",
