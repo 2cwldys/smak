@@ -44,6 +44,10 @@ import { into, out, box, uniq } from "./vec.mjs";
  *   attachments  [{ name, bone, pos (in the bone's space) }]
  *   controllers  [{ bone, type, start, end, rest, index }]
  *   eyes       [x, y, z], where it sees from; and min, max, bbmin, bbmax, the header's boxes
+ *   skins      more skin families after the first (the one the meshes wear): [{ [texture name]: texture }],
+ *              each family the textures it changes, by the name of the one each takes the place of; one it does
+ *              not name it wears as the first does. A replacement must be of the same size as the one it stands
+ *              for (the corners are in its pixels). A script shows family n with the entity's skin n.
  * A weapon's first-person model is still better begun from the one the game has, with swapMesh: the game's
  * code knows its animations and attachments by number.
  */
@@ -62,6 +66,7 @@ export function buildMdl({
   max,
   bbmin,
   bbmax,
+  skins,
 }) {
   // each bone's matrix at rest, and its inverse: from the model's space into the bone's
   const rest = boneMatrices(bones);
@@ -120,11 +125,32 @@ export function buildMdl({
     }),
   }));
   const still = bones.map((bone) => [...(bone.pos ?? [0, 0, 0]), ...(bone.rot ?? [0, 0, 0])]);
+  // the skin families: the first is every texture as the meshes wear it; the others put theirs in its place
+  let families = null;
+  if (skins?.length) {
+    const worn = textures.slice();
+    families = [worn.map((_, i) => i)];
+    for (const family of skins) {
+      for (const named of Object.keys(family))
+        if (!worn.some((t) => t.name === named)) throw new Error(`${name}: a skin changes ${named}, a texture no mesh wears`);
+      families.push(
+        worn.map((texture, i) => {
+          const other = family[texture.name];
+          if (!other) return i;
+          if (other.width !== texture.width || other.height !== texture.height)
+            throw new Error(`${name}: ${other.name} is ${other.width}x${other.height}, ${texture.name} ${texture.width}x${texture.height}: a skin's texture is of the size of the one it stands for`);
+          const known = textures.findIndex((t) => t.name === other.name);
+          return known >= 0 ? known : textures.push(other) - 1;
+        }),
+      );
+    }
+  }
   return writeMdl({
     name,
     bones,
     sequences: sequences ?? [{ name: "idle", fps: 10, loops: true, frames: [still] }],
     textures,
+    skins: families,
     bodyparts: parts,
     hitboxes,
     attachments,

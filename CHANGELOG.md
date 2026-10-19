@@ -3,6 +3,12 @@
 The newest first. A version that changes what a model's file looks like, or that a model made before needs
 mending for, says so under **Mind**.
 
+## Not released yet
+
+- **`buildMdl({ skins })`**: skin families after the first, each the textures it changes by the name of the one
+  each stands for (of the same size); a script or an entity shows family n with skin n. A bought character in
+  liveries of its own (the Old Orchard's militia) is one model, not one a livery.
+
 ## 0.20.0 (2026-10-19)
 
 What Master Sword Rebirth's Thornlands showed an outdoor map wants (the orchard's second version, built with it).
