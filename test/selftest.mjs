@@ -70,6 +70,8 @@ const areas = [
   "60-reduce", // fewer triangles: the quadric reducer keeps a shape closed, its border, its volume and its charts
   "61-decompile", // a compiled map made back into a .map (Half-Life's frenzy where installed), recompiled, and measured against its original
   "62-sprites", // sprites made of layers of effects by rule: glows, flares, fire, beams, billows, blobs; measured against a reference; a .spr written as it is read
+  "63-sounds", // sounds made of layers: a file written as it is read, measured, checked as the engine needs it, held against the game's own; a music track levelled by loudness
+  "64-sound-shape", // noise shaped to a curve, a limiter, grains at a period, a sound's picture read back
   "19-example-and-kit-faults", // the examples' wrong arguments and refused models; the kits' fittings and rings
 ];
 
