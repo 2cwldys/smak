@@ -139,22 +139,39 @@ function turned({ min, max }, q) {
 
 const overlaps = (a, b, gap = 0) => a.min[0] < b.max[0] + gap && b.min[0] < a.max[0] + gap && a.min[1] < b.max[1] + gap && b.min[1] < a.max[1] + gap;
 
+/** The words of a room's `use`: the kit's own, and a mod's (its profile's `spec.uses`). */
+export const useWordsOf = (uses = {}) => [...new Set([...USE_WORDS, ...Object.keys(uses)])];
+
+/**
+ * A thing of a mod's (`{ model, r, wall, lift }`, as interiors.mjs's ROOM_THINGS: `r` the room it takes on the
+ * plan, `wall` how far its middle stands off a wall, `lift` how far its origin is over its foot) as a piece
+ * facing +x with its back at x 0: its footprint, and where its origin is in it.
+ */
+function thingPiece(thing) {
+  const r = thing.r ?? 16;
+  const off = thing.wall ?? r;
+  return { print: { min: [0, -r], max: [off + r, r] }, origin: [off, 0], model: thing.model, z: thing.lift ?? 0 };
+}
+
 /**
  * Dressing for every room with a `use`. `rooms`: [{ id, min, max, spec }]; `ways`: the floor kept clear in front
  * of each way through ({ min: [x, y], max: [x, y] }); `landmarks`: footprints to keep clear of; `taken`:
- * footprints already standing. Returns { prefabs: { name: prefab }, furniture: [{ prefab, room, at, rotate }],
- * facts }.
+ * footprints already standing. `uses` and `things`: a mod's own (its profile's `spec`): uses written as USES are,
+ * whose kinds name its things, models of the game's that stand against a wall, in a corner or in the middle
+ * (`middle`: one, along the room's long way). Returns { prefabs: { name: prefab }, furniture: [{ prefab, room, at,
+ * rotate }], props: [{ model, room, at, facing, z, print }], facts }.
  */
-export function dressRooms({ rooms, ways = [], landmarks = [], taken = [], seed = 1 }) {
+export function dressRooms({ rooms, ways = [], landmarks = [], taken = [], seed = 1, uses = {}, things = {} }) {
   const prefabs = {};
   const furniture = [];
+  const props = [];
   const facts = [];
   let s = seed >>> 0 || 1;
   const random = () => ((s = (s * 1103515245 + 12345) >>> 0) / 4294967296);
   for (const room of rooms) {
     const use = room.spec?.use;
     if (!use) continue;
-    const rules = USES[use];
+    const rules = uses[use] ?? USES[use];
     if (!rules) continue;
     const [x0, y0] = room.min;
     const [x1, y1] = room.max;
@@ -182,16 +199,29 @@ export function dressRooms({ rooms, ways = [], landmarks = [], taken = [], seed 
       // pieces, and its map went over Valve's planes a floor)
       const want = Math.max(k === 0 ? 1 : 0, Math.round((area / (256 * 256)) * per));
       let got = 0;
+      // a mod's thing in the middle of the room: one, along its long way, its middle kept clear of the ways
+      if (where === "middle") {
+        const thing = things[variants[0]];
+        const r = thing?.r ?? 16;
+        const print = { min: [mid[0] - r, mid[1] - r], max: [mid[0] + r, mid[1] + r] };
+        if (want > 0 && thing && !blocked.some((b) => overlaps(print, b, 8)) && !placed.some((p) => overlaps(print, p, 6))) {
+          placed.push(print);
+          used.set(variants[0], (used.get(variants[0]) ?? 0) + 1);
+          props.push({ model: thing.model, room: room.id, at: [0, 0], facing: x1 - x0 >= y1 - y0 ? 0 : 90, z: thing.lift ?? 0, print: { min: [-r, -r], max: [r, r] }, dressed: true });
+        }
+        continue;
+      }
       for (const spot of spots) {
         if (got >= want) break;
         if ((where === "corner") !== Boolean(spot.corner) && !(where === "wall" && !spot.corner)) continue;
-        // a variant not yet used twice here
-        const free = variants.filter((v) => (used.get(v) ?? 0) < 2);
+        // a variant not yet used twice here (a mod's thing, a model of the game's, four times: a store's barrels)
+        const free = variants.filter((v) => (things[v] || PIECES[v]) && (used.get(v) ?? 0) < (things[v] ? MOST_THINGS : 2));
         if (!free.length) break;
         const name = free[Math.floor(random() * free.length)];
+        const piece = things[name] ? thingPiece(things[name]) : null;
         const prefab = PIECES[name];
         const q = QUARTERS[spot.wall];
-        const own = turned(printOf(prefab), q);
+        const own = turned(piece ? piece.print : printOf(prefab), q);
         // its back against the wall at the spot, its side clear of the corner's other wall
         const at = [...spot.at];
         if (spot.wall === "west") at[0] = x0 + inset - own.min[0];
@@ -208,12 +238,26 @@ export function dressRooms({ rooms, ways = [], landmarks = [], taken = [], seed 
         if ((spot.wall === "west" || spot.wall === "east" ? own.max[0] - own.min[0] : own.max[1] - own.min[1]) > depth / 3) continue;
         placed.push(print);
         used.set(name, (used.get(name) ?? 0) + 1);
-        prefabs[`dress_${name}`] = PIECES[name];
-        furniture.push({ prefab: `dress_${name}`, room: room.id, at: [at[0] - mid[0], at[1] - mid[1]], rotate: 90 * q, dressed: true });
+        if (piece) {
+          // the model stands at its origin, turned as the piece is: its footprint about that
+          const [ox, oy] = turnedPoint(piece.origin, q);
+          props.push({ model: piece.model, room: room.id, at: [at[0] + ox - mid[0], at[1] + oy - mid[1]], facing: 90 * q, z: piece.z, print: { min: [own.min[0] - ox, own.min[1] - oy], max: [own.max[0] - ox, own.max[1] - oy] }, dressed: true });
+        } else {
+          prefabs[`dress_${name}`] = PIECES[name];
+          furniture.push({ prefab: `dress_${name}`, room: room.id, at: [at[0] - mid[0], at[1] - mid[1]], rotate: 90 * q, dressed: true });
+        }
         got++;
       }
     }
     facts.push(`${room.id} (${use}): ${placed.length} pieces (${[...used].map(([n, k]) => `${k} ${n}`).join(", ")})`);
   }
-  return { prefabs, furniture, facts };
+  return { prefabs, furniture, props, facts };
+}
+
+/** How many of one thing of a mod's a room takes at most. */
+const MOST_THINGS = 4;
+/** A point turned by quarter turns `q`, as `turned` turns a footprint. */
+function turnedPoint([x, y], q) {
+  for (let i = 0; i < ((q % 4) + 4) % 4; i++) [x, y] = [-y, x];
+  return [x, y];
 }

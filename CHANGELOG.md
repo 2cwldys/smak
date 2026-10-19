@@ -48,6 +48,12 @@ From Steven Linn's fork, [stevenlafl/smak](https://github.com/stevenlafl/smak), 
   models (`kit:<name>`), ladders, frames, banded walls, composed light, a landmark seen from each way in, its own
   .wad, sky, sounds and music, modules taken in; checked, walked, compiled when VHLT is found, swept, measured
   against Valve's dressing, drawn, and told against the last build. The map in a folder of its name.
+- **A mod's map from a spec** (`"mod"` in a map spec, or `smak build --mod <profile>`): its places to start are
+  the mod's, stood on the floor, and the plan and the walk test go by its classes and rules; its folders are where
+  the game's .wad files and models are found; a profile's `spec` gives the game's own textures, the class a prop
+  is and rooms furnished by their `use` with the game's models. Master Sword's profile has one: ms_generic.wad's
+  flags, laid stone and planks, env_model props, and a tavern, hall, store, bedroom, kitchen, library and crypt
+  furnished with its tables, barrels, shelves, hearth, beds and urns (ROOM_THINGS).
 - **Models from a spec** (`smak build`, `smak.model/1`; Steven Linn's fork, `buildModelSpec`): parts placed by
   what they sit on (boxes, turned parts, tubes, superquadrics, bands, studs, the kits' weapons, prefabs), a
   character on a game's skeleton keeping its bones and animations and held apart in its run, walk, crouch and

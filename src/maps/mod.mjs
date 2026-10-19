@@ -52,6 +52,11 @@
 //     items         { name: family }: the families of held items, each as `addItem` of src/items.mjs takes one
 //                   (which files, bodyparts and bones a kind of item is shown from, and the game's own
 //                   thing each new one is laid on); `smak item --family <name>` reads them here
+//     spec          what a map spec of the mod is built with where it says nothing (src/spec/map.mjs, `smak
+//                   build --mod`): { wads, theme, textures, prop: { class, keys }, things, uses }: the game's
+//                   .wad files and the theme's words as its textures, the class a prop is, and its models
+//                   (`things`, { name: { model, r, wall, lift } }) that rooms are furnished with by their `use`
+//                   (`uses`, written as src/spec/dress.mjs's are)
 //   }
 //
 // The kit ships one profile, `GOLDSRC`: Half-Life's own, with nothing of any mod in it. A mod's profile is

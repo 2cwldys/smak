@@ -881,6 +881,33 @@ Name the game's .wad files in `wads` and give a material as a texture of them:
 `smak wad <file.wad>` lists a .wad's textures. A game's textures are its authors': a map built with them
 names them and the game's .wad, and copies nothing (AGENTS.md, rule 7).
 
+### A mod's map
+
+`"mod": "profiles/mastersword.mjs"` (a profile's file beside the spec, or `--mod`; docs/MAPS-MAKING.md, "A
+mod's profile") makes the map one of that mod's, with its folders given by `--game` (the mod's first):
+
+- a place to start is one of the mod's `starts` (Master Sword's `ms_player_begin`, `ms_player_spawn`), its box
+  stood on the floor; the plan, the walk test and the entities are held to the mod's classes and rules (Master
+  Sword's: a map with no `ms_player_spec` or `ms_player_spawn` drops a player who connects);
+- its .wad files and models are found in its folders;
+- its profile's `spec` gives what the spec leaves out: the game's own .wad files (`wads`), the theme's words as
+  the game's textures (Master Sword's: `ms_generic.wad`, flags, laid stone, planks, its wooden door), the class a
+  prop is (`env_model`), and rooms furnished by their `use` with the game's models: `tavern`, `hall`, `store`,
+  `bedroom`, `kitchen`, `library`, `crypt` (tables in the middle, barrels in the corners, shelves, a hearth, beds,
+  urns), besides the kit's own uses. The spec's own words stand over the profile's.
+
+```json
+{ "spec": "smak.map/1", "name": "tavern", "mod": "../smak/profiles/mastersword.mjs",
+  "rooms": [{ "id": "taproom", "size": [448, 320, 160], "use": "tavern" },
+            { "id": "cellar", "size": [320, 256, 128], "place": { "east_of": "taproom" }, "use": "store" }],
+  "links": [{ "between": ["taproom", "cellar"], "kind": "door" }],
+  "entities": [{ "class": "ms_player_begin", "room": "taproom", "at": "against west" },
+               { "class": "ms_player_spawn", "room": "taproom", "at": "corner se", "keys": { "message": "from_town" } }] }
+```
+
+`smak build tavern.json --game <Half-Life>/msc --game <Half-Life>/valve`. Its own .wad (the textures the spec
+paints) goes into the mod's folder beside the map.
+
 ### Entities
 
 Write every entity's class and keys from the game's FGD, never from memory (`smak map-fgd` reads one, and a

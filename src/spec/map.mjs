@@ -4,17 +4,23 @@
 // out of one block of rock (so it cannot leak), its pictures made into a .wad of its own, checked, walked,
 // compiled when the compilers are there, and drawn.
 //
-//   buildMapSpec(spec, { out, compilers, prefabs })  -> { map, report, files }
-//   validateMapSpec(spec)                            -> { errors, warnings }
+//   buildMapSpec(spec, { out, compilers, prefabs, mod })  -> { map, report, files }
+//   validateMapSpec(spec, { mod })                   -> { errors, warnings }
 //   layoutOf(spec)                                   -> the rooms as boxes, before anything else is built
 //
 // docs/SPEC.md is the guide. Axes as every map's: +x east, +y north, +z up, a unit about an inch.
+//
+// For a mod (`mod`: its profile, src/maps/mod.mjs) the map is the mod's: a place to start is one of its
+// `starts`, the plan and the walk test go by its classes, its folders are where the game's .wad files and models
+// are found, and its profile's `spec` (`{ wads, theme, textures, prop, things, uses }`) gives what the spec does
+// not say: the game's own textures, the class its props are, and rooms furnished by their `use` with its models.
 import { writeFileSync, mkdirSync, readFileSync, existsSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join, resolve, dirname, basename } from "node:path";
 import { openBoxesOf } from "../maps/heightplan.mjs";
 import { carve, box, cylinder, wedge, prism, stairs as stairBrushes, light, sunLight, textureLights, playerStart, pointEntity, brushEntity, writeMap, readMap, subtract, moved, shapeOf, onFloor } from "../maps/source.mjs";
 import { checkPlan } from "../maps/plan.mjs";
+import { modOf } from "../maps/mod.mjs";
 import { definitionsOf } from "../maps/fgd.mjs";
 import { reachOf } from "../maps/reach.mjs";
 import { writeWad, readWad } from "../maps/wad.mjs";
@@ -29,7 +35,7 @@ import { dressingOf } from "../maps/dressing.mjs";
 import { familyOf } from "../maps/families.mjs";
 import { spaceOf } from "../maps/space.mjs";
 import { focusSpec, focusSeen } from "./focus.mjs";
-import { breaksOf, dressRooms, BREAK_WORDS, USE_WORDS, DRESS_MATERIALS } from "./dress.mjs";
+import { breaksOf, dressRooms, useWordsOf, BREAK_WORDS, DRESS_MATERIALS } from "./dress.mjs";
 import { tile, label, render } from "../render.mjs";
 import { png, unpicture } from "../image.mjs";
 import { materialOf, surfacePicture, MATERIALS, UNWORN } from "./paint.mjs";
@@ -44,7 +50,7 @@ export const MAP_SPEC = "smak.map/1";
 const MAP_SIZE_WARN = 0.1;
 const MAP_SIZE_ERROR = 0.25;
 
-const TOP = ["spec", "name", "size", "wall", "grid", "theme", "textures", "rooms", "links", "entities", "props", "furniture", "prefabs", "models", "layout", "sky", "sun", "night", "include", "replace", "sounds", "fgd", "wads", "compile", "detail", "note", "ladders", "fidelity", "music", "floorplan", "frame", "lighting", "focus"];
+const TOP = ["spec", "name", "mod", "size", "wall", "grid", "theme", "textures", "rooms", "links", "entities", "props", "furniture", "prefabs", "models", "layout", "sky", "sun", "night", "include", "replace", "sounds", "fgd", "wads", "compile", "detail", "note", "ladders", "fidelity", "music", "floorplan", "frame", "lighting", "focus"];
 /** A ladder's depth off its wall, and its width unless told: Valve's frenzy's are 32 wide. */
 const LADDER = { depth: 6, width: 32 };
 const ROOM = ["id", "size", "at", "place", "floor", "sky", "surfaces", "light", "water", "test", "building", "dark", "note", "frame", "use"];
@@ -153,6 +159,21 @@ const OVERHANG = 0.5;
 const RISE = 16;
 const TREAD = 24;
 const FACINGS = { east: 0, north: 90, west: 180, south: 270 };
+/**
+ * A spec with what a mod's profile gives (`profile.spec`) where it says nothing: the .wad files to take the
+ * game's textures from, the theme's words and the textures they name. The spec's own stand over them.
+ */
+export function withProfile(spec, profile) {
+  const made = profile?.spec;
+  if (!made || !spec || typeof spec !== "object") return spec;
+  return {
+    ...spec,
+    ...(spec.wads === undefined && made.wads ? { wads: made.wads } : {}),
+    theme: { ...(made.theme ?? {}), ...(spec.theme ?? {}) },
+    textures: { ...(made.textures ?? {}), ...(spec.textures ?? {}) },
+  };
+}
+
 /** The theme's words: what a module keeps of its own under its prefix. */
 const THEME_FACES = ["floor", "ceiling", "wall", "door", "furniture", "outside", "roof"];
 /** A side of a room: the axis its wall is across and which way out it faces. */
@@ -268,7 +289,7 @@ export function readLayout(layout) {
  * `include: [{ spec: "noodle_bar.json", as: "noodle", place: { north_of: "street", align: 64 } }]`. The
  * larger map's links name a module's rooms by their prefixed ids (`noodle_shop`).
  */
-export function withIncludes(spec, folder = ".") {
+export function withIncludes(spec, folder = ".", starts = []) {
   if (!spec?.include?.length) return spec;
   const out = { ...spec, rooms: [...(spec.rooms ?? [])], links: [...(spec.links ?? [])], entities: [...(spec.entities ?? [])] };
   for (const key of ["furniture", "props", "sounds"]) out[key] = [...(spec[key] ?? [])];
@@ -276,7 +297,7 @@ export function withIncludes(spec, folder = ".") {
   const hostTheme = { floor: "stone", wall: "plaster", ceiling: "planks", door: "door", furniture: "darkwood", outside: "siding", roof: "shingles", ...(spec.theme ?? {}) };
   for (const [n, given] of spec.include.entries()) {
     const file = resolve(folder, given.spec);
-    const inner = withIncludes(JSON.parse(readFileSync(file, "utf8")), dirname(file));
+    const inner = withIncludes(JSON.parse(readFileSync(file, "utf8")), dirname(file), starts);
     const as = given.as ?? `m${n}`;
     const id = (name) => `${as}_${name}`;
     const here = dirname(file);
@@ -338,7 +359,7 @@ export function withIncludes(spec, folder = ".") {
       ...(typeof thing.at === "string" && /^near /.test(thing.at) && ids.has(thing.at.slice(5)) ? { at: `near ${id(thing.at.slice(5))}` } : {}),
     });
     for (const thing of inner.entities ?? [])
-      if (!/^info_player_/.test(thing.class)) out.entities.push({ ...named(thing), ...(thing.id ? { id: id(thing.id) } : {}) });
+      if (!/^info_player_/.test(thing.class) && !starts.includes(thing.class)) out.entities.push({ ...named(thing), ...(thing.id ? { id: id(thing.id) } : {}) });
     for (const [name, prefab] of Object.entries(inner.prefabs ?? {}))
       out.prefabs[id(name)] = prefab.file
         ? { ...prefab, file: resolve(here, prefab.file) }
@@ -368,7 +389,8 @@ export function withIncludes(spec, folder = ".") {
 }
 
 /** What is wrong with a map spec before anything is built: { errors, warnings }, each with its path. */
-export function validateMapSpec(spec) {
+export function validateMapSpec(spec, { mod } = {}) {
+  const profile = modOf(mod);
   const errors = [];
   const warnings = [];
   if (!spec || typeof spec !== "object") return { errors: ["the spec is not an object"], warnings };
@@ -467,8 +489,10 @@ export function validateMapSpec(spec) {
       const inner = validateModelSpec(model);
       errors.push(...inner.errors.map((e) => `models.${name}.${e}`));
     }
-  if (!(spec.entities ?? []).some((e) => /^info_player_(start|deathmatch)$/.test(e.class)))
-    errors.push("entities: a place to start (info_player_start) in one room at least");
+  // a place to start: Half-Life's, or one of the mod's (Master Sword's ms_player_begin)
+  const starts = profile?.starts ?? ["info_player_start", "info_player_deathmatch"];
+  if (!(spec.entities ?? []).some((e) => starts.includes(e.class)))
+    errors.push(`entities: a place to start (${starts.join(" or ")}) in one room at least`);
   if (spec.focus !== undefined) errors.push(...focusSpec(spec).errors);
   return { errors, warnings };
 }
@@ -683,21 +707,26 @@ function placedPrefab(prefab, at, quarters, textureOf) {
 /** A floor plan with more floor than this (square units) and no areas is told it wears one look throughout. */
 const ONE_LOOK_AREA = 1_000_000;
 
-export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [], readPicture, readFile } = {}) {
+export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [], readPicture, readFile, mod } = {}) {
   let spec;
+  let profile;
   try {
-    spec = withIncludes(given, folder ?? ".");
+    profile = modOf(mod);
+    spec = withIncludes(withProfile(given, profile), folder ?? ".", profile?.starts ?? []);
   } catch (error) {
     return { report: { ok: false, errors: [error.message], faults: [], warnings: [], facts: [], rooms: {} }, files: {}, map: null };
   }
   const replaced = replacedIn(spec);
   spec = replaced.spec;
-  const { errors, warnings } = validateMapSpec(spec);
+  const { errors, warnings } = validateMapSpec(spec, { mod: profile });
   errors.push(...replaced.errors);
   // the main room and its landmark put in (src/spec/focus.mjs): a centrepiece, its plinth, its lamp, the light's goal
   const focused = errors.length ? { spec, focus: null, facts: [] } : focusSpec(spec);
   spec = focused.spec;
   const report = { ok: false, errors, faults: [], warnings, facts: [...replaced.facts, ...focused.facts], rooms: {} };
+  if (profile) report.facts.push(`built for ${profile.title ?? profile.name}: its places to start (${profile.starts.join(", ")}), its classes, its folders${profile.spec ? ", its textures, props and rooms' uses where the spec says none" : ""}`);
+  // the game's folders the build was given, and the mod's: where a .wad and a model of the game's are found
+  wads = [...[wads].flat(), ...(profile?.folders ?? [])];
   const files = {};
   if (spec.fidelity !== undefined && !["game", "high"].includes(spec.fidelity)) errors.push('fidelity: "game" or "high"');
   const frameFaults = (given, at) => {
@@ -718,7 +747,7 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
     return Object.entries(value).flatMap(([key, v]) => (!BREAK_WORDS.includes(key) ? [`${at}.${key}: not a word of breaks (${BREAK_WORDS.join(", ")})`] : ["pillar", "cove", "pipe"].includes(key) ? (typeof v === "number" && v > 0 ? [] : [`${at}.${key}: a size in units, over 0`]) : typeof v === "boolean" ? [] : [`${at}.${key}: true or false`]));
   };
   for (const [k, room] of (spec.rooms ?? []).entries())
-    if (room?.use !== undefined && !USE_WORDS.includes(room.use)) errors.push(`rooms[${k}].use: what the room is for, dressed by it: ${USE_WORDS.join(", ")}`);
+    if (room?.use !== undefined && !useWordsOf(profile?.spec?.uses).includes(room.use)) errors.push(`rooms[${k}].use: what the room is for, dressed by it: ${useWordsOf(profile?.spec?.uses).join(", ")}`);
   errors.push(...frameFaults(spec.frame, "frame"), ...(spec.rooms ?? []).flatMap((room, k) => frameFaults(room?.frame, `rooms[${k}].frame`)));
   if (spec.lighting !== undefined && typeof spec.lighting !== "boolean") {
     if (!spec.lighting || typeof spec.lighting !== "object") errors.push(`lighting: true, false, or { ${[...COMPOSED_NUMBERS, "goalRoom"].join(", ")} }`);
@@ -1754,13 +1783,17 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
   place(spec.furniture, "furniture", putFurniture, furniturePrint);
   // a room dressed for its use (src/spec/dress.mjs): its pieces placed clear of every way, of the landmark and of
   // what the spec put there, as the spec's own furniture is
+  const dressedProps = [];
   if ((spec.rooms ?? []).some((room) => room?.use)) {
     const dressed = dressRooms({
       rooms: [...rooms.values()].filter((room) => !room.sliver).map((room) => ({ id: room.id, min: room.min, max: room.max, spec: room.spec })),
       ways,
       taken: furniturePieces.map((p) => ({ min: [p.min[0], p.min[1]], max: [p.max[0], p.max[1]] })),
       seed: [...String(spec.name ?? "map")].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7),
+      uses: profile?.spec?.uses,
+      things: profile?.spec?.things,
     });
+    dressedProps.push(...dressed.props, ...dressed.furniture);
     Object.assign(prefabs, dressed.prefabs);
     const before = (spec.furniture ?? []).length;
     place(dressed.furniture, "dressing", (thing, room, at, i) => putFurniture(thing, room, at, before + i), furniturePrint);
@@ -1842,7 +1875,8 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
   }
   // a building's rooms with nothing in them: a house is lived in (Haiku's Kaupo had no furniture at all, and the
   // report never said so). Corridors and open rooms may be bare, as Valve's are
-  const holds = new Set([...(spec.furniture ?? []), ...(spec.props ?? []), ...(spec.entities ?? [])].filter((t) => !/^light/.test(t.class ?? "")).map((t) => t.room));
+  // what a room's use dressed it with counts (a tavern of the mod's tables and barrels was told it was bare)
+  const holds = new Set([...(spec.furniture ?? []), ...(spec.props ?? []), ...(spec.entities ?? []), ...dressedProps].filter((t) => !/^light/.test(t.class ?? "")).map((t) => t.room));
   const across = (room) => [room.max[0] - room.min[0], room.max[1] - room.min[1]].sort((p, q) => p - q);
   // a corridor (three times as long as it is wide or more) and a cupboard may be bare
   const bare = [...rooms.values()].filter((room) => room.building && !holds.has(room.id) && across(room)[0] >= ROOM_LEAST && across(room)[1] < 3 * across(room)[0]);
@@ -1922,13 +1956,15 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
     writeFileSync(files.models, png(sheet.width, sheet.height, sheet.rgba));
   }
   place(
-    spec.props,
+    [...(spec.props ?? []), ...dressedProps.filter((thing) => thing.model)],
     "props",
     (thing, room, at) => {
       const key = kitKey(thing.model);
       propsAt.push({ room: room.id, at, half: modelHeights[key] ? modelHeights[key] / 2 : 16 });
       const model = modelFiles[key] ?? thing.model;
-      entities.push(pointEntity(thing.class ?? "cycler_sprite", at, { model, angles: [0, yawOf(room, thing.facing, at), 0], ...(thing.keys ?? {}) }));
+      // a prop is the mod's class for one (Master Sword's env_model) unless told
+      const prop = profile?.spec?.prop ?? {};
+      entities.push(pointEntity(thing.class ?? prop.class ?? "cycler_sprite", at, { model, angles: [0, yawOf(room, thing.facing, at), 0], ...(prop.keys ?? {}), ...(thing.keys ?? {}) }));
       // a model is walked through in the game: furniture of the kit's, or a prop that says `solid: true`, is
       // given a CLIP box of its footprint and height, which stops a body and draws nothing
       if (thing.solid ?? String(thing.model).startsWith("kit:")) {
@@ -1940,7 +1976,7 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
       }
     },
     // a prop's footprint: its model's, turned as it faces (a facing that names a room counts as unturned)
-    (thing) => turnedPrint(modelPrints[kitKey(thing.model)] ?? { min: [-16, -16], max: [16, 16] }, isNumber(thing.facing) ? thing.facing : FACINGS[thing.facing] ?? 0),
+    (thing) => thing.print ?? turnedPrint(modelPrints[kitKey(thing.model)] ?? { min: [-16, -16], max: [16, 16] }, isNumber(thing.facing) ? thing.facing : FACINGS[thing.facing] ?? 0),
   );
   // a lamp is never in mid-air: one that hangs below the ceiling gets a shade over it and a rod up to the ceiling
   // (Steven's play-test: "random lights in the middle of the air"; src/maps/sweep.mjs finds them in any map)
@@ -1975,8 +2011,10 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
     const yaw = yawOf(room, thing.facing, at);
     const keys = { ...(thing.keys ?? {}) };
     if (thing.id) keys.targetname = thing.id;
-    if (/^info_player_/.test(thing.class)) {
-      const start = playerStart(at, yaw, thing.class);
+    if (/^info_player_/.test(thing.class) || profile?.starts.includes(thing.class)) {
+      // a place to start stands its box on the floor: its origin the box's middle (Half-Life's, Master Sword's)
+      // unless the mod says its starts' origin is at their feet
+      const start = profile?.origin?.starts === "feet" ? pointEntity(thing.class, at, { angles: [0, yaw, 0] }) : playerStart(at, yaw, thing.class);
       Object.assign(start, keys);
       entities.push(start);
     } else if (GLOWS.includes(thing.class)) {
@@ -2200,7 +2238,7 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
   if (focused.focus) {
     const laid = { worldspawn: {}, brushes, entities };
     const space = spaceOf(laid);
-    const startAt = report.placed.find((p) => p.what === "entities" && /^info_player_(start|deathmatch)$/.test(p.name))?.at;
+    const startAt = report.placed.find((p) => p.what === "entities" && (/^info_player_(start|deathmatch)$/.test(p.name) || profile?.starts.includes(p.name)))?.at;
     const ways = frameWays.filter((w) => w.kind !== "window").map((w) => ({ name: `links[${w.link}]`, hole: w.hole, axis: w.axis }));
     landmarkSeen = focusSeen(focused.focus, { sees: (a, b) => space.sees(a, b), placed: report.placed, rooms, ways, start: startAt ? [startAt[0], startAt[1], startAt[2] + 64] : null });
     report.facts.push(...landmarkSeen.facts);
@@ -2232,13 +2270,14 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
   // the entities held against the game's entity definitions (its FGD, and the compilers' own), when given
   const fgds = [...[fgd].flat(), ...[spec.fgd ?? []].flat().map((file) => resolve(folder ?? ".", file))];
   const definitions = fgds.length ? definitionsOf(...fgds) : undefined;
-  const plan = checkPlan(map, { textures, definitions });
+  const plan = checkPlan(map, { textures, definitions, ...(profile ? { mod: profile } : {}) });
   if (definitions) report.facts.push(`entities checked against ${definitions.from.join(", ")} (${Object.keys(definitions.classes).length} classes)`);
+  else if (profile) report.facts.push(`entities checked against the profile of ${profile.title ?? profile.name}`);
   else warnings.push("no FGD given: the entities' classes and keys were not checked against the game's definitions");
   report.faults.push(...plan.errors);
   warnings.push(...plan.warnings);
   if (plan.leak) report.faults.push("the plan's flood finds a way out to the void: the map leaks");
-  const walk = reachOf(map);
+  const walk = reachOf(map, profile ? { mod: profile } : {});
   // the walk test's own sentences: faults when it found an entity not reached, one in solid or a one-way
   // place; otherwise what it says (an opening a player only just fits) is a warning
   const walkFaults = walk.unreached.length + walk.stuck.length + walk.oneWay.length;
@@ -2314,7 +2353,7 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
           else report.facts.push(`${said}: its floor's light is ${Math.round(room.mean)} of 255, ${Math.round(room.darkShare * 100)}% of it dark`);
         }
       }
-      const walked = reachOf(bsp);
+      const walked = reachOf(bsp, profile ? { mod: profile } : {});
       if (walked.unreached.length + walked.stuck.length) report.faults.push(...walked.warnings.map((line) => `walk of the compiled map: ${line}`));
       // what a player would find walking it: drops that hurt, lights in mid-air
       const swept = sweepOf(bsp, { reach: walked });
@@ -2328,7 +2367,7 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
       if (seenFloating.length) report.faults.push(`sweep: ${seenFloating.length} glows or sprites hang in the air with nothing within ${LIGHT_REACH} of them: put each on the lamp or the wall it shines from`);
       if (swept.drops.length) warnings.push(`sweep: ${swept.drops.length} places a player can step off and fall far enough to be hurt (more than ${SAFE_DROP}), the farthest ${swept.drops[0].fall} at ${swept.drops[0].at.join(" ")}: mean each, or rail it`);
       // a night map's sky drawn dark: without the game's own sky pictures the views fill it with a day's blue
-      const drawing = { folders: [out, dirname(out), ...gameWads.map((file) => dirname(file))], models: true, ...(spec.night && typeof spec.sky !== "object" ? { sky: [10, 12, 22] } : {}) };
+      const drawing = { folders: [out, dirname(out), ...gameWads.map((file) => dirname(file)), ...(profile?.folders ?? [])], models: true, ...(spec.night && typeof spec.sky !== "object" ? { sky: [10, 12, 22] } : {}) };
       save("plan", planOf(bsp, drawing));
       // a view of every room, from a corner by its walls looking across it to the far corner
       const viewSpots = [];

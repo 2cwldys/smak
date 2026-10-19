@@ -720,3 +720,46 @@ test("smak build: a map spec built in a folder of its name, its rooms listed, wh
   const refused = runRefused(SMAK_CLI, "build", join(folder, "bad.json"));
   sure(refused.code === 1 && /ERROR/.test(refused.out), refused.out + refused.err);
 });
+
+test("a mod's map spec: its own places to start, its game's textures and props, rooms furnished by its uses", () => {
+  // a mod of the kind Master Sword is: its starts, its .wad in its folder, an env_model a prop, a store of barrels
+  const game = join(folder, "modgame");
+  mkdirSync(game, { recursive: true });
+  const plain = (v) => ({ width: 64, height: 64, rgb: new Uint8Array(64 * 64 * 3).fill(v) });
+  writeFileSync(join(game, "medieval.wad"), smak.maps.writeWad([{ name: "md_flags", image: plain(90) }, { name: "md_stone", image: plain(110) }, { name: "md_planks", image: plain(70) }, { name: "md_door", image: plain(60) }]));
+  const mod = {
+    name: "medieval",
+    title: "a medieval mod",
+    folders: [game],
+    starts: ["md_player_begin"],
+    spec: {
+      wads: ["medieval.wad"],
+      theme: { floor: "md_floor", wall: "md_wall", ceiling: "md_ceiling", door: "md_door" },
+      textures: { md_floor: { texture: "md_flags" }, md_wall: { texture: "md_stone" }, md_ceiling: { texture: "md_planks" }, md_door: { texture: "md_door" } },
+      prop: { class: "env_model" },
+      things: { barrel: { model: "models/props/barrel.mdl", r: 26, wall: 28 }, chest: { model: "models/props/chest.mdl", r: 20, wall: 14 } },
+      uses: { store: [["barrel", ["barrel"], "corner", 1.5], ["chest", ["chest"], "wall", 0.5]] },
+    },
+  };
+  const spec = { spec: "smak.map/1", name: "modstore", rooms: [{ id: "hall", size: [256, 256, 128] }, { id: "store", size: [320, 256, 128], place: { east_of: "hall" }, use: "store" }], links: [{ between: ["hall", "store"], kind: "door" }], entities: [{ class: "md_player_begin", room: "hall", at: "centre" }] };
+  const none = { compilers: { found: false, message: "" } };
+  // without the mod: its start is no place to start, and its use is none of the kit's
+  const alone = buildMapSpec(spec, { out: join(folder, "modstore-alone"), ...none }).report.errors;
+  sure(alone.some((e) => /a place to start \(info_player_start or info_player_deathmatch\)/.test(e)) && alone.some((e) => /rooms\[1\]\.use: .*storage/.test(e)), alone.join("; "));
+  const { report, files } = buildMapSpec(spec, { out: join(folder, "modstore"), mod, ...none });
+  sure(report.errors.length === 0 && !report.faults.some((f) => !/not compiled/.test(f)), [...report.errors, ...report.faults].join("; "));
+  sure(report.facts.some((f) => /^built for a medieval mod: its places to start \(md_player_begin\)/.test(f)) && report.facts.some((f) => /^md_floor: md_flags of medieval\.wad, as named/.test(f)), report.facts.join(" | "));
+  sure(report.facts.some((f) => /walked from 1 places to start: 1 md_player_begin/.test(f)), report.facts.filter((f) => /walked/.test(f)).join(" | "));
+  const map = smak.maps.readMap(readFileSync(files.map, "utf8"));
+  // the start's box stands on the floor: its origin, the box's middle, 36 over it
+  const start = map.entities.find((e) => e.classname === "md_player_begin");
+  sure(start && Number(start.origin.split(" ")[2]) === 36, JSON.stringify(start));
+  // the store furnished with the mod's models as its props are: barrels in its corners, a chest against a wall
+  const props = map.entities.filter((e) => e.classname === "env_model");
+  sure(props.filter((e) => e.model === "models/props/barrel.mdl").length >= 2 && props.some((e) => e.model === "models/props/chest.mdl"), JSON.stringify(props.map((e) => [e.model, e.origin])));
+  sure(props.every((e) => Number(e.origin.split(" ")[0]) > 128), "all in the store, east of the hall");
+  sure(report.facts.some((f) => /dressed by use: store \(store\): \d+ pieces \(.*barrel/.test(f)), report.facts.filter((f) => /dressed/.test(f)).join(" | "));
+  // the spec's own words stand over the mod's
+  const own = buildMapSpec({ ...spec, name: "modstore2", theme: { floor: "oak" }, textures: { oak: { base: "wood" } } }, { out: join(folder, "modstore2"), mod, ...none }).report;
+  sure(!own.facts.some((f) => /^md_floor:/.test(f)) && own.facts.some((f) => /^md_wall: md_stone/.test(f)), own.facts.filter((f) => /^md_/.test(f)).join(" | "));
+});

@@ -2393,7 +2393,8 @@ async function modelSpecCommand({ command, file, flags, listed }) {
  * map (smak.map/1, docs/SPEC.md): the map built in a folder of its name beside the spec (-o another): its .map,
  * its own .wad, its models and sounds, compiled when the compilers are found (VHLT_DIR, the PATH or --vhlt) and
  * then walked and lit, and its pictures (plan, views, sections, props). --game the folders the game's .wad files
- * and models are found in; --fgd entity definitions its entities are held to; --reference drawn beside the plan.
+ * and models are found in; --fgd entity definitions its entities are held to; --reference drawn beside the plan;
+ * --mod (or the spec's `mod`, a profile's file beside it) the mod it is a map of (src/maps/mod.mjs).
  */
 async function mapSpecCommand({ command, file, flags, listed }) {
   const { buildMapSpec } = await import("../src/spec/map.mjs");
@@ -2409,9 +2410,13 @@ async function mapSpecCommand({ command, file, flags, listed }) {
     }
   };
   const readFile = (given) => readFileSync(existing(resolve(folder, String(given).replace(/^(work|models):/, ""))));
+  // a mod's profile: --mod, or the spec's own `mod` (a profile's file beside the spec, or goldsrc)
+  const modGiven = flags.mod ?? (typeof spec.mod === "string" ? (spec.mod === "goldsrc" ? "goldsrc" : resolve(folder, spec.mod)) : undefined);
+  const mod = await profileOf({ ...flags, mod: modGiven }, listed);
   const { report, files } = buildMapSpec(spec, {
     out,
     folder,
+    mod,
     compilers: flags.vhlt === undefined ? undefined : String(flags.vhlt),
     fgd: (listed.fgd ?? []).map(existing),
     wads: (listed.game ?? []).map(existingFolder),
@@ -3355,10 +3360,11 @@ const COMMANDS = {
   build: {
     run: buildCommand,
     own: true,
-    help: `  build <spec.json> [-o <folder>] [--game <folder>]... [--reference x.png] [--focus <part> ...] [--fgd x.fgd ...] [--vhlt <folder>]
+    help: `  build <spec.json> [-o <folder>] [--game <folder>]... [--reference x.png] [--focus <part> ...] [--fgd x.fgd ...] [--vhlt <folder>] [--mod <profile>]
                                             a spec built by its kind (its "spec"; docs/SPEC.md): smak.map/1 a map of rooms laid
                                             out by words, in a folder of its name: its .map and own .wad, compiled when VHLT is
-                                            found, walked, lit, its plan, views and sections drawn; smak.model/1 a model of parts,
+                                            found, walked, lit, its plan, views and sections drawn (--mod, or the spec's "mod":
+                                            a mod's map, its starts, classes, textures and rooms' uses); smak.model/1 a model of parts,
                                             checked, with its sheet of six views (a character on a game's skeleton, a weapon in
                                             place of a game's; --reference drawn beside it, --focus parts seen close); smak.wad/1
                                             textures painted into a .wad with a sheet of them (preview: { map, each }: the map

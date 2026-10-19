@@ -17,7 +17,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { GOLDSRC, definitionsOf, entitiesOfFile, isNamed } from "../src/maps/index.mjs";
+import { GOLDSRC, ROOM_THINGS, definitionsOf, entitiesOfFile, isNamed } from "../src/maps/index.mjs";
 
 /** The mod's folder in a Half-Life folder, its script pack and its FGDs, as the game ships them. */
 const MOD_FOLDER = "msc";
@@ -817,6 +817,38 @@ export default function masterSword({ game, folders, scripts = [], cache } = {})
       counter: "brush",
     },
 
+    // What a map spec (src/spec/map.mjs, `smak build --mod`) is built with where the spec does not say: the
+    // game's own textures of ms_generic.wad (one set made to go together; INTERIOR_SETS' keep and house), its
+    // props as the game's maps put them (an env_model), and rooms furnished by their `use` with the game's own
+    // models (ROOM_THINGS: each `r` its room on the plan, `wall` how far its middle stands off a wall)
+    spec: {
+      wads: ["ms_generic.wad"],
+      theme: { floor: "ms_floor", wall: "ms_wall", ceiling: "ms_ceiling", door: "ms_door", trim: "ms_trim", furniture: "ms_furniture", outside: "ms_outside", roof: "ms_roof" },
+      textures: {
+        ms_floor: { texture: "ms_floor03" },
+        ms_wall: { texture: "ms_stnwall01" },
+        ms_ceiling: { texture: "ms_wood02" },
+        ms_door: { texture: "ms_wddoor01" },
+        ms_trim: { texture: "ms_trim01" },
+        ms_furniture: { texture: "ms_wood04" },
+        ms_outside: { texture: "ms_wall01" },
+        ms_roof: { texture: "ms_roof01" },
+      },
+      prop: { class: "env_model" },
+      things: ROOM_THINGS,
+      // each [what, the things it is one of, where (wall, corner or middle), how many to a 256 x 256 of
+      // floor (the first at least one)], as dress.mjs's uses are written; read off the game's interiors
+      // (ROOM_USES): a hearth once in a kitchen, shelves along a library, urns and bones in a crypt
+      uses: {
+        tavern: [["table", ["table"], "middle", 0.6], ["barrel", ["barrel"], "corner", 0.8], ["shelves", ["shelves"], "wall", 0.3], ["chest", ["chest"], "wall", 0.2]],
+        hall: [["table", ["table"], "middle", 0.4], ["shelves", ["shelves"], "wall", 0.3], ["chest", ["chest"], "wall", 0.3], ["barrel", ["barrel"], "corner", 0.3]],
+        store: [["barrel", ["barrel"], "corner", 1.2], ["chest", ["chest"], "wall", 0.6], ["urns", ["urns"], "wall", 0.3]],
+        bedroom: [["bed", ["bed"], "wall", 0.5], ["chest", ["chest"], "wall", 0.4], ["table", ["smallTable"], "wall", 0.3]],
+        kitchen: [["hearth", ["hearth"], "wall", 0], ["table", ["table"], "middle", 0.4], ["barrel", ["barrel"], "corner", 0.6], ["pot", ["pot"], "wall", 0.3]],
+        library: [["shelves", ["shelves"], "wall", 1], ["table", ["table"], "middle", 0.3]],
+        crypt: [["urns", ["urns"], "wall", 0.8], ["skeleton", ["skeleton"], "wall", 0.3], ["treasure", ["treasure"], "corner", 0.2]],
+      },
+    },
     // A map's character against the game's own (character.mjs, `smak map-character`): what is a prop, a
     // sound and music here, and the figures of 94 of the game's 100 maps (all but char_recover,
     // test_scripts, the three pvp_ maps and ms_soccer), [lower quartile, median, upper quartile], measured
