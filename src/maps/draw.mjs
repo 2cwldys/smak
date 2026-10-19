@@ -1476,7 +1476,7 @@ export function drawMap(bsp, options = {}) {
   const seen = facesSeenFrom(bsp, leaf);
   if (contents === CONTENTS.SOLID)
     notes.push(
-      "the eye is in solid (inside a wall or outside the map): every face is drawn, from behind where it looks away",
+      "the eye is in solid (inside a wall or outside the map): every face is drawn, from behind where it looks away, but the sky's",
     );
   else if (!seen.byVisibility)
     notes.push("the map keeps no visibility for the eye's leaf: every face is drawn");
@@ -1502,7 +1502,13 @@ export function drawMap(bsp, options = {}) {
     if (fill(canvas, view, surface, shift, paint, table)) faces++;
   };
   const plain = { alpha: 1, additive: false, holes: false };
-  for (const face of seen.faces) draw(scene.surfaceAt(face), [0, 0, 0], plain);
+  // from outside the map the sky is not drawn: the game never draws a sky face from behind, and from over a map
+  // its lid hid all of it (a video's flyover saw a blue box)
+  const outside = contents === CONTENTS.SOLID;
+  for (const face of seen.faces) {
+    const surface = scene.surfaceAt(face);
+    if (!(outside && surface?.kind === "sky")) draw(surface, [0, 0, 0], plain);
+  }
   for (const thing of scene.things) {
     if (!thing.model || thing.look.hidden || !bsp.models[thing.model]) continue;
     for (const face of facesOfModel(bsp, thing.model))
