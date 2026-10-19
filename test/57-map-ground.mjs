@@ -519,3 +519,35 @@ test("carvePlan outdoors: rock over a space's horizon is sky, the ground under i
     `ten columns of two rows, two prisms a cell, all sound (${rock.length})`,
   );
 });
+
+test("carvePlan: a wall's texture stands on the floor of the space it faces and starts at its corner, at an angle too", () => {
+  // two rooms 16 apart, the second 40 higher and 24 further north, and a round one of 8 sides on a floor of 16
+  const round = maps.circle([900, 300], 100, { sides: 8 });
+  const spaces = [
+    { name: "first", outline: [[0, 0], [256, 0], [256, 256], [0, 256]], floor: 0, ceiling: 128 },
+    { name: "second", outline: [[272, 24], [528, 24], [528, 280], [272, 280]], floor: 40, ceiling: 168 },
+    { name: "round", outline: round, floor: 16, ceiling: 144, texture: { wall: { name: "W", scale: 2, offset: [3, 5] } } },
+  ]; // prettier-ignore
+  const faces = maps.carvePlan(spaces, 16, { floor: "F", ceiling: "C", wall: "W" }).flatMap((brush) => brush.faces.filter((face) => face.texture === "W")); // prettier-ignore
+  const at = (x, normal) => faces.filter((face) => face.points.every((p) => Math.abs(p[0] - x) < 1e-6) && Math.round(maps.planeOf(face.points).normal[0]) === normal); // prettier-ignore
+  const offsets = (list) => JSON.stringify(list.map((f) => [f.u[3], f.v[3]]));
+  sure(at(256, -1).length && at(256, -1).every((face) => face.u[3] === 0 && face.v[3] === 0), offsets(at(256, -1)));
+  sure(at(272, 1).length && at(272, 1).every((face) => face.u[3] === -24 && face.v[3] === 40), offsets(at(272, 1)));
+  // the round room's walls, each at its angle, by its own corner in its texture's scale: along +y on those
+  // that look along x most, along +x on the others
+  const least = [0, 1].map((k) => Math.min(...round.map((p) => p[k])));
+  // (the faces of rock beside it: the rock under its floor and over its ceiling is cut along the same lines, unseen)
+  const heights = (brush) => brush.faces.map((face) => maps.planeOf(face.points)).filter((plane) => Math.abs(plane.normal[2]) > 0.99).map((plane) => plane.dist * plane.normal[2]); // prettier-ignore
+  const inRound = maps
+    .carvePlan(spaces, 16, { floor: "F", ceiling: "C", wall: "W" })
+    .filter((brush) => Math.min(...heights(brush)) < 144 && Math.max(...heights(brush)) > 16)
+    .flatMap((brush) => brush.faces.filter((face) => face.texture === "W"))
+    .filter((face) => face.points.every((p) => Math.hypot(p[0] - 900, p[1] - 300) < 101));
+  sure(inRound.length >= 8, `${inRound.length} faces in the round room`);
+  for (const face of inRound) {
+    const normal = maps.planeOf(face.points).normal;
+    const corner = least[Math.abs(normal[0]) >= Math.abs(normal[1]) ? 1 : 0];
+    near(face.u[3], 3 - corner / 2, 1e-9, `u of a face looking ${normal.map((v) => v.toFixed(2)).join(" ")}`);
+    near(face.v[3], 5 + 16 / 2, 1e-9, "v");
+  }
+});

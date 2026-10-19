@@ -22,7 +22,9 @@ From Steven Linn's fork, [stevenlafl/smak](https://github.com/stevenlafl/smak), 
 - **The walk test rides a lift** (`func_plat`) either way, as a ladder in its shaft; one with no name whose end
   has no floor near it, or no room for a player, is warned of.
 - **A class's flags are joined with its bases'**, as Hammer joins them: the kit's doors are no longer warned of.
-- **A carved wall's texture stands on the floor of the room it faces and starts at its corner** (`onFloor`).
+- **A carved wall's texture stands on the floor of the room it faces and starts at its corner** (`onFloor`), in
+  `carve` and in `carvePlan` (sketches, natural maps) at any angle. In `carvePlan` the rock stacked under a floor
+  had kept the sides of the band that sees nothing, so its walls lined up with no space.
 - **`soundness` and `seeThrough`**: a model's shape checked for holes, faces turned inside out and pieces
   floating apart. `workshop`'s band once round a shape closes. `sheet()` keeps a framing it is given. A bone at
   exactly half a turn survives a rewrite of the animations.
@@ -41,7 +43,8 @@ From Steven Linn's fork, [stevenlafl/smak](https://github.com/stevenlafl/smak), 
   game's folders by bytes, texture pixels and sound samples.
 
 **Mind**: a map with one of those entities and no model is now refused by `writeMap`. Carved rooms' walls take
-new texture offsets: a map rebuilt with `carve` has its wall pictures moved to line up with each room.
+new texture offsets: a map rebuilt with `carve` or `carvePlan` (a sketch) has its wall pictures moved to line
+up with each room.
 
 ## 0.20.0 (2026-10-19)
 

@@ -19,7 +19,7 @@
 // with its `floor` and `ceiling` (heights), and a `texture` of its own if it wears one: `{ floor, ceiling,
 // wall }`, or one name for all three. `slope: { rise, toward }` makes its floor a ramp that climbs `rise`
 // units across it towards `toward` degrees (0 east, 90 north) from `floor` on its lowest side.
-import { prism, planeOf, solid } from "./source.mjs";
+import { prism, planeOf, solid, onFloor } from "./source.mjs";
 
 // ── constants ───────────────────────────────────────────────────────────────
 /**
@@ -491,6 +491,22 @@ export function carvePlan(spaces, wall, texture) {
   });
   /** The space (its number) seen from a point; -1 for none. */
   const seenFrom = (point) => spaceAt(made, point);
+  /** Each space's least corner in plan: where its walls' pictures start. */
+  const corners = made.map((space) => {
+    const points = space.areas.flat(2);
+    return [0, 1].map((k) => Math.min(...points.map((p) => p[k])));
+  });
+  /**
+   * A wall's picture standing on the floor of the space it faces and starting at that space's corner, as `carve`
+   * lines its walls up (onFloor): along +y on a face that looks along x most, along +x on one that looks along y.
+   */
+  /** Whether walls seen from spaces `a` and `b` (-1: none) line up alike: on one floor, from one corner. */
+  const linesUp = (a, b) =>
+    a < 0 || b < 0 || a === b || (made[a].floor === made[b].floor && corners[a].every((v, k) => v === corners[b][k]));
+  const standing = (side, normal) =>
+    side.nth < 0 || isSky(side.wears)
+      ? side.wears
+      : onFloor(side.wears, made[side.nth].floor, corners[side.nth][Math.abs(normal[0]) >= Math.abs(normal[1]) ? 1 : 0]);
   // a face that looks at no space (the block's outside) never wears the sky: the brush would be sky all round,
   // and the ground under an outdoor map with it
   const outside = (part) =>
@@ -565,9 +581,14 @@ export function carvePlan(spaces, wall, texture) {
         for (const side of sides) side.wears = worn[(looking[0] ?? lowestHorizon).nth].ceiling;
       const key = JSON.stringify([outline, sides.map((side) => side.wears)]);
       const piece = before.get(key);
-      if (piece && piece.z1 === z0) {
+      // a piece over another of the same outline and textures goes on it, each side seeing the space either sees
+      // (a wall's foot under the floor sees none): not where they see two spaces whose walls line up otherwise
+      if (piece && piece.z1 === z0 && piece.sides.every((side, i) => linesUp(side.nth, sides[i].nth))) {
         piece.z1 = z1;
         piece.over = over;
+        piece.sides.forEach((side, i) => {
+          if (side.nth < 0) side.nth = sides[i].nth;
+        });
         now.set(key, piece);
       } else {
         const fresh = { outline, sides, z0, z1, over, under };
@@ -596,7 +617,7 @@ export function carvePlan(spaces, wall, texture) {
             best.out[0] * normal[0] + best.out[1] * normal[1]
           )
             best = side;
-        return best.wears;
+        return standing(best, normal);
       };
       return onWholePoints(prism(2, outline, z0, z1, rule), lines);
     }),
