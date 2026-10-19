@@ -83,6 +83,9 @@ const areas = [
   "73-firearm-kit", // a gun from the firearm kit, laid the right way up in another weapon's place
   "74-generated-character", // a character from a made shape on a base: fused limbs warned, its back and sides painted
   "75-model-specs", // a model spec: parts placed by words, characters on a game's skeleton, a weapon in a game's place
+  "76-map-specs", // a map spec: rooms laid out by words, their ways, furniture, frames, light and focus, walked
+  "77-props-look", // props as GoldSrc's look: crossed cards for a crown, a model's colours against Valve's
+  "78-floorplan", // a map's space from a floor plan of height plans, and a texture lifted off its view
   "19-example-and-kit-faults", // the examples' wrong arguments and refused models; the kits' fittings and rings
 ];
 

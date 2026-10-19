@@ -1,0 +1,52 @@
+{
+ "spec": "smak.model/1",
+ "name": "bush.mdl",
+ "kind": "prop",
+ "texture": {
+  "width": 256,
+  "height": 256
+ },
+ "materials": {
+  "leaves": {
+   "base": "leaves",
+   "tone": [
+    0.18,
+    0.27,
+    0.11
+   ],
+   "cell": 2
+  }
+ },
+ "parts": [
+  {
+   "id": "bush",
+   "kind": "cards",
+   "material": "leaves",
+   "size": [
+    40,
+    40,
+    26
+   ],
+   "count": 10,
+   "card": [
+    18,
+    14
+   ],
+   "tilt": 35
+  },
+  {
+   "id": "bush_core",
+   "kind": "cards",
+   "material": "leaves",
+   "size": [
+    36,
+    36,
+    24
+   ],
+   "count": 3
+  }
+ ],
+ "size": {
+  "height": 24
+ }
+}

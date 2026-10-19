@@ -7,6 +7,8 @@ import { test, sure, tmp, runSmak, runRefused, SMAK_CLI } from "./helper.mjs";
 import { buildSoundSpec, validateSoundSpec } from "../src/spec/sound.mjs";
 import { buildMusicSpec, validateMusicSpec } from "../src/spec/music.mjs";
 import { writeFileSync, mkdirSync } from "node:fs";
+import { buildMapSpec } from "../src/spec/map.mjs";
+import { buildModelSpec } from "../src/spec/model.mjs";
 
 const { audio: A } = smak;
 const RATE = 22050;
@@ -188,7 +190,7 @@ test("loudness as broadcasters measure it: EBU's stereo tone at -23 LUFS, at any
   }
 });
 
-test("a music spec: a take made a game track (cut, faded, levelled by loudness) or a looped WAV bed", () => {
+test("a music spec: a take made a game track (cut, faded, levelled by loudness) or a looped WAV bed, and a map that plays it", () => {
   const folder = join(tmp, "music");
   mkdirSync(join(folder, "gen"), { recursive: true });
   // 12 s of a chord that swells, at 48 kHz in stereo floats, quiet
@@ -210,7 +212,55 @@ test("a music spec: a take made a game track (cut, faded, levelled by loudness) 
   sure(Math.abs(said + 14) < 0.3, `the bed at ${said} LUFS`);
   const bad = validateMusicSpec({ spec: "smak.music/1", track: 28, name: "x.mp3", from: { file: "a.mp3" }, loudness: -40 });
   sure(["track: 28 is the menu", "track or name", "from: { file", "loudness: LUFS"].every((w) => bad.errors.some((e) => e.includes(w))), bad.errors.join("; "));
+  // a map that plays it: as it begins, and when a player walks into a room; stopped in another
+  const spec = { spec: "smak.map/1", name: "tunes", rooms: [{ id: "hall", size: [256, 256, 128] }, { id: "lab", size: [256, 256, 128], place: { east_of: "hall" } }], links: [{ between: ["hall", "lab"] }], entities: [{ class: "info_player_start", room: "hall", at: "centre" }], music: [{ track: 5 }, { track: 2, when: { enter: "lab" } }, { stop: true, when: { enter: "hall" } }] };
+  const { report, files } = buildMapSpec(spec, { out: join(folder, "map"), compilers: { found: false, message: "" } });
+  const map = smak.maps.readMap(readFileSync(files.map, "utf8"));
+  const by = (c) => map.entities.filter((e) => e.classname === c);
+  sure(by("trigger_auto")[0]?.target === "music0" && by("target_cdaudio")[0]?.health === "5" && by("trigger_cdaudio").map((e) => e.health).join(",") === "2,-1", JSON.stringify(map.entities.filter((e) => /cdaudio|auto/.test(e.classname))));
+  sure(report.facts.some((f) => /music\[1\]: plays track 2 \(media\/Half-Life01\.mp3\) when a player first walks into lab/.test(f)) && report.facts.some((f) => /first player only/.test(f)), report.facts.filter((f) => /music/.test(f)).join(" | "));
+});
 
+const HUM = { spec: "smak.sound/1", name: "ambience/fridge_hum.wav", class: "loop machine", length: 2, loop: { crossfade: 0.25 }, layers: [{ kind: "tone", f: 60, env: { attack: 0.01, hold: 3 } }] };
+test("a map's sounds: made beside the map and played by an ambient_generic, looped or not as the file is", () => {
+  const out = join(tmp, "humming");
+  const { report, files } = buildMapSpec(
+    {
+      spec: "smak.map/1",
+      name: "humming",
+      rooms: [{ id: "shop", size: [256, 256, 128] }],
+      entities: [{ class: "info_player_start", room: "shop", at: "centre" }],
+      sounds: [
+        { spec: HUM, room: "shop", at: "corner ne", volume: 6, radius: "small" },
+        { spec: { ...HIT, variants: [] }, room: "shop", at: "corner sw" },
+      ],
+    },
+    { out, compilers: { found: false, message: "" } },
+  );
+  sure(report.errors.length === 0, report.errors.join("; "));
+  sure(existsSync(join(out, "sound", "humming", "ambience", "fridge_hum.wav")) && existsSync(join(out, "sound", "humming", "weapons", "cbar_hit1.wav")), "the files beside the map, in a folder of its name");
+  const text = readFileSync(files.map, "utf8");
+  sure(/"classname" "ambient_generic"[^}]*"message" "humming\/ambience\/fridge_hum.wav"[^}]*"health" "6"[^}]*"spawnflags" "2"/.test(text), "the hum: looped (no flag 32), heard in a small radius, at 6");
+  sure(/"message" "humming\/weapons\/cbar_hit1.wav"[^}]*"spawnflags" "36"/.test(text), "the hit: not looped (32), a medium radius (4)");
+});
+
+test("a weapon's sounds: made with it, one an animation plays written as its event 5004 at that frame", () => {
+  const folder = join(tmp, "sounding");
+  mkdirSync(folder, { recursive: true });
+  const stick = smak.workshop.shape(64, 64);
+  stick.lathe([[0, 0.5], [12, 0.5]], { x: 0, y: 0, w: 64, h: 64 }, { sides: 6, caps: [true, true] });
+  const tris = stick.tris.map((tri) => tri.map((c) => ({ ...c, bone: "hand" })));
+  writeFileSync(join(folder, "v_stick.mdl"), smak.buildMdl({ name: "x.mdl", bones: [{ name: "hand", parent: -1 }], bodyparts: [{ name: "studio", models: [{ name: "stick", meshes: [{ tris, texture: smak.indexed(smak.workshop.sheet(64, 64).image(), "stick.bmp") }] }] }], sequences: [{ name: "idle", fps: 10, frames: [[[0, 0, 0, 0, 0, 0]]] }, { name: "reload", fps: 10, frames: Array.from({ length: 20 }, () => [[0, 0, 0, 0, 0, 0]]) }] }));
+  const { report, files } = buildModelSpec(
+    { spec: "smak.model/1", name: "rod.mdl", kind: "held", weapon: { like: "stick", views: ["v"], sounds: [{ spec: { ...HIT, name: "weapons/rod_reload.wav", variants: [] }, event: { sequence: "reload", frame: 4 } }] }, parts: [{ id: "rod", kind: "box", material: "steel", size: [10, 1, 1] }] },
+    { folder },
+  );
+  sure(report.ok, [...report.errors, ...report.faults].join("; "));
+  sure(files.some((f) => f.name === "sound/weapons/rod_reload.wav" && f.bytes), "the sound's file with the models'");
+  const v = files.find((f) => f.name === "v_stick.mdl").mdl;
+  const played = smak.events(v, "reload");
+  sure(played.some((e) => e.event === 5004 && e.frame === 4 && e.options === "weapons/rod_reload.wav"), JSON.stringify(played));
+  sure(/reload plays weapons\/rod_reload.wav at frame 4 \(event 5004\), with 1.60 s of the animation left/.test(report.facts.join("\n")), report.facts.join(" | "));
 });
 
 test("a sound further from its picture than a copy is held to is warned of, and one near it is not", () => {

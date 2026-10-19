@@ -11,6 +11,8 @@ import { lookOf, lookFaults, valveFor, VALVE, ALLOWED } from "../src/spec/look.m
 import { materialRect } from "../src/spec/reference.mjs";
 import { buildWadSpec } from "../src/spec/wad.mjs";
 import { test, sure, tmp, runSmak, runRefused, SMAK_CLI } from "./helper.mjs";
+import { buildMapSpec } from "../src/spec/map.mjs";
+import { buildModelSpec } from "../src/spec/model.mjs";
 
 const folder = join(tmp, "reference");
 mkdirSync(folder, { recursive: true });
@@ -295,12 +297,44 @@ test("the procedural grain is the material's, not noise: alike from texel to tex
   sure(speckled.fine > 1.4 * plain.fine && speckled.structure >= VALVE.structure[1], `speckle: grain ${plain.fine.toFixed(3)} to ${speckled.fine.toFixed(3)}, alike ${speckled.structure.toFixed(2)}`);
 });
 
-test("a .wad takes a picture by its path, beside the spec; a picture not there is an error", () => {
+test("a map and a .wad take a picture by its path, beside the spec; a model's part refuses one; a picture not there is an error", () => {
+  const spec = {
+    spec: "smak.map/1",
+    name: "photo_room",
+    theme: { wall: "wall", door: "front" },
+    textures: { wall: { base: "plaster", picture: "wall.png", size: 96, tone: [0.5, 0.48, 0.44] }, front: { base: "door", picture: "wall.png", rect: [0, 0, 300, 300] }, poster: { base: "paint", picture: "wall.png", filter: "literal", rect: [0, 0, 200, 300], size: [32, 48] } },
+    rooms: [{ id: "a", size: [256, 256, 128] }, { id: "b", size: [256, 256, 128], place: { east_of: "a" } }],
+    links: [{ between: ["a", "b"], kind: "door" }],
+    furniture: [{ prefab: "sign", room: "a", at: "against north" }],
+    prefabs: { sign: { pieces: [{ box: [[-16, -1, 40], [16, 1, 88]], texture: "poster" }] } },
+    entities: [{ class: "info_player_start", room: "a", at: "centre" }],
+  };
+  const out = join(folder, "map");
+  const built = buildMapSpec(spec, { out, folder, compilers: { found: false, message: "" } });
+  sure(!built.report.errors.length, built.report.errors.join("; "));
+  const wad = smak.maps.readWad(readFileSync(join(out, "photo_room.wad")));
+  const named = (part) => wad.textures.find((t) => t.name.toLowerCase().includes(part));
+  sure(named("wall") && named("front") && named("poster"), wad.textures.map((t) => t.name).join(", "));
+  sure(named("poster").width === 32 && named("poster").height === 48, `the poster ${named("poster").width}x${named("poster").height}: its size in units`);
+  sure(named("front").width === 64 && named("front").height === 128, "the door 64 by 128");
+  sure(built.report.facts.some((f) => /texture \S*wall: valve: /i.test(f)) && built.report.facts.some((f) => /poster: literal: 200x300/i.test(f)), built.report.facts.filter((f) => /texture/.test(f)).join("; "));
+  // not there: an error in words, no map
+  const missing = buildMapSpec({ ...spec, name: "photo_missing", textures: { ...spec.textures, wall: { base: "plaster", picture: "nowhere.jpg" } } }, { out: join(folder, "missing"), folder, compilers: { found: false, message: "" } });
+  sure(missing.report.errors.some((e) => /textures: .*nowhere\.jpg/.test(e)) && !missing.map, missing.report.errors.join("; "));
+  // a model's material takes a photograph too: its detail over the part at its real size, in the tone given
+  const boxOf = (material) => buildModelSpec({ spec: "smak.model/1", name: "box.mdl", kind: "prop", finish: false, parts: [{ id: "body", kind: "box", size: [32, 32, 32], material }] }, { folder });
+  const plain = boxOf({ base: "plaster", tone: [0.45, 0.43, 0.4] });
+  const photo = boxOf({ base: "plaster", tone: [0.45, 0.43, 0.4], picture: "wall.png", size: 48 });
+  sure(photo.report.ok && photo.report.facts.some((f) => /^material plaster \(wall\.png\): valve: .* at 4 texels a unit/.test(f)), [...photo.report.errors, ...photo.report.facts.filter((f) => /material/.test(f))].join("; "));
+  const looks = [plain, photo].map((b) => { const t = smak.textureOf(b.mdl, smak.readMdl(b.mdl).textures[0].name); const rgba = smak.rgbaOf(t); return lookOf({ width: t.width, height: t.height, rgba }); });
+  sure(looks[1].fine > looks[0].fine, `plain ${JSON.stringify(looks[0])} photo ${JSON.stringify(looks[1])}`);
+  const unread = boxOf({ base: "plaster", picture: "nowhere.jpg" });
+  sure(unread.report.errors.some((e) => /materials: .*nowhere\.jpg/.test(e)), unread.report.errors.join("; "));
+  // a .wad spec, its picture beside it
   const wadBuilt = buildWadSpec({ spec: "smak.wad/1", name: "photos.wad", textures: [{ name: "photo_wall", size: [64, 64], material: { base: "plaster", picture: "wall.png", size: 64 } }, { name: "photo_sign", size: [64, 32], material: { base: "paint", picture: "wall.png", filter: "literal" } }] }, { out: join(folder, "wad"), folder });
   sure(wadBuilt.report.ok && wadBuilt.report.facts.some((f) => /^photo_sign: literal/.test(f)), [...wadBuilt.report.errors, ...wadBuilt.report.facts].join("; "));
-  const missing = buildWadSpec({ spec: "smak.wad/1", name: "gone.wad", textures: [{ name: "gone", size: [64, 64], material: { base: "plaster", picture: "nowhere.jpg" } }] }, { out: join(folder, "gone"), folder });
-  sure(!missing.report.ok && missing.report.errors.some((e) => /nowhere\.jpg/.test(e)), missing.report.errors.join("; "));
 });
+
 test("smak build reads a .wad spec's picture beside the spec, a JPEG among them; one not there is refused", () => {
   const work = join(folder, "work");
   mkdirSync(join(work, "refs"), { recursive: true });

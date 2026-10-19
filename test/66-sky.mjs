@@ -4,6 +4,7 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { makeSky, skyFiles, skyOf, skyColour, readTga, SKY_SIDES } from "../src/maps/sky.mjs";
 import { test, sure, tmp } from "./helper.mjs";
+import { buildMapSpec } from "../src/spec/map.mjs";
 
 const folder = join(tmp, "sky");
 const game = join(folder, "game");
@@ -51,3 +52,19 @@ test("the sides meet with no seam, and the sun is where its light comes from", (
   const away = skyColour(sky, Math.cos(35 * r) * Math.cos(135 * r), Math.cos(35 * r) * Math.sin(135 * r), Math.sin(35 * r), [0, 0, 0]);
   sure(sun.every((v) => v > 230) && away[0] < 200, `at the sun ${sun.map(Math.round)}, half round ${away.map(Math.round)}`);
 });
+
+test("a map spec's own sky: made into gfx/env/<map>/, named by the map, its sun the map's", () => {
+  const out = join(folder, "map");
+  const { files, report, map } = buildMapSpec(
+    { spec: "smak.map/1", name: "yard", sky: { clouds: { cover: 0.6 } }, sun: { yaw: 200, pitch: -40 }, rooms: [{ id: "a", size: [256, 256, 256], sky: true }], entities: [{ class: "info_player_start", room: "a", at: "centre" }] },
+    { out, compilers: { found: false, message: "" } },
+  );
+  sure(report.errors.length === 0, report.errors.join("; "));
+  sure(SKY_SIDES.every((s) => existsSync(join(out, "gfx", "env", "yard", `sky${s}.tga`))), Object.keys(files).join(", "));
+  sure(/"skyname" "yard\/sky"/.test(readFileSync(files.map, "utf8")), "the worldspawn names it");
+  sure(buildFails({ spec: "smak.map/1", name: "bad", sky: { colour: [1, 0, 0] }, rooms: [{ id: "a", size: [128, 128, 128] }] }, join(folder, "bad")).some((e) => /sky: colour is none of/.test(e)), "a word a sky does not know is refused");
+});
+
+function buildFails(spec, out) {
+  return buildMapSpec(spec, { out, compilers: { found: false, message: "" } }).report.errors;
+}

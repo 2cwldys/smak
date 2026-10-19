@@ -1,0 +1,167 @@
+{
+ "spec": "smak.model/1",
+ "name": "checkout_counter.mdl",
+ "kind": "prop",
+ "texture": {
+  "width": 256,
+  "height": 256
+ },
+ "materials": {
+  "wood": {
+   "base": "wood",
+   "tone": [
+    0.557,
+    0.46,
+    0.362
+   ],
+   "picture": "photos/wood_cabinet_worn_long.jpg",
+   "size": 39
+  },
+  "laminate": {
+   "base": "paint",
+   "tone": [
+    0.603,
+    0.603,
+    0.579
+   ],
+   "picture": "photos/beige_wall_001.jpg",
+   "size": 118
+  },
+  "black": {
+   "base": "paint",
+   "tone": [
+    0.07,
+    0.07,
+    0.077
+   ]
+  },
+  "register": {
+   "base": "paint",
+   "tone": [
+    0.301,
+    0.301,
+    0.314
+   ]
+  },
+  "steel": {
+   "base": "steel",
+   "picture": "photos/metal_plate_02.jpg",
+   "size": 79
+  }
+ },
+ "parts": [
+  {
+   "id": "counter",
+   "kind": "box",
+   "material": "wood",
+   "size": [
+    24,
+    60,
+    34
+   ],
+   "at": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "id": "top",
+   "kind": "box",
+   "material": "laminate",
+   "size": [
+    26,
+    62,
+    1.5
+   ],
+   "at": [
+    0,
+    0,
+    34
+   ]
+  },
+  {
+   "id": "belt",
+   "kind": "box",
+   "material": "black",
+   "size": [
+    18,
+    30,
+    0.5
+   ],
+   "at": [
+    0,
+    12,
+    35.5
+   ]
+  },
+  {
+   "id": "register",
+   "kind": "box",
+   "material": "register",
+   "size": [
+    12,
+    14,
+    6
+   ],
+   "at": [
+    2,
+    -18,
+    35.5
+   ]
+  },
+  {
+   "id": "screen",
+   "kind": "box",
+   "material": "black",
+   "size": [
+    1,
+    10,
+    7
+   ],
+   "at": [
+    -2,
+    -18,
+    41.5
+   ],
+   "rotate": [
+    0,
+    -15,
+    0
+   ]
+  },
+  {
+   "id": "drawer",
+   "kind": "box",
+   "material": "register",
+   "size": [
+    13,
+    15,
+    3
+   ],
+   "at": [
+    2,
+    -18,
+    35.5
+   ]
+  },
+  {
+   "id": "scale",
+   "kind": "box",
+   "material": "steel",
+   "size": [
+    10,
+    10,
+    1
+   ],
+   "at": [
+    2,
+    2,
+    35.5
+   ]
+  }
+ ],
+ "size": {
+  "height": 49
+ }
+}
