@@ -1,8 +1,10 @@
 // Fewer triangles: the quadric reducer (src/qem.mjs, from stevenlafl/smak).
 //   a sphere of 2000 brought to 200 keeps its volume and stays closed; a box cut fine comes back to its 12
 //   triangles and its 8 corners; an open sheet keeps its border; a corner keeps what it carries; where two charts
-//   of a picture meet, every triangle keeps corners of its own chart
+//   of a picture meet, every triangle keeps corners of its own chart; a bought model's runs of two materials
+//   brought down each by its share, meeting where they met, each corner on the bone it hung from
 import { reduce } from "../src/qem.mjs";
+import { fewerTriangles } from "../src/import-model.mjs";
 import { test, sure, near } from "./helper.mjs";
 
 /** The lowest and highest of some points along an axis. */
@@ -135,3 +137,23 @@ const drawnMask = (width, height, fill) => {
   for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) data[y * width + x] = fill(x + 0.5, y + 0.5) ? 1 : 0;
   return { width, height, data };
 };
+
+test("fewerTriangles: two materials of one box, each by its share, meeting where they met, on the bones they hung from", () => {
+  // a box cut 8 by 8 a face, its triangles west of x = 32 one material and on bone 1, the rest another on bone 2
+  const tris = box(8, [64, 32, 16]);
+  const west = (tri) => tri.reduce((sum, corner) => sum + corner.p[0], 0) / 3 < 32;
+  const runOf = (material, node, list) => ({ object: "box", group: material, material, tris: list.map((tri) => tri.map((corner) => ({ ...corner, n: [0, 0, 1], node, weights: [[node, 1]] }))) }); // prettier-ignore
+  const scene = { format: "obj", groups: [runOf("stone", 1, tris.filter(west)), runOf("wood", 2, tris.filter((tri) => !west(tri)))] }; // prettier-ignore
+  const { imported, said } = fewerTriangles(scene, 60);
+  const [stone, wood] = imported.groups;
+  // each brought down by its share; the points on the line they share are kept, so it stops a little over 60
+  sure(stone.tris.length + wood.tris.length < 768 / 8 && wood.tris.length < scene.groups[1].tris.length / 4, said);
+  // where the two meet (x = 32) each has the very points the other has: no crack opens between them
+  const onSeam = (group) => new Set(group.tris.flat().filter((corner) => corner.p[0] === 32).map((corner) => corner.p.join()));
+  const [a, b] = [onSeam(stone), onSeam(wood)];
+  sure(a.size > 0 && a.size === b.size && [...a].every((key) => b.has(key)), `${[...a].sort()} | ${[...b].sort()}`);
+  // every corner on its own run's bone, its normal dropped to be worked out again
+  sure(stone.tris.flat().every((corner) => corner.node === 1 && corner.weights[0][0] === 1 && corner.n === null), "stone's corners");
+  sure(wood.tris.flat().every((corner) => corner.node === 2 && corner.n === null), "wood's corners");
+  sure(fewerTriangles(scene, 10000).imported === scene, "asked for more than it has, the scene as it was");
+});

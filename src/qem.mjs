@@ -4,7 +4,7 @@
 // put where it is nearest all the planes the two ends stood on. Used to bring a dense shape (a carved hull, a
 // bought model) down to what a GoldSrc model can carry.
 //
-//   reduce(tris, { target, keepBoundary, creaseAngle, stages })  ->  { tris, report }
+//   reduce(tris, { target, keepBoundary, creaseAngle, stages, keep })  ->  { tris, report }
 //
 // `tris`: [[corner, corner, corner], ...], each corner { p: [x, y, z] } with anything else it carries (uv, bone,
 // a part's name). Corners at the same point are one vertex. A vertex that survives keeps, in every triangle,
@@ -18,6 +18,9 @@
 //   creaseAngle   in degrees: an edge whose two faces turn more than this is held the same way (a box's edges)
 //   stages        join in rounds that each halve the count, the planes measured again from the shape each
 //                 round begins with (true), or in one round from the first shape (false)
+//   keep          (p) => true for a point that stays where it is, neither moved nor joined away: where this
+//                 shape meets another reduced apart (two materials of one mesh), so that both keep the same
+//                 points along the line they share and no crack opens between them
 //
 // A join is refused when it would change what the shape is: two ends that share more neighbours than the
 // faces between them (the link condition: it would pinch the surface into a non-manifold edge), a face that
@@ -149,8 +152,9 @@ function weld(tris) {
  * Fewer triangles, the shape kept. Returns { tris, report: { from, to, stages, border, creases, refused } }:
  * `refused` counts the joins turned down, by why.
  */
-export function reduce(tris, { target, keepBoundary = true, creaseAngle, stages = true } = {}) {
+export function reduce(tris, { target, keepBoundary = true, creaseAngle, stages = true, keep } = {}) {
   const { pos, faces, corners } = weld(tris);
+  const kept = keep ? pos.map((p) => Boolean(keep(p))) : null;
   const from = faces.length;
   const goal = Math.max(1, Math.floor(target ?? from / 2));
   const refused = { link: 0, flat: 0, turned: 0, border: 0, seam: 0 };
@@ -184,6 +188,7 @@ export function reduce(tris, { target, keepBoundary = true, creaseAngle, stages 
     const edges = new Map();
     // vertices on an edge of more than two faces are left where they are: joining there tears the shape
     const pinned = new Set();
+    if (kept) kept.forEach((held, v) => held && pinned.add(v));
     faces.forEach((f, i) => {
       if (!alive[i]) return;
       const n = normalOf(f);

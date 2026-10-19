@@ -125,6 +125,17 @@ A prop to hang there comes the same way: `importRigged` of a file with no skin g
 straight whatever the fist does) and `animate.grounded(mdl, { seqs: ["die"] })` (a fall lies on the floor, not
 in it). `buildMdl(zombie.parts)` with nothing added gives the same bytes as `zombie.mdl`.
 
+**A model made for a newer engine, with too many triangles.** `--triangles <n>` (`triangles: n` to
+`importModel`, `importPiece` and `importRigged`) brings the shape down first, with `fewerTriangles`: each mesh
+and material by its share of `n`, by the quadric reducer (`reduce`, src/qem.mjs, from Steven Linn's fork of the
+kit). The points where two materials meet stay as they are in both, so no crack opens between them; a corner
+that stays keeps its place in the picture and the bones it hangs from; the normals are worked out again. The
+report says how far it got (`report.fewer`): it stops short of `n` where no join is left that keeps the shape
+and its picture, and says why. Measured on bought models: a spear of 11430 triangles to 1216 (16 bodyparts to
+one), a rigged archer of 1080 to 618 that walks as before; a sculpted armour of 389212 stopped at 30326, its
+picture cut into thousands of small charts that a join would smear across, and is still more than a model
+holds.
+
 ## Limits
 
 - **One bone a point.** GoldSrc holds each point on one bone: where the file shares a point between bones
@@ -136,3 +147,6 @@ in it). `buildMdl(zombie.parts)` with nothing added gives the same bytes as `zom
   middle); and the turn chosen by its outline may put its belly the wrong way in some placements: look at
   the pictures, and give `--axis`/`--flip`.
 - **Sizes in a pack** vary from model to model: fit them.
+- **Fewer triangles keeps the shape, not the picture's detail**: the reducer weighs how far the surface moves,
+  not how the picture stretches over it, so a reduced model's picture can smear where large triangles now
+  cross it (a spear's blade at a tenth of its triangles). Look at `--pictures` and ask for fewer by less.

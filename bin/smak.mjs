@@ -953,6 +953,7 @@ const importAsked = (flags) =>
     origin: flags.origin,
     turn: numberOf(flags, "turn"),
     maxTextureSize: numberOf(flags, "max-texture"),
+    triangles: numberOf(flags, "triangles"),
   });
 /** The pictures a file carries inside it, written out as the files they are: for one that is not read (a JPEG). */
 function savePictures(read, folder) {
@@ -1052,6 +1053,7 @@ function imported({ command, file, flags }) {
     `${to}: "${report.name}", ${made.mdl.length} bytes, ${report.triangles} triangles on ${report.points} points${report.bodyparts > 1 ? ` in ${report.bodyparts} bodyparts` : ""}`,
   );
   console.log(`  size: ${report.scale.said}`);
+  if (report.fewer) console.log(`  fewer triangles: ${report.fewer}`);
   console.log(
     `  ${size} units (x y z), from ${report.box.mn.map((v) => v.toFixed(1)).join(" ")} to ${report.box.mx.map((v) => v.toFixed(1)).join(" ")}; ${report.bones ? `${report.bones.length} bones` : "one bone (root), one animation (idle)"}`,
   );
@@ -1087,6 +1089,7 @@ function boughtPiece({ command, file, flags, family, name }) {
     as: flags.as ?? (family.how === "shield" ? "shield" : "auto"),
     ...defined({ axis: flags.axis, grip: flags.grip }),
     flip: Boolean(flags.flip),
+    ...defined({ triangles: numberOf(flags, "triangles") }),
   });
   console.log(
     `${command}: ${basename(file)}: ${piece.tris.length} triangles, a picture of ${piece.image.width}x${piece.image.height}, held as ${piece.as}`,
@@ -2644,7 +2647,9 @@ const COMMANDS = {
                                             that many units; --origin base: standing on z = 0, centre: about its middle;
                                             --pictures: six views beside the .mdl; --save-pictures <folder>: the pictures inside
                                             the file, as they are; --json. With --anim [name,...]  [--fps 30]: a model with the
-                                            file's skeleton and animations, each point on the bone that weighs most on it
+                                            file's skeleton and animations, each point on the bone that weighs most on it.
+                                            --triangles <n>: at most n, the shape brought down first, each mesh and material
+                                            by its share, the edges where they meet kept
   import <folder> -o <folder> [--only fbx,glb] [--fit n] ...
                                             every model under a folder as a prop, by the same paths, with sheet.png (each one
                                             drawn with its textures), a table (import.json) and HEAVY against what GoldSrc
@@ -2661,7 +2666,8 @@ const COMMANDS = {
                                             item's script is to say (docs/ITEMS.md). Exit code 1 when a check fails.
                                             <piece.mjs> may be a bought model instead (.fbx, .glb, .gltf, .obj): --texture is then
                                             its picture's file (found beside it unless told), and how it lies is found or told:
-                                            [--as haft|plain|shield] [--axis x|y|z|-x..] [--grip low|high] [--flip] (docs/IMPORT.md)`,
+                                            [--as haft|plain|shield] [--axis x|y|z|-x..] [--grip low|high] [--flip] [--triangles n]
+                                            (docs/IMPORT.md)`,
   },
   scripts: {
     run: scripts,

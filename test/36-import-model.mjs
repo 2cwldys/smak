@@ -61,6 +61,36 @@ test("importModel: a prop at its true size (a centimetre is 0.3937 units), stand
   sure(/fitted/.test(fitted.report.scale.said) && fitted.report.heavy === null, fitted.report.scale.said);
 });
 
+/** A triangle cut into 4^times, each corner's place and picture place halfway, what else it carries kept. */
+function finer(tri, times) {
+  if (!times) return [tri];
+  const half = (a, b) => ({ ...a, p: a.p.map((v, k) => (v + b.p[k]) / 2), uv: a.uv.map((v, k) => (v + b.uv[k]) / 2), n: null }); // prettier-ignore
+  const [a, b, c] = tri;
+  const [ab, bc, ca] = [half(a, b), half(b, c), half(c, a)];
+  return [[a, ab, ca], [ab, b, bc], [ca, bc, c], [ab, bc, ca]].flatMap((each) => finer(each, times - 1));
+}
+
+test("importModel and importPiece take triangles: a dense mace brought down, its size and its pictures kept", () => {
+  // every face of the mace cut 64 times (24 faces: 1536 triangles), flat as it was
+  const dense = { ...mace, groups: mace.groups.map((group) => ({ ...group, tris: group.tris.flatMap((tri) => finer(tri, 3)) })) }; // prettier-ignore
+  const before = dense.groups.reduce((sum, group) => sum + group.tris.length, 0);
+  sure(before === 1536, `${before} triangles`);
+  const plain = smak.importModel(mace, { name: "mace.mdl", pictures, origin: "base" });
+  const made = smak.importModel(dense, { name: "mace.mdl", pictures, origin: "base", triangles: 48 });
+  sure(made.report.triangles <= 48 && /^1536 triangles brought down to \d+$/.test(made.report.fewer), `${made.report.triangles}: ${made.report.fewer}`); // prettier-ignore
+  for (const axis of [0, 1, 2]) {
+    near(made.report.box.mn[axis], plain.report.box.mn[axis], 1e-6, `its box, low end, axis ${axis}`);
+    near(made.report.box.mx[axis], plain.report.box.mx[axis], 1e-6, `its box, high end, axis ${axis}`);
+  }
+  sure(made.report.textures.length === 2, "both pictures still worn");
+  for (const engine of ["goldsrc", "xash"]) sure(!smak.check(made.mdl, engine).errors.length, `${engine}: ${smak.check(made.mdl, engine).errors}`);
+  // asked for more than it has, it is as it was
+  sure(smak.importModel(mace, { name: "mace.mdl", pictures, triangles: 5000 }).report.fewer === null, "no fewer than asked");
+  const piece = smak.importPiece(dense, { pictures, triangles: 48 });
+  sure(piece.tris.length <= 48 && piece.assumed.some((line) => /^1536 triangles brought down to/.test(line)), `${piece.tris.length}: ${piece.assumed.join(" | ")}`); // prettier-ignore
+  sure(/whole number over 0/.test((() => { try { smak.fewerTriangles(dense, 0); } catch (error) { return error.message; } })()), "0 triangles refused"); // prettier-ignore
+});
+
 test("importPiece: a hafted weapon laid along +x from the butt, its handle's line on y = z = 0, two pictures on one", () => {
   const piece = smak.importPiece(mace, { pictures });
   sure(piece.haft === true && piece.as === "haft", `held as ${piece.as}`);

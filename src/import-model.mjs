@@ -16,6 +16,7 @@ import { indexed, masked, shrink, unpng, unbmp, rgbOf, rgbaOf } from "./image.mj
 import { sub, cross, box } from "./vec.mjs";
 import { measured, axisNamed, UNITS_A_METRE } from "./import-shape.mjs";
 import { unjpeg } from "./import-jpeg.mjs";
+import { reduce } from "./qem.mjs";
 
 // ── the size ───────────────────────────────────────────────────────────────
 /**
@@ -138,7 +139,73 @@ export function importPictures(imported, { pictures = {} } = {}) {
   return { textures, notes };
 }
 
+// ── fewer triangles ────────────────────────────────────────────────────────
+/**
+ * An imported scene with fewer triangles, for a bought model made for a newer engine: each run of triangles
+ * (a mesh and a material) brought down by the quadric reducer (`reduce`, src/qem.mjs) to its share of
+ * `target`, the points two runs share kept where they are in both, so that two runs still meet where they met
+ * and no crack opens between two materials. A corner that stays keeps all it carried (its place in the picture, the node
+ * and the weights it hangs from, its smoothing group); its normal is dropped, to be worked out again from the
+ * new faces. A run too small to give up a triangle safely is left as it is, so the count may stay over
+ * `target`. Returns `{ imported, said }`: the scene, and a sentence for the report (null when the scene had no
+ * more than `target` and is given back as it was).
+ */
+export function fewerTriangles(imported, target) {
+  if (!(Number.isInteger(target) && target > 0))
+    throw new Error(`fewerTriangles: the triangles wanted are a whole number over 0, not ${target}`);
+  const count = (groups) => groups.reduce((sum, group) => sum + group.tris.length, 0);
+  const before = count(imported.groups);
+  if (before <= target) return { imported, said: null };
+  // the points two runs share (where two materials of a mesh meet) stay as they are in both, so that both keep
+  // the same points along the line between them: joined away on one side only, they would leave a crack
+  const keyOf = (p) => `${p[0]},${p[1]},${p[2]}`;
+  const runsAt = new Map();
+  imported.groups.forEach((group, nth) => {
+    for (const tri of group.tris)
+      for (const corner of tri) {
+        const key = keyOf(corner.p);
+        const runs = runsAt.get(key);
+        if (!runs) runsAt.set(key, new Set([nth]));
+        else runs.add(nth);
+      }
+  });
+  const keep = (p) => runsAt.get(keyOf(p))?.size > 1;
+  const refused = {};
+  const groups = imported.groups.map((group) => {
+    const share = Math.max(1, Math.round((group.tris.length * target) / before));
+    if (group.tris.length <= share) return group;
+    const { tris, report } = reduce(group.tris, { target: share, keep });
+    for (const [why, times] of Object.entries(report.refused)) refused[why] = (refused[why] ?? 0) + times;
+    return { ...group, tris: tris.map((tri) => tri.map((corner) => ({ ...corner, n: null }))) };
+  });
+  const after = count(groups);
+  // when it stopped short, why: the reason that refused the most joins
+  const [most, times] = Object.entries(refused).sort((a, b) => b[1] - a[1])[0] ?? [];
+  const short =
+    after > target
+      ? ` (${target} asked: no join was left that keeps the shape and its picture${times ? `; most were refused ${REFUSED[most] ?? most} (${times} times)` : ""})`
+      : "";
+  return { imported: { ...imported, groups }, said: `${before} triangles brought down to ${after}${short}` };
+}
+/** Why the reducer refuses a join, as `fewerTriangles` says it. */
+const REFUSED = {
+  seam: "where two charts of its picture meet, which a join would smear across",
+  link: "for they would pinch the surface",
+  turned: "for they would turn a face over",
+  border: "across an open border",
+  flat: "for they would flatten a closed piece",
+};
+
 // ── a prop ─────────────────────────────────────────────────────────────────
+/** `objModel`, its refusal saying how far `fewerTriangles` got first. */
+function fromObj(imported, fewer, options) {
+  try {
+    return objModel(imported, options);
+  } catch (error) {
+    if (fewer) error.message = `${error.message} (${fewer})`;
+    throw error;
+  }
+}
 /** Where a prop's origin may be put. */
 const ORIGINS = ["keep", "base", "centre"];
 /** More triangles than this in one prop is more than GoldSrc draws at its ease. */
@@ -156,17 +223,20 @@ export const COMFORTABLE_TRIANGLES = 2500;
  *   turn            degrees about the upright axis, for one that faces the wrong way
  *   pictures        see `importPictures`
  *   maxTextureSize, smooth, tiling   as `objModel`
- * `report` is `objModel`'s with `scale` ({ factor, said }), `format`, and `heavy`: a sentence when it has
- * more triangles than GoldSrc is at ease with, or null.
+ *   triangles       at most this many: the shape brought down by `fewerTriangles` first
+ * `report` is `objModel`'s with `scale` ({ factor, said }), `format`, `fewer` (`fewerTriangles`' sentence, or
+ * null), and `heavy`: a sentence when it has more triangles than GoldSrc is at ease with, or null.
  */
-export function importModel(imported, options = {}) {
+export function importModel(scene, options = {}) {
   const { origin = "keep" } = options;
   if (!ORIGINS.includes(origin)) throw new Error(`importModel: origin is ${ORIGINS.join(", ")}, not ${origin}`);
-  if (!imported.groups.length)
+  if (!scene.groups.length)
     throw new Error("importModel: the file has no mesh: nothing to make a model of");
+  const { imported, said: fewer } =
+    options.triangles === undefined ? { imported: scene, said: null } : fewerTriangles(scene, options.triangles);
   const size = importScale(imported, options);
   const { textures, notes } = importPictures(imported, options);
-  const made = objModel(imported, {
+  const made = fromObj(imported, fewer, {
     name: options.name,
     textures,
     scale: size.factor,
@@ -188,7 +258,7 @@ export function importModel(imported, options = {}) {
     mdl: made.mdl,
     // `objModel` speaks of an .obj's words: said here by the format's own
     warnings: [...notes, ...made.warnings.map((warning) => warning.replaceAll(" (no vt)", "").replaceAll(" (vn)", ""))],
-    report: { ...made.report, scale: size, format: imported.format, heavy },
+    report: { ...made.report, scale: size, format: imported.format, fewer, heavy },
   };
 }
 
@@ -318,12 +388,16 @@ function loosePieces(tris) {
  *   grip      "low" or "high": the end of that axis the hand holds. Unless told, the slimmer end
  *   flip      true: the other end from the one found (a haft: head and butt changed over; a shield: its face
  *             and its back)
+ *   triangles at most this many: the shape brought down by `fewerTriangles` first (said in `assumed`)
  * The size is not looked at: `addFitted` makes a piece as long as the thing it is laid on.
  */
-export function importPiece(imported, { pictures = {}, as = "auto", axis = "auto", grip = "auto", flip = false } = {}) {
+export function importPiece(scene, { pictures = {}, as = "auto", axis = "auto", grip = "auto", flip = false, triangles } = {}) { // prettier-ignore
   if (!HOLDS.includes(as)) throw new Error(`importPiece: as is ${HOLDS.join(", ")}, not ${as}`);
   if (!["auto", "low", "high"].includes(grip)) throw new Error(`importPiece: grip is low or high, not ${grip}`);
   const assumed = [];
+  const { imported, said: fewer } =
+    triangles === undefined ? { imported: scene, said: null } : fewerTriangles(scene, triangles);
+  if (fewer) assumed.push(fewer);
 
   // one mesh on one picture
   const byMaterial = new Map();

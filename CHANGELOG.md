@@ -26,6 +26,12 @@ From Steven Linn's fork, [stevenlafl/smak](https://github.com/stevenlafl/smak), 
 - **`soundness` and `seeThrough`**: a model's shape checked for holes, faces turned inside out and pieces
   floating apart. `workshop`'s band once round a shape closes. `sheet()` keeps a framing it is given. A bone at
   exactly half a turn survives a rewrite of the animations.
+- **`reduce`** (src/qem.mjs), the quadric reducer: a shape brought to fewer triangles, closed, its border and its
+  picture's charts kept; `keep` holds points where they are.
+- **`--triangles <n>`** on `smak import` and `smak item` (`triangles` to `importModel`, `importPiece`,
+  `importRigged`; `fewerTriangles`): a bought model brought down first, each mesh and material by its share, the
+  points where two materials meet kept so no crack opens; `report.fewer` says how far it got and why it stopped.
+  A spear of 11430 triangles to 1216, a rigged archer of 1080 to 618 (docs/IMPORT.md).
 - **`scripts/no-game-files.mjs`**: every tracked file (`--history`: every version ever committed) held against a
   game's folders by bytes, texture pixels and sound samples.
 

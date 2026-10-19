@@ -17,7 +17,7 @@ import { meshOf } from "./mesh.mjs";
 import { check, LIMITS } from "./check.mjs";
 import { indexed, shrink, unpng, unbmp, rgbOf, rgbaOf } from "./image.mjs";
 import { IDENTITY, mul, apply, applyDir, inverse, rigid, sixOf, moved, stretched, turned } from "./import-math.mjs";
-import { importScale, importPictures, COMFORTABLE_TRIANGLES } from "./import-model.mjs";
+import { importScale, importPictures, fewerTriangles, COMFORTABLE_TRIANGLES } from "./import-model.mjs";
 import { unjpeg } from "./import-jpeg.mjs";
 
 /** A bone's name is kept in 32 bytes, the last a zero; so is an animation's. */
@@ -121,12 +121,14 @@ function nearestAngles(six, before) {
  *                as `importModel`; the size and the origin are those of the model as it rests
  *   hitboxes     "auto" (unless told: a box about what each bone carries, as studiomdl makes them), a list as
  *                `buildMdl` takes it, or [] for none
+ *   triangles    at most this many: the shape brought down by `fewerTriangles` first, each corner that stays
+ *                on the bones it hung from
  * The bones are the file's nodes that carry a point, with every node above them: a bone that holds nothing
  * and has nothing below it that does (the handles a rig is posed by) is left out. A mesh that has no skin
  * hangs whole from the node that holds it. The rest pose is the scene as the file has it at rest, which is
  * also the pose the points are bound in.
  * It throws when there are more bones than the engine holds (128), and when the model would not load.
- * `report` is { name, triangles, points, bodyparts, box, textures, scale, format, heavy, bones (their names),
+ * `report` is { name, triangles, points, bodyparts, box, textures, scale, format, fewer, heavy, bones (their names),
  * sequences: [{ name, from, frames, fps, loops, seconds }], shared (how many points were held by several bones
  * and went to the heaviest), lostStretch (the animations in which a bone's stretch changes) }.
  * `parts` is what the model was built from, as `buildMdl` takes it: { name, bones, bodyparts (each mesh's
@@ -138,11 +140,13 @@ function nearestAngles(six, before) {
  * A monster needs more than this gives: its animations' activities and events, where it sees from, and a walk
  * that travels (`movement`): see "A monster's parts" in AGENTS.md, and `addSequence`, `setEvents`.
  */
-export function importRigged(imported, options = {}) {
+export function importRigged(scene, options = {}) {
   const { origin = "keep", fps = FPS, smooth = 40, maxTextureSize = LIMITS.goldsrc.texture } = options;
   if (!ORIGINS.includes(origin)) throw new Error(`importRigged: origin is ${ORIGINS.join(", ")}, not ${origin}`);
   if (!(fps > 0)) throw new Error(`importRigged: fps is a number over 0, not ${fps}`);
-  if (!imported.groups.length) throw new Error("importRigged: the file has no mesh: nothing to make a model of");
+  if (!scene.groups.length) throw new Error("importRigged: the file has no mesh: nothing to make a model of");
+  const { imported, said: fewer } =
+    options.triangles === undefined ? { imported: scene, said: null } : fewerTriangles(scene, options.triangles);
   const fileName = /\.mdl$/i.test(options.name ?? "") ? options.name : `${options.name ?? "model"}.mdl`;
   if (fileName.length > FILE_NAME_MOST)
     throw new Error(`importRigged: the name ${fileName} is longer than the ${FILE_NAME_MOST} letters a model's holds`);
@@ -378,6 +382,7 @@ export function importRigged(imported, options = {}) {
       textures: worn,
       scale: size,
       format: imported.format,
+      fewer,
       heavy:
         submodels.length > 1
           ? `${triangles} triangles on ${points} points: more than one submodel of GoldSrc holds (${LIMITS.goldsrc.verts} points), so it is in ${submodels.length} bodyparts`
