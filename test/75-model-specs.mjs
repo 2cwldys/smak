@@ -15,7 +15,7 @@ import { validateWadSpec } from "../src/spec/wad.mjs";
 import { sword, taper } from "../kits/swordkit.mjs";
 import { definitionsOf } from "../src/maps/fgd.mjs";
 import { findCompilers, COMPILERS_VARIABLE } from "../src/maps/compile.mjs";
-import { test, testAsync, sure, near, tmp } from "./helper.mjs";
+import { test, testAsync, sure, near, tmp, runSmak, runRefused, SMAK_CLI } from "./helper.mjs";
 
 const { workshop: W, buildMdl, indexed, soundness, shapeSoundness, seeThrough } = smak;
 const folder = join(tmp, "specs");
@@ -913,4 +913,22 @@ test("a lift may say the brightness its view was drawn at (a lamp's face, white 
   const spec = (brightness) => ({ spec: "smak.wad/1", name: "x.wad", textures: [{ name: "lamp", size: [16, 16], lift: { map: "models:x.bsp", view: "work:pictures/lamp-dark.png", brightness } }] });
   sure(!validateWadSpec(spec(0.5)).errors.length, validateWadSpec(spec(0.5)).errors.join("; "));
   sure(validateWadSpec(spec(-1)).errors.some((e) => /lift\.brightness: the brightness its view was drawn at/.test(e)), validateWadSpec(spec(-1)).errors.join("; "));
+});
+
+test("smak build: a model spec written with its sheet and its parts seen close, the parts listed; one that is not OK exits 1", () => {
+  const folder = join(tmp, "build-model");
+  mkdirSync(folder, { recursive: true });
+  const spec = { spec: "smak.model/1", name: "stool.mdl", kind: "prop", parts: [{ id: "seat", kind: "cylinder", radius: 7, height: 2, at: [0, 0, 16], material: { base: "wood" } }, { id: "leg", kind: "cylinder", radius: 1, height: 16, at: [5, 0, 0], material: { base: "wood" }, repeat: { count: 3, around: "seat" } }] };
+  writeFileSync(join(folder, "stool.json"), JSON.stringify(spec));
+  const said = runSmak("build", join(folder, "stool.json"), "--focus", "seat");
+  sure(/built, and every check passed/.test(said) && /^PARTS: id, triangles/m.test(said) && /^\s+seat \d+ /m.test(said), said);
+  for (const name of ["stool.mdl", "stool-sheet.png", "stool-focus.png", "stool.built.json"]) sure(existsSync(join(folder, name)), `${name} written`);
+  sure(smak.check(readFileSync(join(folder, "stool.mdl"))).errors.length === 0, "the model passes check");
+  // built again with a leg taken away: what changed is said
+  writeFileSync(join(folder, "stool.json"), JSON.stringify({ ...spec, parts: [spec.parts[0], { ...spec.parts[1], repeat: { count: 4, around: "seat" } }] }));
+  const again = runSmak("build", join(folder, "stool.json"));
+  sure(/^CHANGED since the last build of stool: /m.test(again), again);
+  writeFileSync(join(folder, "bad.json"), JSON.stringify({ spec: "smak.model/1", name: "bad.mdl", kind: "prop", parts: [{ id: "x", kind: "lump" }] }));
+  const refused = runRefused(SMAK_CLI, "build", join(folder, "bad.json"));
+  sure(refused.code === 1 && /ERROR/.test(refused.out), refused.out + refused.err);
 });

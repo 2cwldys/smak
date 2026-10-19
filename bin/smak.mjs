@@ -34,6 +34,7 @@ const BODIES_LISTED = 6;
 const BONES_LISTED = 4;
 // the flags that are followed by a value: one given with nothing after it is said, not guessed at
 const VALUE_FLAGS = [
+  "reference",
   "against",
   "landmark",
   "plan",
@@ -131,6 +132,7 @@ const VALUE_FLAGS = [
 // the flags of the map commands that may be given more than once: each time adds to a list
 const LISTED_FLAGS = [
   "game",
+  "focus",
   "dll",
   "wad",
   "body",
@@ -2143,6 +2145,14 @@ const besideSpec = (file) => (name) => readFileSync(existing(join(dirname(resolv
 function reportOut(report, done) {
   for (const [label, list] of [["ERROR", report.errors], ["FAULT", report.faults], ["WARN ", report.warnings], ["note ", report.notes ?? []], ["fact ", report.facts]]) // prettier-ignore
     for (const line of list) console.log(`${label} ${line}`);
+  if (report.parts && Object.keys(report.parts).length) {
+    console.log("PARTS: id, triangles, from x y z to x y z");
+    for (const [id, part] of Object.entries(report.parts)) console.log(`  ${id} ${part.tris} ${part.from.join(" ")} to ${part.to.join(" ")}`);
+  }
+  if (report.rooms && Object.keys(report.rooms).length) {
+    console.log("ROOMS: id, from x y z to x y z, floor light");
+    for (const [id, room] of Object.entries(report.rooms)) console.log(`  ${id} ${room.min.join(" ")} to ${room.max.join(" ")}${room.light === undefined ? "" : `, light ${room.light}`}`);
+  }
   console.log(report.ok ? done : "NOT OK: fix what is said above and build again");
   process.exit(report.ok ? 0 : 1);
 }
@@ -2267,8 +2277,121 @@ function previewOfWad(spec, files, map, listed) {
   return lines;
 }
 
+/** A picture beside another, scaled to its height: the person's drawing or reference beside what was built. */
+function besideOf(first, second) {
+  const k = second.height / first.height;
+  const w = Math.max(1, Math.round(first.width * k));
+  const width = w + 8 + second.width;
+  const rgba = new Uint8Array(width * second.height * 4).fill(255);
+  for (let y = 0; y < second.height; y++) {
+    for (let x = 0; x < w; x++) {
+      const from = (Math.min(first.height - 1, Math.floor(y / k)) * first.width + Math.min(first.width - 1, Math.floor(x / k))) * 4;
+      rgba.set(first.rgba.subarray(from, from + 4), (y * width + x) * 4);
+    }
+    rgba.set(second.rgba.subarray(y * second.width * 4, (y + 1) * second.width * 4), (y * width + w + 8) * 4);
+  }
+  return { width, height: second.height, rgba };
+}
+/**
+ * Against the last build of the same name in the folder: what changed, as lines, and the new summary kept beside
+ * the model (`<name>.built.json`) for the next. A first build says nothing.
+ */
+async function changedSince(folder, base, kind, spec, report) {
+  const { summaryOf, changesOf } = await import("../src/spec/changes.mjs");
+  const file = join(folder, `${base}.built.json`);
+  const now = summaryOf(kind, spec, report);
+  const before = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : null;
+  save(file, `${JSON.stringify(now, null, 1)}\n`);
+  if (!before || before.kind !== kind) return [];
+  return changesOf(before, now).lines.map((line) => `CHANGED since the last build of ${base}: ${line}`);
+}
+/**
+ * model (smak.model/1, docs/SPEC.md): the model written under -o (beside the spec unless told) with its sheet of
+ * six views; a character on a base seen running; a weapon's files in the game's names in a folder of their own,
+ * the game's first-person view beside the new one and its attack; --reference drawn beside it; --focus the parts
+ * named seen close. A picture or a file the spec names is read from beside it; --game the folders a base or a
+ * game's weapon is found in.
+ */
+async function modelSpecCommand({ command, file, flags, listed }) {
+  const { buildModelSpec } = await import("../src/spec/model.mjs");
+  const spec = specOf(command, file, "model");
+  const folder = dirname(resolve(file));
+  const out = flags.o === undefined ? folder : String(flags.o);
+  const name = spec.name ?? "model.mdl";
+  const base = name.replace(/\.mdl$/i, "");
+  const readPicture = (picture) => {
+    try {
+      return smak.unpicture(readFileSync(resolve(folder, String(picture).replace(/^(work|models):/, ""))));
+    } catch (error) {
+      throw new Error(`${picture}: ${error.code === "ENOENT" ? "no such file beside the spec" : error.message}`);
+    }
+  };
+  const readFile = (given) => readFileSync(existing(resolve(folder, String(given).replace(/^(work|models):/, ""))));
+  const { mdl, report, files = [] } = buildModelSpec(spec, { folder, out: join(out, name), games: (listed.game ?? []).map(existingFolder), readPicture, readFile });
+  if (mdl) {
+    save(join(out, name), mdl);
+    console.log(`      ${join(out, name)} (${mdl.length} bytes)`);
+    for (const line of await changedSince(out, base, "model", spec, report)) console.log(line);
+    const shown = (suffix, picture, what) => {
+      const path = join(out, `${base}-${suffix}.png`);
+      save(path, smak.png(picture.width, picture.height, picture.rgba));
+      console.log(`      ${path} (${what})`);
+    };
+    shown("sheet", smak.sheet(mdl, { seq: 0, size: 256 }), "six views");
+    // a body on a base's skeleton: seen moving, a run (or a walk) from the side
+    if (spec.base) {
+      const moving = smak.sequences(mdl).findIndex((seq) => /run|walk/i.test(seq.name) && !seq.group);
+      if (moving >= 0) shown("run", smak.strip(mdl, { seq: moving, count: 8, cols: 4, view: "side", width: 192, height: 192 }), "its run from the side");
+    }
+    if (typeof flags.reference === "string")
+      shown("reference", besideOf(smak.unpicture(readFileSync(existing(flags.reference))), smak.render(mdl, { seq: 0, yaw: 35, pitch: 20, width: 512, height: 512 })), "beside the reference");
+    // a weapon: its files in the game's names, in a folder of their own; the game's first-person view beside the
+    // new one, the other views, and its attack as the player sees it
+    if (files.length) {
+      const weapon = join(out, `${base}_weapon`);
+      for (const made of files) save(join(weapon, made.name), made.mdl ?? made.bytes);
+      console.log(`      ${weapon}: ${files.map((made) => made.name).join(", ")} (the game's names: they take the place of its own in <mod>/models)`);
+      const views = [];
+      const labels = [];
+      for (const made of files.filter((f) => f.view !== "sound")) {
+        const first = made.view === "v";
+        const draw = (src) => smak.render(src, { seq: 0, frame: 0, width: 320, height: 320, ...(first ? { view: "first" } : { yaw: 35, pitch: 20 }) });
+        if (first && made.original) {
+          views.push(draw(made.original));
+          labels.push(`the game's ${made.name}`);
+        }
+        views.push(draw(made.mdl));
+        labels.push(made.name);
+      }
+      shown("weapon", smak.tile(views, views.length, labels), "its views beside the game's");
+      const v = files.find((made) => made.view === "v");
+      if (v) {
+        const list = smak.sequences(v.mdl);
+        const attack = list.findIndex((seq) => /attack|fire|shoot|swing|hit|throw|stab|slash/i.test(seq.name));
+        shown("attack", smak.strip(v.mdl, { seq: attack >= 0 ? attack : Math.min(1, list.length - 1), count: 8, cols: 4, view: "first", width: 192, height: 192 }), "its attack as the player sees it");
+      }
+    }
+    // a close look at the parts asked for, from two sides and below: what a sheet of the whole is too small to show
+    const focus = listed.focus ?? [];
+    if (focus.length) {
+      const boxes = focus.map((id) => {
+        const part = report.parts[id] ?? Object.entries(report.parts).find(([key]) => key.startsWith(`${id}.`))?.[1];
+        if (!part) fail(`--focus: no part ${id}; the parts are ${Object.keys(report.parts).join(", ")}`);
+        return part;
+      });
+      const mn = [0, 1, 2].map((k) => Math.min(...boxes.map((b) => b.from[k])));
+      const mx = [0, 1, 2].map((k) => Math.max(...boxes.map((b) => b.to[k])));
+      const within = { mid: mn.map((v, k) => (v + mx[k]) / 2), far: Math.max(0.5, Math.hypot(...mx.map((v, k) => v - mn[k])) / 2) };
+      const views = [[35, 20], [215, 20], [35, -35]].map(([yaw, pitch]) => smak.render(mdl, { seq: 0, yaw, pitch, within, width: 320, height: 320 }));
+      shown("focus", smak.tile(views, 3, ["front", "back", "from below"]), `${focus.join(", ")} close`);
+    }
+  }
+  reportOut(report, "built, and every check passed");
+}
+
 /** The spec builders by the spec each reads (docs/SPEC.md): `smak build` picks one by the spec's `spec`. */
 const BUILDERS = {
+  "smak.model/1": modelSpecCommand,
   "smak.wad/1": wadSpecCommand,
   "smak.sound/1": (given) => soundCommand(given),
   "smak.music/1": (given) => musicCommand(given),
@@ -3190,10 +3313,13 @@ const COMMANDS = {
   build: {
     run: buildCommand,
     own: true,
-    help: `  build <spec.json> [-o <folder>] [--game <folder>]...
-                                            a spec built by its kind (its "spec"; docs/SPEC.md): smak.wad/1 textures painted into a
-                                            .wad with a sheet of them (preview: { map, each }: the map drawn wearing them, each at
-                                            its place), smak.sound/1, smak.music/1, smak.sprite/1 as the commands of their names`,
+    help: `  build <spec.json> [-o <folder>] [--game <folder>]... [--reference x.png] [--focus <part> ...]
+                                            a spec built by its kind (its "spec"; docs/SPEC.md): smak.model/1 a model of parts,
+                                            checked, with its sheet of six views (a character on a game's skeleton, a weapon in
+                                            place of a game's; --reference drawn beside it, --focus parts seen close); smak.wad/1
+                                            textures painted into a .wad with a sheet of them (preview: { map, each }: the map
+                                            drawn wearing them, each at its place); smak.sound/1, smak.music/1, smak.sprite/1 as
+                                            the commands of their names`,
   },
   sound: {
     run: soundCommand,
