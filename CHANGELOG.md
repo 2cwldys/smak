@@ -9,6 +9,29 @@ mending for, says so under **Mind**.
   each stands for (of the same size); a script or an entity shows family n with skin n. A bought character in
   liveries of its own (the Old Orchard's militia) is one model, not one a livery.
 
+From Steven Linn's fork, [stevenlafl/smak](https://github.com/stevenlafl/smak), taken as it was or ported:
+
+- **SDHLT** (seedee's fork of VHLT) is found by its own names (`sdHLCSG_x64.exe`, `sdhlt.wad`), and its leak and
+  wadinclude lines are read. A map's own `wad` key is read again (its pattern had lost its backslashes).
+- **No map is written with an entity that precaches a model it does not name** (`env_sprite`, `env_glow`,
+  `cycler_sprite`, `monster_generic`, `monster_furniture`): the game stops on load with `PF_precache_model_I:
+  Bad string ''`. `checkPlan` and `checkBsp` name it in maps made elsewhere.
+- **The compilers' marks as VHLT and SDHLT 1.3.1 compile them**, measured: SKIP, SPLITFACE, NOCLIP and NULLNOCLIP
+  leak (NOCLIP and NULLNOCLIP in the hulls a player moves in), SOLIDHINT and BEVELHINT seal and stop a body. The
+  plan check took SKIP and NULLNOCLIP for walls; the walk test SOLIDHINT for air and NULLNOCLIP for a wall.
+- **The walk test rides a lift** (`func_plat`) either way, as a ladder in its shaft; one with no name whose end
+  has no floor near it, or no room for a player, is warned of.
+- **A class's flags are joined with its bases'**, as Hammer joins them: the kit's doors are no longer warned of.
+- **A carved wall's texture stands on the floor of the room it faces and starts at its corner** (`onFloor`).
+- **`soundness` and `seeThrough`**: a model's shape checked for holes, faces turned inside out and pieces
+  floating apart. `workshop`'s band once round a shape closes. `sheet()` keeps a framing it is given. A bone at
+  exactly half a turn survives a rewrite of the animations.
+- **`scripts/no-game-files.mjs`**: every tracked file (`--history`: every version ever committed) held against a
+  game's folders by bytes, texture pixels and sound samples.
+
+**Mind**: a map with one of those entities and no model is now refused by `writeMap`. Carved rooms' walls take
+new texture offsets: a map rebuilt with `carve` has its wall pictures moved to line up with each room.
+
 ## 0.20.0 (2026-10-19)
 
 What Master Sword Rebirth's Thornlands showed an outdoor map wants (the orchard's second version, built with it).
