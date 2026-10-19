@@ -54,6 +54,9 @@ From Steven Linn's fork, [stevenlafl/smak](https://github.com/stevenlafl/smak), 
   is and rooms furnished by their `use` with the game's models. Master Sword's profile has one: ms_generic.wad's
   flags, laid stone and planks, env_model props, and a tavern, hall, store, bedroom, kitchen, library and crypt
   furnished with its tables, barrels, shelves, hearth, beds and urns (ROOM_THINGS).
+- **`standingIn(map, box, { by })`**: what stands in a box of a map, moved: a map spec's building taken out of its
+  yard (its shell, roof, door, furniture and props; not the yard's rock, starts or sun) and set in a map made
+  another way with `mergeMaps`. A building's rooms dressed by their use are no longer told they are bare.
 - **Models from a spec** (`smak build`, `smak.model/1`; Steven Linn's fork, `buildModelSpec`): parts placed by
   what they sit on (boxes, turned parts, tubes, superquadrics, bands, studs, the kits' weapons, prefabs), a
   character on a game's skeleton keeping its bones and animations and held apart in its run, walk, crouch and

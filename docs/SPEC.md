@@ -908,6 +908,24 @@ mod's profile") makes the map one of that mod's, with its folders given by `--ga
 `smak build tavern.json --game <Half-Life>/msc --game <Half-Life>/valve`. Its own .wad (the textures the spec
 paints) goes into the mod's folder beside the map.
 
+### A building in another map
+
+A map spec's building is put in a map made another way (an outdoor map of `carvePlan`, a sketch, a village of
+`house`s) by building it in an open yard and taking out what stands there: its shell, roof, door, furniture,
+props and lights, without the yard's rock, sky, floor, starts and sun.
+
+```js
+const { report, files } = buildMapSpec(tavernSpec, { out, mod, compilers: { found: false, message: "" } });
+const built = maps.readMap(readFileSync(files.map, "utf8"));
+const tavern = maps.standingIn(built, report.rooms.yard, { by: [x, y, groundAt(x, y)], starts: mod.starts });
+const village = maps.mergeMaps(outdoorMap, tavern);      // then compiled as one, its .wad files joined
+```
+
+The yard's floor (z 0) goes to the ground's height at `by`: give the building flat ground to stand on, a pad
+its size or a little more, and keep what is strewn off it. The building's ways out are links to the yard, so
+they open onto the other map's ground. A Master Sword tavern so set on a village's green compiles with SDHLT
+and is walked into from the village's start.
+
 ### Entities
 
 Write every entity's class and keys from the game's FGD, never from memory (`smak map-fgd` reads one, and a

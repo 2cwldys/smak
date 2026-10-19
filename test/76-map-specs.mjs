@@ -763,3 +763,30 @@ test("a mod's map spec: its own places to start, its game's textures and props, 
   const own = buildMapSpec({ ...spec, name: "modstore2", theme: { floor: "oak" }, textures: { oak: { base: "wood" } } }, { out: join(folder, "modstore2"), mod, ...none }).report;
   sure(!own.facts.some((f) => /^md_floor:/.test(f)) && own.facts.some((f) => /^md_wall: md_stone/.test(f)), own.facts.filter((f) => /^md_/.test(f)).join(" | "));
 });
+
+test("a building a map spec stood in its yard is taken out with standingIn and set in another map, walked into", () => {
+  const spec = {
+    spec: "smak.map/1",
+    name: "shed",
+    rooms: [{ id: "yard", size: [768, 640, 256], sky: true }, { id: "shed", size: [256, 192, 112], place: { in: "yard", offset: [256, 224], stand: true }, building: { walls: "outside", roof: { pitch: 30 } } }],
+    links: [{ between: ["shed", "yard"], kind: "door", side: "south" }],
+    entities: [{ class: "info_player_start", room: "yard", at: "corner sw" }, { class: "item_battery", room: "shed", at: "centre" }],
+  };
+  const { report, files } = buildMapSpec(spec, { out: join(folder, "shed"), compilers: { found: false, message: "" } });
+  sure(report.errors.length === 0, report.errors.join("; "));
+  const built = smak.maps.readMap(readFileSync(files.map, "utf8"));
+  const yard = report.rooms.yard;
+  // what stands in the yard: the shed's shell, roof and door, and the battery; not the yard's rock, its start or its sun
+  const by = [2000, -1000, 64];
+  const shed = smak.maps.standingIn(built, yard, { by });
+  sure(shed.brushes.length > 4 && shed.entities.some((e) => e.classname === "func_door") && shed.entities.some((e) => e.classname === "item_battery"), `${shed.brushes.length} brushes; ${shed.entities.map((e) => e.classname).join(", ")}`);
+  sure(!shed.entities.some((e) => /^(info_player_start|light_environment|worldspawn)$/.test(e.classname)), shed.entities.map((e) => e.classname).join(", "));
+  const battery = shed.entities.find((e) => e.classname === "item_battery").origin.split(" ").map(Number);
+  const before = built.entities.find((e) => e.classname === "item_battery").origin.split(" ").map(Number);
+  sure(battery.every((v, k) => Math.abs(v - before[k] - by[k]) < 0.01), `${battery} from ${before}`);
+  // set on the ground of another map, an open field of its own: walked from its start into the shed
+  const field = { worldspawn: { wad: built.worldspawn.wad }, brushes: smak.maps.carve([{ min: [1500, -1500, 64], max: [2600, -300, 512] }], 16, "GROUND"), entities: [smak.maps.playerStart([1600, -1400, 64], 0)] };
+  const both = smak.maps.mergeMaps(field, shed);
+  const walk = smak.maps.reachOf(both);
+  sure(walk.unreached.length === 0 && walk.stuck.length === 0, walk.warnings.join("; "));
+});
