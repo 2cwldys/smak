@@ -709,6 +709,20 @@ test("the plan check's errors, each in words", () => {
     "a quote in a value",
   );
   only(checkPlan({ brushes: [], entities: roomEntities() }).errors, /no world brush/, "no world");
+  // a class that precaches its model, with none named, stops the map on load
+  only(
+    errorsOf((map) => map.entities.push({ classname: "env_glow", origin: "128 128 64" })),
+    /precache a model they do not name.*PF_precache_model_I/,
+    "a glow with no sprite",
+  );
+});
+
+test("no map is written with an entity that precaches a model it does not name", () => {
+  const glow = (keys) => ({ brushes: sealedRoom(), entities: [...roomEntities(), { classname: "env_glow", origin: "128 128 64", ...keys }] }); // prettier-ignore
+  sure(/entity 3 \(env_glow\) precache a model/.test(refusal(() => writeMap(glow({})))), "a glow with no sprite");
+  sure(!refusal(() => writeMap(glow({ model: "sprites/glow01.spr" }))), "a glow with its sprite");
+  // cycler checks its model and removes itself: it is no fault
+  sure(!refusal(() => writeMap({ brushes: sealedRoom(), entities: [...roomEntities(), { classname: "cycler", origin: "128 128 0" }] })), "a cycler"); // prettier-ignore
 });
 
 test("the plan check's warnings: planes off the grid, no wad, no light, a light buried in a wall", () => {
