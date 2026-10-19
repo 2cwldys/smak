@@ -90,6 +90,7 @@ node bin/smak.mjs check <mdl> [--engine xash]      errors and warnings; exit cod
 node bin/smak.mjs sheet <mdl> -o s.png             six views in one picture
 node bin/smak.mjs render <mdl> -o r.png --yaw 30 --pitch 15 [--view first|side|front|top] [--ground]
 node bin/smak.mjs strip <mdl> -o a.png --seq reload --count 12 [--view first]   (a walk: --view side --ground)
+node bin/smak.mjs gif <mdl> -o a.gif --seq reload   an animation as a looping GIF, each frame labelled (--seq all: every one, -o a folder)
 node bin/smak.mjs textures <mdl> -o dir [--bmp]    every texture as a file
 node bin/smak.mjs uv <mdl> -o dir                  every texture with the triangles that wear it drawn over it
 node bin/smak.mjs islands <mdl> [-o dir] [--body n]  the islands each picture is cut into, listed; with -o, drawn tinted and numbered
@@ -132,6 +133,8 @@ node bin/smak.mjs map-reach <bsp|map> [-o walked.png] [--goal <n|class>] [--jump
 node bin/smak.mjs map-section <bsp|map> -o s.png --from x,y --to x,y   a side section along that line, floors with their heights
 node bin/smak.mjs map-storeys <bsp|map> -o s.png [--z a,b,c] [--reach]   one plan for each storey, side by side
 node bin/smak.mjs map-openings <bsp|map> -o o.png [--both]   a view through each gate and doorway the walk test finds
+node bin/smak.mjs map-overlay <bsp|map> shot.png --from x,y,z --yaw n [--locate] -o o.png   the map's edges over a picture of it:
+                                                   where the map and the picture part, and the faces that are off by how much
 node bin/smak.mjs map-textures <bsp> -o dir        every texture of a map as a PNG
 node bin/smak.mjs wad <file.wad> [-o dir]          a .wad's textures listed; with -o, each as a PNG
 node bin/smak.mjs wad-make <pictures...> -o out.wad   a .wad from PNG or BMP pictures, each named after its file

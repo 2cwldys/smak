@@ -42,6 +42,12 @@ From Steven Linn's fork, [stevenlafl/smak](https://github.com/stevenlafl/smak), 
 - **`smak map-decompile`** (`decompile`, `textureFidelity`, `lightParity`, the texture-light table): a compiled map
   made back into brush source, the port of Steven's bsp2map. Master Sword's maps come back and compile again with
   SDHLT, their faces in the original's textures 91 to 100 in 100; a texture in no shipped .wad has to be given.
+- **Videos, GIFs and a map against a picture** (Steven Linn's fork): `smak build` of a `smak.video/1` spec (shots
+  of models and maps: a title, a turntable, a sheet, the animations, a walk, a flyover, a path; a contact sheet
+  with `--preview`, then MP4 through ffmpeg or a GIF written by the kit without it); `smak gif` (an animation, or
+  every one, as a looping GIF); `smak map-overlay` (a map's edges over a picture of it from a camera, green where
+  they lie on its lines, the faces that are off by how much, `--locate` the camera found by the edges). Its
+  photogrammetry (features, PnP, structure from motion in Python venvs) is not taken.
 - **Maps from a spec** (`smak build`, `smak.map/1`; Steven Linn's fork, `buildMapSpec`): rooms laid out by words
   (or a drawing, or a floor plan of height plans) carved from one block, doors, openings, windows and stairs with
   railings between them, buildings in the open, furniture that never floats, the kit's 30 pieces of furniture as

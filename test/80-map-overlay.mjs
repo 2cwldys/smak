@@ -78,3 +78,19 @@ test("map overlay: a compiled map's faces, and its edges over a view of it in it
   const stepped = overlayOf(bsp, view, { ...cam, from: [cam.from[0] + 32, cam.from[1] - 32, cam.from[2]] }, { offsets: false });
   sure(o.score < turned.score && o.score < stepped.score, `the edges of tworooms on its own view: ${o.score}, against ${turned.score} turned 10 degrees and ${stepped.score} stepped 45 units`);
 });
+
+test("map-overlay: the command draws the edges over the picture and says how far apart", () => {
+  const folder = join(tmp, "map-overlay");
+  mkdirSync(folder, { recursive: true });
+  writeFileSync(join(folder, "room.map"), maps.writeMap(room(0)));
+  writeFileSync(join(folder, "shot.png"), png(shot.width, shot.height, shot.rgba));
+  const said = runSmak("map-overlay", join(folder, "room.map"), join(folder, "shot.png"), "--from", "400,150,64", "--yaw", "165", "--pitch", "-5", "-o", join(folder, "over.png"));
+  sure(/^edges: [\d.]+ pixels apart/m.test(said) && /over\.png {2}640x480 {2}the map's edges over the picture/.test(said), said);
+});
+
+test("map-overlay --locate: the camera found by the edges from a guess, near the one the picture was drawn from", () => {
+  const folder = join(tmp, "map-overlay");
+  const said = runSmak("map-overlay", join(folder, "room.map"), join(folder, "shot.png"), "--from", "380,170,64", "--yaw", "160", "--locate");
+  const found = /^camera (\S+) (\S+) (\S+) yaw (\S+) pitch (\S+) fov \S+: found by the edges/m.exec(said);
+  sure(found && dist(found.slice(1, 4).map(Number), camera.from) < 24 && Math.abs(Number(found[4]) - camera.yaw) < 4, said);
+});

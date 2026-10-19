@@ -582,6 +582,27 @@ over the floor (most games drop it), a prop standing on another model (a candle 
 own gatecity: 3 warnings and 116 notes in 182 things, which is why notes are to be looked at, not mended
 blindly. `smak map-props --views <folder>` draws each from the side with the most room.
 
+## A map against pictures of it (`src/maps/overlay.mjs`)
+
+A picture of a place (a screenshot, a render, a photograph) and the map that is to be it: find the camera of
+the picture against the map as built, see where the map and the picture part, move the wall that is off, look
+again. As a model's pictures are fitted by its outline (`project`, `pose.fit`), a room seen from inside is
+fitted by its edges. `smak map-overlay <map|bsp> <picture> --from x,y,z --yaw n [--pitch n] [--fov 90]
+[--locate] -o over.png` does it from the command line.
+
+| Function | Gives |
+| --- | --- |
+| `overlayOf(map, picture, camera, { width, height, offsets })` | The map's edges (creases, depth steps; texture joins in blue) drawn over the picture from `camera` (`{ from, yaw, pitch, fov }`, fov 90 unless told), green within 2 pixels of the picture's own long straight edges, red with a picture line 2 to 10 pixels off (a line is there and the edge is not on it), amber with none within 10 (nothing to compare: a soft line the detector missed, or a camera so far off nothing is near): `{ width, height, rgba, score, toPicture, fromPicture, faces }`. `score` in pixels (lower is better). `faces`: each face whose edges the view shows, how far it would move along its normal (`move`, units) to lie on the picture's edges, the largest first. A reading of edges: on a picture of flat colours it is sharp, on a textured one the texture's own lines pull it |
+| `fitCamera(map, picture, { from, yaw, pitch, fov, fitFov })` | The camera that best lays the map's edges on the picture's, searched from a guess (or, with none, from places over the map's floor at eye height): `{ camera, score }` (`--locate`) |
+| `geometryOf(map)`, `rasterOf(geometry, camera, width, height)` | The faces a view draws (`plane` keys coplanar faces alike), and which face each pixel shows and the point of the map there (`point(i)`) |
+
+In the fork the camera is also found by features matched against a render of the map and by structure from
+motion (its `photo.mjs`, in Python venvs of OpenCV, pycolmap, LightGlue and VGGT); that is not taken here, and a
+camera is fitted by the edges alone. A room of walls without lines (flat-lit, plain) says little of where it is,
+and so does a dark one of laid stone: on a view of a Master Sword tavern at its own camera most of the map's
+edges came amber (no line of the picture near them), and `--locate` from a guess 25 units and 8 degrees off
+settled 140 units away at a lower score than the true camera's. Trust it on lit rooms of plain lines.
+
 ## A map's dressing (`src/maps/dressing.mjs`)
 
 How a map is dressed, in numbers, beside Valve's own: the facts a maker revising a map is told, measured

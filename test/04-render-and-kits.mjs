@@ -3,7 +3,9 @@
 import * as smak from "../src/index.mjs";
 import { axe } from "../kits/axekit.mjs";
 import { bow } from "../kits/bowkit.mjs";
-import { test, sure, inked, knife } from "./helper.mjs";
+import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { test, sure, inked, knife, tmp, runSmak } from "./helper.mjs";
 
 // ── drawing ──
 
@@ -74,4 +76,14 @@ test("an animation as a looping GIF: every frame, labelled, at its rate; every a
   for (let i = 0; i + 8 < g.bytes.length; i++) if (g.bytes[i] === 0x21 && g.bytes[i + 1] === 0xf9 && g.bytes[i + 8] === 0x2c) blocks++;
   sure(blocks === 12, `${blocks} frames written`);
   sure(smak.animationGifs(knife.mdl, { width: 64, height: 64 }).map((x) => x.name).join() === smak.sequences(knife.mdl).map((s) => s.name).join(), "every animation, in order");
+});
+
+test("smak gif: an animation as a GIF, and every one into a folder", () => {
+  const folder = join(tmp, "gifs");
+  mkdirSync(folder, { recursive: true });
+  writeFileSync(join(folder, "knife.mdl"), knife.mdl);
+  const one = runSmak("gif", join(folder, "knife.mdl"), "--seq", "wave", "--width", "64", "--height", "64", "-o", join(folder, "wave.gif"));
+  sure(/wave\.gif {2}wave, 64x64, \d+ frames at/.test(one) && readFileSync(join(folder, "wave.gif")).subarray(0, 6).toString("latin1") === "GIF89a", one);
+  const all = runSmak("gif", join(folder, "knife.mdl"), "--seq", "all", "--width", "48", "--height", "48", "-o", join(folder, "all"));
+  sure(all.trim().split("\n").length === smak.sequences(knife.mdl).length, all);
 });

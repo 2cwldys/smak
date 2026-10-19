@@ -537,6 +537,26 @@ function draw({ command, src, flags }) {
   console.log(`${to}  ${picture.width}x${picture.height}`);
 }
 
+// ── an animation as a GIF ──────────────────────────────────────────────────
+/** One animation, or every one (--seq all, -o a folder), as looping GIFs, each frame labelled. */
+function gifs({ command, src, flags, file }) {
+  const to = need(command, flags.o, "-o out.gif (or a folder, with --seq all)");
+  const options = defined(viewOptions(src, flags));
+  const stem = basename(file).replace(/\.mdl$/i, "");
+  if (String(flags.seq) === "all") {
+    for (const g of smak.animationGifs(src, { ...options, seq: undefined })) {
+      const made = join(to, `${stem}-${String(g.number).padStart(2, "0")}-${g.name}.gif`);
+      save(made, g.bytes);
+      console.log(`${made}  ${g.width}x${g.height}, ${g.frames} frames at ${g.fps.toFixed(1)} a second`);
+    }
+    return;
+  }
+  if (!/\.gif$/i.test(to)) fail("-o: a .gif file (or a folder with --seq all)");
+  const g = smak.animationGif(src, options);
+  save(to, g.bytes);
+  console.log(`${to}  ${g.name}, ${g.width}x${g.height}, ${g.frames} frames at ${g.fps.toFixed(1)} a second`);
+}
+
 // ── textures ───────────────────────────────────────────────────────────────
 function textures({ command, src, flags }) {
   const dir = need(command, flags.o, "-o <folder>");
@@ -2435,8 +2455,39 @@ async function mapSpecCommand({ command, file, flags, listed }) {
   reportOut(report, "built, and every check passed");
 }
 
+/**
+ * video (smak.video/1, docs/SPEC.md): a video of models and maps from its shots, its contact sheet beside it under
+ * -o (beside the spec unless told); --preview the sheet alone, to look at before the frames are all drawn. The
+ * models and maps it names are read from beside the spec; --game the folders their textures are found in. MP4
+ * through ffmpeg when it is on the PATH, a GIF written here when not (or `format: "gif"`).
+ */
+async function videoSpecCommand({ command, file, flags, listed }) {
+  const { buildVideoSpec } = await import("../src/spec/video.mjs");
+  const spec = specOf(command, file, "video");
+  const folder = dirname(resolve(file));
+  const out = flags.o === undefined ? folder : String(flags.o);
+  const near = (name) => existing(resolve(folder, String(name).replace(/^(work|models):/, "")));
+  const { report, files } = await buildVideoSpec(spec, {
+    model: (name) => smak.readStudio(near(name)).src,
+    map: (name) => readFileSync(near(name)),
+    folders: [folder, out, ...(listed.game ?? []).map(existingFolder)],
+    preview: flags.preview === true,
+  });
+  const base = join(out, spec.name ?? "video");
+  if (files?.sheet) {
+    save(`${base}-sheet.png`, files.sheet);
+    console.log(`      ${base}-sheet.png (a frame of each moment of each shot)`);
+  }
+  if (files?.video) {
+    save(`${base}.${files.format}`, files.video);
+    console.log(`      ${base}.${files.format} (${(files.video.length / 1e6).toFixed(2)} MB)`);
+  }
+  reportOut(report, files?.video ? "the video made, and every check passed" : "the preview drawn, and every check passed");
+}
+
 /** The spec builders by the spec each reads (docs/SPEC.md): `smak build` picks one by the spec's `spec`. */
 const BUILDERS = {
+  "smak.video/1": videoSpecCommand,
   "smak.map/1": mapSpecCommand,
   "smak.model/1": modelSpecCommand,
   "smak.wad/1": wadSpecCommand,
@@ -2450,6 +2501,36 @@ async function buildCommand(given) {
   const run = BUILDERS[spec?.spec];
   if (!run) fail(`${given.command}: "spec" is one of ${Object.keys(BUILDERS).join(", ")}, not ${JSON.stringify(spec?.spec)}`);
   await run(given);
+}
+
+// ── map-overlay ────────────────────────────────────────────────────────────
+/**
+ * map-overlay: the map's edges drawn over a picture of it from a camera (green where they lie on the picture's
+ * own, red where not), how far apart, and the faces the edges say are off. --locate: the camera found first by
+ * the edges, from the camera given as a guess or from places over the map's floor.
+ */
+async function mapOverlay({ command, file, rest, flags }) {
+  const { overlayOf, fitCamera } = await import("../src/maps/overlay.mjs");
+  const [pictureFile] = rest;
+  if (!pictureFile) fail(`${command} <map|bsp> <picture> --from x,y,z --yaw n [--pitch n] [--fov 90] [--locate] -o out.png`);
+  const map = readEither(file);
+  const picture = smak.unpicture(readFileSync(existing(pictureFile)));
+  const from = numbersOf(flags, "from", 3, "three numbers x,y,z");
+  let camera = from ? { from, yaw: numberOf(flags, "yaw") ?? 0, pitch: numberOf(flags, "pitch") ?? 0, fov: numberOf(flags, "fov") ?? 90 } : null;
+  if (!camera && !flags.locate) fail(`${command}: the camera (--from x,y,z --yaw n), or --locate to find one`);
+  if (flags.locate) {
+    const found = fitCamera(map, picture, camera ?? {});
+    camera = found.camera;
+    console.log(`camera ${placeText(camera.from)} yaw ${camera.yaw} pitch ${camera.pitch} fov ${camera.fov}: found by the edges, ${found.score} pixels apart`);
+  }
+  const width = numberOf(flags, "width") ?? Math.min(640, picture.width);
+  const o = overlayOf(map, picture, camera, { width, height: Math.round((width * picture.height) / picture.width) });
+  console.log(`edges: ${o.score} pixels apart (the map's from the picture's ${o.toPicture}, the picture's from the map's ${o.fromPicture})`);
+  for (const f of o.faces.slice(0, 8)) if (f.move !== 0) console.log(`      edges say ${f.axis} ${f.texture}: ${f.move > 0 ? "+" : ""}${f.move} units (${f.seen} edge pixels, ${f.better} pixels nearer)`);
+  if (flags.o) {
+    save(flags.o, smak.png(o.width, o.height, o.rgba));
+    console.log(`${flags.o}  ${o.width}x${o.height}  the map's edges over the picture`);
+  }
 }
 
 // ── map-light ──────────────────────────────────────────────────────────────
@@ -3061,6 +3142,11 @@ const COMMANDS = {
                                             a walk judged by its feet: --view side --ground (one camera for every frame, the floor a line)
         (render, sheet and strip all take --seq --frame --body --skin --width --height --no-light --no-cull)`,
   },
+  gif: {
+    run: gifs,
+    help: `  gif <mdl> -o out.gif --seq <name|n|all>     an animation as a looping GIF, each frame labelled (--seq all: every one, -o a folder)
+                                            [--view side --ground] [--yaw] [--pitch] [--width] [--height] [--body] [--skin], as strip`,
+  },
   textures: {
     run: textures,
     help: `  textures <mdl> -o <folder> [--bmp]        every texture as a file (PNG; --bmp: 8-bit BMP with its palette as it is)`,
@@ -3368,8 +3454,9 @@ const COMMANDS = {
                                             checked, with its sheet of six views (a character on a game's skeleton, a weapon in
                                             place of a game's; --reference drawn beside it, --focus parts seen close); smak.wad/1
                                             textures painted into a .wad with a sheet of them (preview: { map, each }: the map
-                                            drawn wearing them, each at its place); smak.sound/1, smak.music/1, smak.sprite/1 as
-                                            the commands of their names`,
+                                            drawn wearing them, each at its place); smak.video/1 a video of models and maps from
+                                            its shots (MP4 with ffmpeg, a GIF without; --preview its contact sheet alone);
+                                            smak.sound/1, smak.music/1, smak.sprite/1 as the commands of their names`,
   },
   sound: {
     run: soundCommand,
@@ -3411,6 +3498,15 @@ const COMMANDS = {
                                             place, floor-1.png the next above it...) with each cell's height as a colour, room-N.png
                                             the headroom over it, legend.json the colours' heights. A map spec's floorplan: { dir }
                                             reads it back as its space: storeys over storeys carved in one`,
+  },
+  "map-overlay": {
+    run: mapOverlay,
+    own: true,
+    help: `  map-overlay <map|bsp> <picture> --from x,y,z --yaw n [--pitch n] [--fov 90] [--locate] [--width n] -o out.png
+                                            the map's edges over a picture of it from that camera, green where they meet the
+                                            picture's own and red where not, how far apart, and the faces the edges say are
+                                            off (by how many units along their normal); --locate finds the camera first by the
+                                            edges, from that guess or from places over the map's floor`,
   },
   "map-light": {
     run: mapLight,

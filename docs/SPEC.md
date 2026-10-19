@@ -19,6 +19,7 @@ smak build lamp.json --focus shade        a model with its parts named seen clos
 | `smak.map/1` | A map of rooms laid out by words, compiled, walked and drawn | below |
 | `smak.model/1` | A model of parts: a prop, a character on a game's skeleton, a weapon in place of a game's | below |
 | `smak.wad/1` | Textures for maps: a .wad and a sheet of them, the map drawn wearing them | below |
+| `smak.video/1` | A video of models and maps from a list of shots: MP4 with ffmpeg, a GIF without | below |
 | `smak.sound/1`, `smak.music/1` | Sounds made of layers; a recording made a track | docs/SOUNDS.md |
 | `smak.sprite/1` | A sprite of layers | docs/SPRITES.md |
 
@@ -474,6 +475,42 @@ the front, not a corner), and a part the pictures show stands where they show it
 
 The pictures: six sides of it; with `focus`, those parts close from the front, the back and below (a light
 under a housing shows only from below); with `reference`, the person's picture beside a view of it.
+
+## A video
+
+A video of the kit's models and maps, for sharing: shots one after another, each a camera move drawn frame by
+frame and checked for smoothness, previewed as a contact sheet before it is made.
+
+```json
+{
+  "spec": "smak.video/1",
+  "name": "showcase",
+  "size": [960, 540], "fps": 30,
+  "shots": [
+    { "kind": "title", "seconds": 2, "text": "LAMP POST" },
+    { "kind": "turntable", "model": "lamp.mdl", "seconds": 6, "pitch": 10, "caption": "lamp, 210 triangles" },
+    { "kind": "flyover", "map": "square.bsp", "seconds": 8, "height": 600, "turns": 0.5 },
+    { "kind": "walk", "map": "square.bsp", "from": "info_player_start", "to": "weapon_shotgun", "speed": 200 }
+  ]
+}
+```
+
+| kind | what it draws | fields |
+| --- | --- | --- |
+| `title` | words on a plain ground | `text`, `seconds` |
+| `turntable` | the model turning on the spot, at one scale over the shot | `model`, `seq` (played as it turns), `turns` (1), `from` (20), `pitch`, `zoom`, `body`, `skin` |
+| `sheet` | the six-sided sheet, playing an animation | `model`, `seq` |
+| `animations` | animations one after another, from one camera | `model`, `seqs`, `each` (seconds), `view` (`side` with `ground`) |
+| `flyover` | the map from above, circling its middle | `map`, `height` (400), `turns` (0.5), `from`, `fov` |
+| `walk` | through the map at a player's eye, along the walk test's way | `map`, `from` and `to` (entities by class, name or number), `speed` (160), `eye` (64) |
+| `path` | a camera along keys, eased at its ends | `map`, `keys: [{ t, at, look ([x, y, z] or ahead), fov }]` |
+
+Every shot takes `seconds` (unless its path says), `caption`, and for a map `brightness`, `fov`, `entities`.
+`smak build showcase.json --preview` draws a contact sheet of four frames a shot (`showcase-sheet.png`) and no
+more: look at it first. Without `--preview` it draws every frame, tells each shot's change from frame to frame
+(a FAULT for a frame that jumps, or an eye in a wall) and writes `showcase.mp4` (H.264, through ffmpeg) or a GIF
+(`format: "gif"`, or when there is no ffmpeg on the PATH), under -o (beside the spec unless told). The models
+and maps a shot names are read from beside the spec; `--game` the folders their textures are found in.
 
 ## Textures for maps (a .wad)
 
