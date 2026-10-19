@@ -104,6 +104,7 @@ body 0: `info` shows the body numbers, and `--body N` picks one.
 | `docs/MAPS-CHECKS.md` | More checks of a map with no game running, added after agents built a series of maps. |
 | `docs/PLAY.md` | A map played in the game and tested by what the game says (`smak play`): steps, fights, the run's report. |
 | `docs/ITEMS.md` | A new weapon, shield or bow added to a game's own files (`smak item`). |
+| `docs/SPRITES.md` | Sprites made by rule (`smak sprite`): glows, flames, explosions, sparks and beams written as `.spr`, measured against Half-Life's own. |
 | `docs/IMPORT.md` | Bought models (.fbx, .glb/.gltf, .obj) made props, weapons or rigged models (`smak import`). |
 | `CHANGELOG.md` | What changed, version by version. |
 | `bin/smak.mjs` | The command line. |

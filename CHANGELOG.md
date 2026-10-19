@@ -42,6 +42,12 @@ From Steven Linn's fork, [stevenlafl/smak](https://github.com/stevenlafl/smak), 
 - **`smak map-decompile`** (`decompile`, `textureFidelity`, `lightParity`, the texture-light table): a compiled map
   made back into brush source, the port of Steven's bsp2map. Master Sword's maps come back and compile again with
   SDHLT, their faces in the original's textures 91 to 100 in 100; a texture in no shipped .wad has to be given.
+- **`smak sprite <spec.json>`** (`buildSpriteSpec`, `writeSpr`; docs/SPRITES.md): sprites made of layers of
+  effects (glow, flare, fire, smoke, explosion, billow, blobs, sparks, ring, beam), written as `.spr` with a sheet
+  and an animated picture, measured against Half-Life's own of their kind. `readSpr` keeps a file's groups,
+  radius, beam length and sync: Half-Life's and Master Sword's 198 sprites are written again byte for byte.
+- **JPEG read whole** (`src/jpeg.mjs`, in place of the baseline-only reader): progressive, CMYK, the EXIF
+  orientation; `unpicture` reads PNG, BMP or JPEG, and `textureFrom` takes JPEG.
 - **`scripts/no-game-files.mjs`**: every tracked file (`--history`: every version ever committed) held against a
   game's folders by bytes, texture pixels and sound samples.
 

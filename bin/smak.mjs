@@ -1992,6 +1992,37 @@ function wadMake({ command, file, rest, flags }) {
   console.log(`${to}: ${textures.length} textures`);
 }
 
+// ── sprite ─────────────────────────────────────────────────────────────────
+/**
+ * sprite: the sprites of a spec (docs/SPRITES.md) built: each .spr under -o at its own name (sprites/...), with
+ * a contact sheet of its frames and an animated picture beside it, and the report. A reference picture the spec
+ * names is read from beside the spec. Exit code 1 when a check fails.
+ */
+async function spriteCommand({ command, file, flags }) {
+  const { buildSpriteSpec } = await import("../src/spec/sprite.mjs");
+  const to = flags.o === undefined ? dirname(resolve(file)) : String(flags.o);
+  let spec;
+  try {
+    spec = JSON.parse(readFileSync(existing(file), "utf8"));
+  } catch (error) {
+    fail(`${command}: ${basename(file)} is not a sprite spec in JSON: ${error.message}`);
+  }
+  const { report, files } = buildSpriteSpec(spec, {
+    readPicture: (name) => smak.unpicture(readFileSync(existing(join(dirname(resolve(file)), name)))),
+  });
+  for (const made of files) {
+    const path = join(to, made.name);
+    save(path, made.bytes);
+    save(path.replace(/\.spr$/i, "-sheet.png"), made.sheet);
+    save(path.replace(/\.spr$/i, "-animated.png"), made.animation);
+    console.log(`      ${path} (with -sheet.png and -animated.png beside it)`);
+  }
+  for (const [label, list] of [["ERROR", report.errors], ["FAULT", report.faults], ["WARN ", report.warnings], ["note ", report.notes ?? []], ["fact ", report.facts]]) // prettier-ignore
+    for (const line of list) console.log(`${label} ${line}`);
+  console.log(report.ok ? `${files.length} sprites built, and every check passed` : "NOT OK: fix what is said above and build again");
+  process.exit(report.ok ? 0 : 1);
+}
+
 // ── map-light ──────────────────────────────────────────────────────────────
 /**
  * map-light: the light on a compiled map's floors, from its lightmaps: all of it, and room by room (--rooms:
@@ -2848,6 +2879,14 @@ const COMMANDS = {
     run: wad,
     own: true,
     help: `  wad <file.wad> [-o <folder>]              the textures of a .wad listed; with -o, each written as a PNG named after it`,
+  },
+  sprite: {
+    run: spriteCommand,
+    own: true,
+    help: `  sprite <spec.json> [-o <folder>]           the sprites of a spec built (docs/SPRITES.md): layers of glows, flares, fire,
+                                            smoke, explosions, billows, sparks, rings and beams, each .spr written under the
+                                            folder (the spec's own unless told) with a sheet of its frames and an animated
+                                            picture, and measured against Half-Life's own of its kind`,
   },
   "wad-make": {
     run: wadMake,

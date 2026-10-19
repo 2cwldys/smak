@@ -11,7 +11,7 @@ import { framesOf, RAMP_NAMES, LAYER_KINDS } from "../src/sprite/effects.mjs";
 import { measureSprite, measureSheet, shapeOverlap } from "../src/sprite/measure.mjs";
 import { sheetOf } from "../src/sprite/draw.mjs";
 import { buildSpriteSpec, validateSpriteSpec } from "../src/spec/sprite.mjs";
-import { test, sure, near, tmp } from "./helper.mjs";
+import { test, sure, near, tmp, runSmak, runRefused, SMAK_CLI } from "./helper.mjs";
 
 const lum = (f, x, y) => {
   const i = (y * f.width + x) * 3;
@@ -316,4 +316,17 @@ test("a sprite file written is the file read: Half-Life's own, where the game is
   const files = readdirSync(game).filter((f) => f.endsWith(".spr"));
   const differ = files.filter((f) => Buffer.compare(writeSpr(smak.maps.readSpr(readFileSync(join(game, f)))), readFileSync(join(game, f))) !== 0); // prettier-ignore
   sure(files.length && !differ.length, `${differ.length} of ${files.length} differ: ${differ.slice(0, 5)}`);
+});
+
+test("smak sprite: a spec's sprites written under the folder with their sheets, the report said; a spec with errors refused", () => {
+  const folder = join(tmp, "sprite-command");
+  const spec = join(tmp, "torch.sprite.json");
+  writeFileSync(spec, JSON.stringify({ spec: "smak.sprite/1", sprites: [{ name: "sprites/torch.spr", class: "fire loop", size: [32, 64], frames: 8, loop: true, fps: 10, origin: "bottom", layers: [{ kind: "fire" }] }] })); // prettier-ignore
+  const said = runSmak("sprite", spec, "-o", folder);
+  const torch = smak.maps.readSpr(readFileSync(join(folder, "sprites", "torch.spr")));
+  sure(torch.frames.length === 9 && /against Half-Life's fire loop/.test(said) && /1 sprites built, and every check passed/.test(said), said);
+  sure(["-sheet.png", "-animated.png"].every((end) => existsSync(join(folder, "sprites", `torch${end}`))), "its pictures beside it");
+  writeFileSync(spec, JSON.stringify({ spec: "smak.sprite/1", sprites: [{ name: "sprites/bad.spr", size: [30, 64], layers: [{ kind: "glow", colour: [255, 0, 0] }] }] })); // prettier-ignore
+  const refused = runRefused(SMAK_CLI, "sprite", spec, "-o", folder);
+  sure(refused.code === 1 && /ERROR/.test(refused.out) && !existsSync(join(folder, "sprites", "bad.spr")), refused.out + refused.err);
 });
