@@ -26,7 +26,7 @@ import { fileURLToPath } from "node:url";
 import { readWad } from "../src/maps/wad.mjs";
 import { readMdl, textureOf, withTextures } from "../src/mdl.mjs";
 import { rgbaOf, unpng, unbmp } from "../src/image.mjs";
-import { unjpeg } from "../src/import-jpeg.mjs";
+import { unjpeg } from "../src/jpeg.mjs";
 
 const KIT = resolve(fileURLToPath(import.meta.url), "../..");
 const STEAM_HL = [

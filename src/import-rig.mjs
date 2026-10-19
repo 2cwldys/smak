@@ -18,7 +18,7 @@ import { check, LIMITS } from "./check.mjs";
 import { indexed, shrink, unpng, unbmp, rgbOf, rgbaOf } from "./image.mjs";
 import { IDENTITY, mul, apply, applyDir, inverse, rigid, sixOf, moved, stretched, turned } from "./import-math.mjs";
 import { importScale, importPictures, fewerTriangles, COMFORTABLE_TRIANGLES } from "./import-model.mjs";
-import { unjpeg } from "./import-jpeg.mjs";
+import { unjpeg } from "./jpeg.mjs";
 import { posed } from "./render.mjs";
 
 /** A bone's name is kept in 32 bytes, the last a zero; so is an animation's. */
