@@ -42,6 +42,11 @@ From Steven Linn's fork, [stevenlafl/smak](https://github.com/stevenlafl/smak), 
 - **`smak map-decompile`** (`decompile`, `textureFidelity`, `lightParity`, the texture-light table): a compiled map
   made back into brush source, the port of Steven's bsp2map. Master Sword's maps come back and compile again with
   SDHLT, their faces in the original's textures 91 to 100 in 100; a texture in no shipped .wad has to be given.
+- **`smak build <spec.json>`** (docs/SPEC.md): a spec built by its kind. `smak.wad/1`, from Steven Linn's fork
+  (`buildWadSpec`): textures for maps painted from materials or photographs (filtered to Valve's range, laid as
+  they are, or aged), with panels, words, grime, wear and relief, made from one another or lifted off a map's
+  view; a .wad and a sheet of them, and with `preview` the map drawn wearing them, each where it shows best.
+  `smak.sound/1`, `smak.music/1` and `smak.sprite/1` as their own commands.
 - **From the spec builder's ground** (Steven Linn's fork, the parts that stand without it): `smak map-fgd` (an FGD
   from a mod's C++ source: each class `LINK_ENTITY_TO_CLASS` makes, with the keys its `KeyValue` and its bases'
   read, joined to its FGD and maps), `smak map-dressing` (a map's dressing beside Valve's campaign, measured),

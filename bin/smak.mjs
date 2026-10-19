@@ -2198,6 +2198,90 @@ async function musicCommand({ command, file, flags }) {
   reportOut(report, "the track built, and every check passed");
 }
 
+// ── build ──────────────────────────────────────────────────────────────────
+/**
+ * wad (smak.wad/1, docs/SPEC.md): the textures painted into a .wad, with a sheet of them, under -o (beside the
+ * spec unless told). `preview: { map }` draws the map wearing them (its .wad files looked for in --game and the
+ * map's own folders); `each: true` each texture at the place the map shows it best, with what it reads as there.
+ */
+async function wadSpecCommand({ command, file, flags, listed }) {
+  const { buildWadSpec } = await import("../src/spec/wad.mjs");
+  const spec = specOf(command, file, "wad");
+  const folder = dirname(resolve(file));
+  const out = flags.o === undefined ? folder : String(flags.o);
+  // a picture read from beside the spec, its name said with what is wrong with it
+  const readPicture = (name) => {
+    try {
+      return smak.unpicture(readFileSync(resolve(folder, String(name).replace(/^work:/, ""))));
+    } catch (error) {
+      throw new Error(`${name}: ${error.code === "ENOENT" ? "no such file beside the spec" : error.message}`);
+    }
+  };
+  const { report, files } = buildWadSpec(spec, { out, folder, readPicture });
+  for (const made of Object.values(files)) console.log(`      ${made}`);
+  const preview = report.ok && spec.preview?.map ? previewOfWad(spec, files, resolve(folder, String(spec.preview.map).replace(/^work:/, "")), listed) : [];
+  for (const line of preview) console.log(line);
+  reportOut(report, `${spec.textures.length} textures built, and every check passed`);
+}
+/** A wad spec's preview: the map drawn wearing the textures, and with `each` every one at its place. */
+function previewOfWad(spec, files, map, listed) {
+  const lines = [];
+  const bsp = maps.readBsp(readFileSync(existing(map)));
+  const textures = maps.readWad(readFileSync(files.wad)).textures;
+  const folders = [...(listed.game ?? []).map(existingFolder), ...maps.mapOwnFolders(map)];
+  const base = files.wad.replace(/\.wad$/i, "");
+  const views = maps.viewsOf(bsp, { count: spec.preview.views ?? 6, folders, textures });
+  save(`${base}-views.png`, smak.png(views.width, views.height, views.rgba));
+  lines.push(`      ${base}-views.png (${basename(map)} wearing them)`);
+  const missing = views.facts?.missing ?? [];
+  if (missing.length) lines.push(`note  the map wears textures this .wad does not have (drawn flat): ${missing.join(", ")}`);
+  if (!spec.preview.each) return lines;
+  // each texture of the spec on its own place in the map, from the camera and at the brightness the
+  // reproduction judge uses: scale, turn and colour checked against a picture of the original's
+  const mine = new Set(spec.textures.map((t) => t.name.toLowerCase()));
+  const places = maps.texturePlaces(bsp).filter((p) => mine.has(p.name.toLowerCase()));
+  const shots = places.map((p) => maps.placeView(bsp, p, { textures }));
+  for (let i = 0; i < shots.length; i += 8) {
+    const sheet = smak.tile(shots.slice(i, i + 8), 4, places.slice(i, i + 8).map((p) => p.name));
+    const path = `${base}-places${i ? `-${i / 8 + 1}` : ""}.png`;
+    save(path, smak.png(sheet.width, sheet.height, sheet.rgba));
+    lines.push(`      ${path} (each where the map shows it best)`);
+  }
+  lines.push(`each texture where the map shows it best, at brightness ${maps.PLACE_BRIGHTNESS} (a colour read off such a view is the paint times the face's light: material seen: { colour, light }):`);
+  // what it reads as there, the middle half of its view: set beside a colour read off a picture of the original's place
+  const middleOf = (shot) => {
+    const sum = [0, 0, 0];
+    let n = 0;
+    for (let y = Math.floor(shot.height / 4); y < (3 * shot.height) / 4; y++)
+      for (let x = Math.floor(shot.width / 4); x < (3 * shot.width) / 4; x++, n++) for (let c = 0; c < 3; c++) sum[c] += shot.rgba[(y * shot.width + x) * 4 + c];
+    return sum.map((v) => Math.round(v / (n || 1)));
+  };
+  places.forEach((p, i) =>
+    lines.push(`  ${p.name}: on a ${p.wall ? "wall" : "floor or ceiling"}, the view spans ${p.across} texels across, the picture's top turned ${p.turned} degrees from ${p.wall ? "up" : "north"}, light [${p.light.join(", ")}]${p.lit ? "" : " (unlit: black in any view)"}; yours reads as RGB ${middleOf(shots[i]).join(", ")} in the middle of that view`),
+  );
+  // a texture the map keeps inside itself is the one the game wears: a .wad does not replace it
+  const kept = places.filter((p) => bsp.textures.some((t) => t.name.toLowerCase() === p.name.toLowerCase() && t.embedded && !t.absent)).map((p) => p.name);
+  for (const name of kept) lines.push(`  the map keeps its own ${name} inside it: the game (and this view) wears that, not the .wad's. Only a recompile without it, or a map that names the .wad, wears yours`);
+  const absent = spec.textures.filter((t) => !places.some((p) => p.name.toLowerCase() === t.name.toLowerCase())).map((t) => t.name);
+  if (absent.length) lines.push(`  not on the map's world faces: ${absent.join(", ")}`);
+  return lines;
+}
+
+/** The spec builders by the spec each reads (docs/SPEC.md): `smak build` picks one by the spec's `spec`. */
+const BUILDERS = {
+  "smak.wad/1": wadSpecCommand,
+  "smak.sound/1": (given) => soundCommand(given),
+  "smak.music/1": (given) => musicCommand(given),
+  "smak.sprite/1": (given) => spriteCommand(given),
+};
+/** build: a spec built by the builder its `spec` names. */
+async function buildCommand(given) {
+  const spec = specOf(given.command, given.file, "smak");
+  const run = BUILDERS[spec?.spec];
+  if (!run) fail(`${given.command}: "spec" is one of ${Object.keys(BUILDERS).join(", ")}, not ${JSON.stringify(spec?.spec)}`);
+  await run(given);
+}
+
 // ── map-light ──────────────────────────────────────────────────────────────
 /**
  * map-light: the light on a compiled map's floors, from its lightmaps: all of it, and room by room (--rooms:
@@ -3102,6 +3186,14 @@ const COMMANDS = {
                                             what a mod's code asks of a model by name or number: bones, animations in their
                                             order with activities, attachments, bodyparts, hit groups; --against: what the model
                                             breaks of a reference's (exit code 1 when it breaks any)`,
+  },
+  build: {
+    run: buildCommand,
+    own: true,
+    help: `  build <spec.json> [-o <folder>] [--game <folder>]...
+                                            a spec built by its kind (its "spec"; docs/SPEC.md): smak.wad/1 textures painted into a
+                                            .wad with a sheet of them (preview: { map, each }: the map drawn wearing them, each at
+                                            its place), smak.sound/1, smak.music/1, smak.sprite/1 as the commands of their names`,
   },
   sound: {
     run: soundCommand,

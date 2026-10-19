@@ -53,6 +53,39 @@ test("the renderer keeps a scene by the textures given: two sets under one name 
   sure(light > dark + 20, `${dark} against ${light}`);
 });
 
+test("smak build's wad preview `each`: the spec's textures from the judge's camera, and their light", () => {
+  const work = join(tmp, "places");
+  mkdirSync(work, { recursive: true });
+  copyFileSync(join(FIXTURES, "tworooms-wants-wad.bsp"), join(work, "tworooms.bsp"));
+  const spec = {
+    spec: "smak.wad/1",
+    name: "rooms.wad",
+    textures: [
+      { name: "smakwall", size: [64, 64], material: { base: "plaster", seen: { colour: [0.6, 0.55, 0.5], light: places.find((p) => p.name === "smakwall").light } } },
+      { name: "smakfloor", size: [32, 32], material: "stone" },
+    ],
+    preview: { map: "tworooms.bsp", each: true },
+  };
+  writeFileSync(join(work, "rooms.json"), JSON.stringify(spec));
+  const words = runSmak("build", join(work, "rooms.json"));
+  sure(/2 textures built, and every check passed/.test(words), words.slice(0, 400));
+  sure(/smakwall: on a .*the view spans \d+ texels across, the picture's top turned -?\d+ degrees .* light \[/.test(words), words);
+  // what it reads as there: a wall painted to be seen as [0.6, 0.55, 0.5] under that light reads near it
+  const reads = (words.match(/smakwall: .*yours reads as RGB (\d+), (\d+), (\d+)/) ?? []).slice(1).map(Number);
+  sure(reads.length === 3 && reads.every((v, k) => Math.abs(v - [153, 140, 128][k]) < 40), `smakwall reads as ${reads}: ${words}`);
+  sure(["rooms-textures.png", "rooms-views.png", "rooms-places.png"].every((name) => smak.unpng(readFileSync(join(work, name))).width > 0), "the sheet, the views and the places");
+});
+
+test("the wad preview says when the map keeps its own copy of a texture, which the game wears instead", () => {
+  const work = join(tmp, "places-embedded");
+  mkdirSync(work, { recursive: true });
+  copyFileSync(join(FIXTURES, "tworooms.bsp"), join(work, "tworooms.bsp"));
+  const spec = { spec: "smak.wad/1", name: "rooms.wad", textures: [{ name: "smakwall", size: [64, 64], material: "stone" }], preview: { map: "tworooms.bsp", each: true } };
+  writeFileSync(join(work, "rooms.json"), JSON.stringify(spec));
+  const words = runSmak("build", join(work, "rooms.json"));
+  sure(/the map keeps its own smakwall inside it/.test(words), words);
+});
+
 test("a texture's wear: detail and spread as a used wall has them, and no seam where it repeats", () => {
   const base = { base: "plaster", tone: [0.45, 0.43, 0.4] };
   const out = join(tmp, "wear");

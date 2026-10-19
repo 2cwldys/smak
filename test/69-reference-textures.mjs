@@ -301,3 +301,20 @@ test("a .wad takes a picture by its path, beside the spec; a picture not there i
   const missing = buildWadSpec({ spec: "smak.wad/1", name: "gone.wad", textures: [{ name: "gone", size: [64, 64], material: { base: "plaster", picture: "nowhere.jpg" } }] }, { out: join(folder, "gone"), folder });
   sure(!missing.report.ok && missing.report.errors.some((e) => /nowhere\.jpg/.test(e)), missing.report.errors.join("; "));
 });
+test("smak build reads a .wad spec's picture beside the spec, a JPEG among them; one not there is refused", () => {
+  const work = join(folder, "work");
+  mkdirSync(join(work, "refs"), { recursive: true });
+  let picture = "refs/wall.png";
+  writeFileSync(join(work, picture), readFileSync(join(folder, "wall.png")));
+  if (has("magick")) {
+    spawnSync("magick", [join(folder, "wall.png"), "-quality", "85", "-interlace", "JPEG", join(work, "refs", "wall.jpg")]);
+    if (existsSync(join(work, "refs", "wall.jpg"))) picture = "refs/wall.jpg";
+  }
+  const spec = { spec: "smak.wad/1", name: "refs.wad", textures: [{ name: "ref_wall", size: [128, 128], material: { base: "stone", picture, size: 96 } }] };
+  writeFileSync(join(work, "refs.json"), JSON.stringify(spec));
+  const words = runSmak("build", join(work, "refs.json"));
+  sure(/1 textures built, and every check passed/.test(words) && /ref_wall: valve: /.test(words), words.slice(0, 600));
+  writeFileSync(join(work, "gone.json"), JSON.stringify({ ...spec, textures: [{ ...spec.textures[0], material: { base: "stone", picture: "refs/nowhere.jpg" } }] }));
+  const refused = runRefused(SMAK_CLI, "build", join(work, "gone.json"));
+  sure(refused.code === 1 && /nowhere\.jpg/.test(refused.out + refused.err), refused.out + refused.err);
+});
