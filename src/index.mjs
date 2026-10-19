@@ -10,6 +10,7 @@ export * from "./fit.mjs";
 export * from "./build.mjs";
 export * from "./items.mjs";
 export * from "./render.mjs";
+export * from "./anim-gif.mjs";
 export * from "./icon.mjs";
 export * from "./check.mjs";
 export * from "./qem.mjs";

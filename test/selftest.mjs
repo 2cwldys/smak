@@ -86,6 +86,8 @@ const areas = [
   "76-map-specs", // a map spec: rooms laid out by words, their ways, furniture, frames, light and focus, walked
   "77-props-look", // props as GoldSrc's look: crossed cards for a crown, a model's colours against Valve's
   "78-floorplan", // a map's space from a floor plan of height plans, and a texture lifted off its view
+  "79-video", // a video of models and maps from a shot list: camera paths, a turntable, a GIF written here
+  "80-map-overlay", // a map's edges laid over a picture of it, and the camera found that lays them best
   "19-example-and-kit-faults", // the examples' wrong arguments and refused models; the kits' fittings and rings
 ];
 
