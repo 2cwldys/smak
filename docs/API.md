@@ -758,6 +758,19 @@ M.ridge(wall, [[0.9, 0], [7, 0]], Z.BAR, { width: 0.9, height: 0.21 });         
 const top = wall.ends[1];                                                                // the dome's point, and the way it looks
 ```
 
+## Specs (`src/spec/`)
+
+What `smak build` runs, one module a kind of spec (docs/SPEC.md); each returns `{ report, files }` (a model also
+`mdl`, a map also `map`), the report `{ ok, errors, faults, warnings, facts }`.
+
+| Import | Builds |
+| --- | --- |
+| `buildMapSpec(spec, { out, folder, compilers, fgd, wads, mod, readPicture, readFile })`, `validateMapSpec(spec, { mod })`, `layoutOf`, `withIncludes`, `withProfile` from `src/spec/map.mjs` | A map of rooms: its `.map`, own `.wad`, models, sounds, sky; compiled, walked and drawn |
+| `buildModelSpec(spec, { folder, out, games, readPicture, readFile })`, `validateModelSpec` from `src/spec/model.mjs` | A model of parts: a prop, a character on a base, a weapon in a game's place |
+| `buildWadSpec(spec, { out, folder, readPicture })`, `validateWadSpec` from `src/spec/wad.mjs` | Textures for maps: a `.wad` and its sheet |
+| `buildSoundSpec`, `buildMusicSpec` from `src/spec/sound.mjs`, `src/spec/music.mjs` | Sounds and tracks (docs/SOUNDS.md) |
+| `buildSpriteSpec` from `src/spec/sprite.mjs` | Sprites (docs/SPRITES.md) |
+
 ## The kits (`kits/`)
 
 Each takes a description and returns `{ tris, image }`. Their file headers list every option.
@@ -768,6 +781,8 @@ Each takes a description and returns `{ tris, image }`. Their file headers list 
 | `axe(spec)`, `crescent`, `flared`, `wrap`, `bolts` from `kits/axekit.mjs` | A haft with one or more bits. `haft: true`. Texture 1024x512. |
 | `blunt(spec)`, `toward` from `kits/bluntkit.mjs` | A haft with turned parts on it: clubs, bats, hammers, maces. `haft: true`. |
 | `bow(spec)`, `through` from `kits/bowkit.mjs` | A bent stave and its string. `rig: "nearest"`. Texture 1024x256. |
+| `firearm(spec)`, `FIREARM_PRESETS`, `FINISHES` from `kits/firearmkit.mjs` | A gun: receiver, barrel, grip, guard and trigger, magazine, stock, forend, sights (pistol, shotgun, submachine gun, rifle). Texture 1024x512, and `parts`. |
+| `kits/furniture/*.json` | Not code: 30 model specs (bed, sofa, stove, fridge, bench, trees...), a map spec's props as `"kit:<name>"`. |
 | `recipesOf(mod)` from `kits/encounterkit.mjs` | Not a model: a map's encounters wired, as entities for `writeMap` (`area`, `monster`, `trigger`, `line`, `fillAhead`, `onArrival`, `surprise`, `waves`, `counted`, `rewardOnDeath`, `chance`, `oneOf`). `docs/MAPS-DESIGN.md`. |
 
 The kits paint large. Bring a picture down with `shrink(image, 2)` or `4` before `indexed` for GoldSrc.

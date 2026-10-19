@@ -29,6 +29,33 @@ compilers, fgd, wads, readPicture, readFile })` in `src/spec/map.mjs`, `buildWad
 readPicture })` in `src/spec/wad.mjs`, `buildModelSpec(spec, { folder, games, readPicture, readFile })` in
 `src/spec/model.mjs`.
 
+## The loop
+
+1. **Read what is asked, and list it.** Each thing the person names (a part, a room, a door, a count, a
+   size, a colour) is a line of your list. That list is what you check the result against at the end.
+2. **Write the spec.** Sizes in units (about an inch: a player is 72 tall, a door 64 by 96, a barrel 40
+   tall). Ids are words that say what the part or the room is: `lid`, `hall`, never `part3`.
+3. **Build it** (`smak build x.json`) and read the report from the top. `built, and every check passed` is the
+   shape and the map passing every check; `NOT OK` lists what to fix above it, each line naming the part or
+   the room. Fix the spec, build again.
+4. **Look at the pictures** against your list: a part in the wrong place, a size that reads wrong, a door
+   in the wrong wall show there and in no check. The report also lists every part or room with where it
+   ended up (`PARTS`, `ROOMS`), which tells a stack built upside down at once.
+5. **Large requests: prefabs and modules.** A request that needs more than one spec can say (a tavern with
+   its tables, a town with its shops) is cut in pieces: each piece a spec of its own, built and checked
+   alone, then put in the larger one: a model's `prefab` part; a map's `models`, `prefabs` (brushes, or a
+   `.map` file) and `include` (a whole map spec as a module). A building for a map made another way is taken
+   out of its yard ("A building in another map").
+6. **Given pictures of the thing** (its sides, some angles), let the pictures do what they can measure: a
+   prop's `carved` part takes its outline from them at once (then paint it); a character's `pose: { fit: true }`
+   and `motion` take its stance and its run from them; a texture's `picture` its detail. Build the rest by
+   hand: what an outline cannot show (a hollow, a handle's hole, a face). `--reference` draws the picture
+   beside the result.
+7. **The person asks for a change** ("looks good, now add a chest next to the bed"): change the spec as
+   little as the request needs and build it again under the same name. The report then says what changed
+   since the last build (`CHANGED ... things added: ...`, `... are where they were`): tell the person that,
+   and check that nothing changed that they did not ask for.
+
 ## A model
 
 ```json
@@ -334,7 +361,7 @@ new name needs the mod's code). They are written in `<name>_weapon/` beside the 
   low on the right), and the build finds the turns of the arm and the hand (`bones`, the right arm's unless
   told) that put the weapon's far end there, and says them. Draw it (the build shows the first attack).
 - `sounds`: `[{ "spec": <a sound spec>, "event": { "sequence": "reload", "frame": 70 } }]`: its sounds (see
-  "A sound"), written under `sound/` with its files. Most of a weapon's sounds are played by the game's code
+  docs/SOUNDS.md, "A sound"), written under `sound/` with its files. Most of a weapon's sounds are played by the game's code
   under fixed names (the crowbar's hit is `weapons/cbar_hit1.wav`, the .357's shot `weapons/357_shot1.wav`):
   give the sound that name and the game plays it. One an animation plays (a reload's clicks) takes `event`:
   the build writes event 5004 at that frame of the first-person file with the sound's path, keeping the

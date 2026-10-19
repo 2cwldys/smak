@@ -24,7 +24,7 @@ writes a file it reads back to the same bytes, `features`, `checks`, `soundPictu
 
 From Steven Linn's fork ([stevenlafl/smak](https://github.com/stevenlafl/smak)), where its server's `build`
 tool runs it, and its `generate` tool makes the takes the text below speaks of. A map spec's `sounds` and
-`music`, and a weapon's `sounds`, are its spec builders', which are not here. The checks are held to what
+`music`, and a weapon's `sounds`, are built with the map or the model (docs/SPEC.md). The checks are held to what
 SMAK makes: of the game's own files, many have an offset or end on a sample far from silence.
 
 ## A sound

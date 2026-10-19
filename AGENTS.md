@@ -13,7 +13,8 @@ map made from brushes in a script and compiled; texture files (`.wad`) read and 
 This file is the whole briefing. `docs/API.md` lists every function; `docs/ENGINES.md` covers GoldSrc against Xash;
 `docs/MAPS.md` (a compiled map, and the pictures of maps) and `docs/MAPS-MAKING.md` (brushes and the compile) hold
 the vocabulary for maps; `docs/MAPS-DESIGN.md` what makes one good to look at and to play; `docs/MAPS-SKETCH.md`
-a map from a person's drawing (an SVG or a PNG).
+a map from a person's drawing (an SVG or a PNG); `docs/SPEC.md` a map, a model or textures described in JSON and
+built by `smak build` (docs/SOUNDS.md and docs/SPRITES.md the sounds and sprites).
 
 ## What it needs
 
@@ -106,6 +107,8 @@ node bin/smak.mjs pieces <mdl> [--body n]          its loose pieces, each with i
 node bin/smak.mjs view <folder|mdl> [more ...]     the viewer, for the person: two models side by side in the browser
 node bin/smak.mjs mcp --work <dir> [--models <dir>]  the kit as an MCP server, for a client with no shell (mcp/README.md)
 node bin/smak.mjs edit <folder|mdl>                the editor, for the person: animations, events and textures by hand
+node bin/smak.mjs build <spec.json> [-o dir] [--game <folder> ...] [--mod <profile>]   a spec built by its kind (docs/SPEC.md):
+                                                   a map of rooms placed by words, a model of parts, textures, sounds, a sprite
 ```
 
 For maps (their recipes are under "Maps"):
@@ -292,6 +295,15 @@ You need this model in your head; the API mirrors it exactly.
 ## Recipes
 
 Each has a runnable example in `examples/`. Read the example first; it is the template.
+
+### Described instead of scripted: specs (`docs/SPEC.md`)
+
+A prop, a weapon in place of a game's, a character on a game's skeleton, a map of rooms, its textures: each
+can be written as a spec in JSON (parts placed by what they sit on, rooms by what they are next to) and built
+with `smak build x.json`, which checks it, walks a map, compiles it when VHLT is there and draws both. A map
+for a mod takes its profile (`--mod`, or `"mod"` in the spec): its starts, its classes and, where the profile
+has them, its textures, its props and rooms furnished by their use. Reach for a script when a spec cannot say
+it; the two meet in `standingIn` and `mergeMaps` (a spec's building on a scripted map's ground).
 
 ### A new texture on an existing model (reskin): `examples/03-reskin.mjs`
 
