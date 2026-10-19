@@ -113,6 +113,7 @@ body 0: `info` shows the body numbers, and `--body N` picks one.
 | `viewer/` | The page that shows models side by side, and its small server. |
 | `editor/` | The page for re-timing and re-posing animations, events and textures by hand, its server, and the same edits from a terminal. |
 | `examples/` | Seven scripts, one for each kind of work; the seventh makes a small map. |
+| `scripts/` | `no-game-files.mjs`: every file the repository tracks (`--history`: every version ever committed) held against a game's folders, by their bytes, every texture of their `.wad` files and models by its pixels, and every sound by its samples. Run it before a push. |
 | `profiles/` | Two mods' profiles (Master Sword Classic's, and The Specialists' with its role-play cities), as examples of what a mod's own is: what its maps' entities are checked against. No part of the kit's core, and they hold no game content. |
 | `mcp/` | The kit as an MCP server, for a client with no shell: `mcp/README.md`. |
 | `test/` | The kit checking itself: `selftest.mjs` runs the files beside it, one an area. `test/fixtures/` holds the kit's own small map. |
