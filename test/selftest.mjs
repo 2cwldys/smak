@@ -77,6 +77,12 @@ const areas = [
   "67-height-plan", // a height plan read back into open space, storeys over storeys
   "68-textures", // a wad spec: textures worn, in relief, made from another; each where a map shows it best, matched to a picture
   "69-reference-textures", // a photograph made a texture: its material found, filtered to Valve's range, laid as it is or aged
+  "70-carve", // a shape carved from pictures' outlines, and the quadric reducer that brings it to its triangles
+  "71-blob", // a soft body of one surface: limbs, eggs and a skirt blended round a skeleton
+  "72-outline-parts", // which parts change a model's outline from some side, and which only cost triangles
+  "73-firearm-kit", // a gun from the firearm kit, laid the right way up in another weapon's place
+  "74-generated-character", // a character from a made shape on a base: fused limbs warned, its back and sides painted
+  "75-model-specs", // a model spec: parts placed by words, characters on a game's skeleton, a weapon in a game's place
   "19-example-and-kit-faults", // the examples' wrong arguments and refused models; the kits' fittings and rings
 ];
 
