@@ -240,7 +240,8 @@ function leakSentence(leak) {
 
 /**
  * The compilers' own .wad, kept beside them: the pictures of ORIGIN, CLIP, NULL, HINT, SKIP and the like.
- * VHLT's is zhlt.wad, SDHLT's sdhlt.wad.
+ * VHLT's is zhlt.wad, SDHLT's sdhlt.wad; SDHLT's release keeps it in `tools`, a folder over the programs
+ * (`tools/Win64`, `tools/Win32`, `tools/Linux`), so it is looked for there too.
  */
 const TOOL_WADS = ["zhlt.wad", "sdhlt.wad"];
 
@@ -428,7 +429,9 @@ export function compileMap(mapFile, options = {}) {
   const listed = wadFiles.length ? [...wadFiles] : wadsOf(mapText);
   const toolFolder = found.folder ?? dirname(found.tools.hlcsg);
   const toolWad =
-    TOOL_WADS.map((name) => join(toolFolder, name)).find((file) => existsSync(file)) ?? join(toolFolder, TOOL_WADS[0]);
+    [toolFolder, dirname(toolFolder)]
+      .flatMap((folder) => TOOL_WADS.map((name) => join(folder, name)))
+      .find((file) => existsSync(file)) ?? join(toolFolder, TOOL_WADS[0]);
   const isToolWad = (wad) => TOOL_WADS.includes(basename(wad).toLowerCase());
   const ownWads = listed.filter((wad) => !isToolWad(wad));
   if (existsSync(toolWad) && !listed.some(isToolWad)) listed.push(toolWad);

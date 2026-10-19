@@ -951,7 +951,8 @@ testCompiled("compiled: a sealed room becomes a .bsp, with no error, no leak and
   });
   sure(carried.bsp && carried.logs.length === 2, carried.errors.join("; "));
   // VHLT says "Including Wadfile: ...smak-maps.wad"; SDHLT names it in its "Wadinclude list"
-  const takenIn = /Including Wadfile: .*smak-maps\.wad|Wadinclude list\s*\n-+\n(?:[^-\n].*\n)*smak-maps\s*\n/;
+  // (its log's lines end in \r\n on Windows)
+  const takenIn = /Including Wadfile: .*smak-maps\.wad|Wadinclude list\r?\n-+\r?\n(?:[^-\r\n].*\r?\n)*smak-maps\r?\n/;
   sure(takenIn.test(carried.logs[0].text) && !takenIn.test(result.logs[0].text), "wadinclude");
   // the textures lump (the third of a .bsp's header) then holds the pictures themselves, and is larger
   const texturesLump = (file) => file.readInt32LE(8 + 2 * 8);
