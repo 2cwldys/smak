@@ -1022,21 +1022,52 @@ export function carve(rooms, wall, texture) {
   let rock = [{ min, max }];
   for (const room of rooms) rock = rock.flatMap((piece) => subtract(piece, room));
   const wears = roomTextures(texture);
-  const everywhere = { top: wears.floor, bottom: wears.ceiling, sides: wears.wall };
-  if (!rooms.some((room) => room.texture !== undefined))
-    return rock.map((piece) => box(piece.min, piece.max, everywhere));
   // each room's own, or the carve's; then each face of each piece by the room it is seen from
   const own = rooms.map((room) => (room.texture === undefined ? wears : roomTextures(room.texture)));
-  const pieces = rock.flatMap((piece) => cutForRooms(piece, rooms, own));
+  const pieces = rooms.some((room) => room.texture !== undefined)
+    ? rock.flatMap((piece) => cutForRooms(piece, rooms, own))
+    : rock;
   return pieces.map((piece) => {
     const sides = {};
     for (const side of CARVE_SIDES) {
-      const seen = facingRooms(piece, side, rooms)[0];
+      const seen = mostFacing(piece, side, rooms);
       const of = seen === undefined ? wears : own[seen];
-      sides[side.name] = side.name === "top" ? of.floor : side.name === "bottom" ? of.ceiling : of.wall;
+      if (side.axis === 2) sides[side.name] = side.least ? of.ceiling : of.floor;
+      // a wall's picture stands on the floor of the room it faces and starts at its corner, as a mapper lines
+      // it up: its bands, its skirting and its seams fall where they were painted to, whatever the room's height
+      // (from stevenlafl/smak: Steven's play-test, "texture alignment is off")
+      else if (seen === undefined) sides[side.name] = of.wall;
+      else sides[side.name] = onFloor(of.wall, rooms[seen].min[2], rooms[seen].min[side.axis === 0 ? 1 : 0]);
     }
     return box(piece.min, piece.max, sides);
   });
+}
+
+/**
+ * A wall's texture lined up so that its bottom edge stands on a floor at `z` and its left edge on the room's
+ * corner at `corner` along the wall (a wall's picture runs along +x or +y, and down -z): its offsets moved to
+ * them in its own scale. A texture given by direction or by rule, turned, or aligned its own way is left as it is.
+ */
+export function onFloor(texture, z, corner = 0) {
+  const fit = typeof texture === "string" ? { name: texture } : texture;
+  if (!fit || typeof fit !== "object" || typeof fit.name !== "string" || fit.rotation || fit.align) return texture;
+  const [su, sv] = Array.isArray(fit.scale) ? fit.scale : [fit.scale ?? 1, fit.scale ?? 1];
+  const offset = fit.offset ?? [0, 0];
+  return { ...fit, offset: [offset[0] - corner / su, offset[1] + z / sv] };
+}
+
+/** The room a side of a piece of rock is seen from the most of (its number), or undefined when none sees it. */
+function mostFacing(piece, side, rooms) {
+  let best;
+  let most = 0;
+  for (const nth of facingRooms(piece, side, rooms)) {
+    const room = rooms[nth];
+    const shared = [0, 1, 2]
+      .filter((i) => i !== side.axis)
+      .reduce((area, i) => area * (Math.min(piece.max[i], room.max[i]) - Math.max(piece.min[i], room.min[i])), 1);
+    if (shared > most) [best, most] = [nth, shared];
+  }
+  return best;
 }
 
 /** The six sides of a box of rock, as `box` names them: the axis, and whether it is the box's least end. */

@@ -724,6 +724,29 @@ test("the plan check's errors, each in words", () => {
   );
 });
 
+test("a carved wall's texture stands on the floor of the room it faces and starts at its corner", () => {
+  // two rooms 16 apart, the second 40 higher and 24 further north: each side of the rock between them is lined
+  // up with the room it faces, its picture's foot on that floor (v runs down -z) and its left edge on that
+  // room's corner (u runs along +y on walls that face x)
+  const first = { min: [0, 0, 0], max: [256, 256, 128] };
+  const second = { min: [272, 24, 40], max: [528, 280, 168] };
+  const walls = (rooms, texture) =>
+    carve(rooms, 16, texture).flatMap((brush) => brush.faces.filter((face) => face.texture === "W"));
+  const facing = (faces, x, normal) =>
+    faces.filter((face) => face.points.every((p) => Math.abs(p[0] - x) < 1e-6) && Math.round(planeOf(face.points).normal[0]) === normal); // prettier-ignore
+  const faces = walls([first, second], { floor: "F", ceiling: "C", wall: "W" });
+  const intoFirst = facing(faces, 256, -1);
+  const intoSecond = facing(faces, 272, 1);
+  sure(intoFirst.length && intoFirst.every((face) => face.v[3] === 0 && face.u[3] === 0), JSON.stringify(intoFirst.map((f) => [f.u[3], f.v[3]])));
+  sure(intoSecond.length && intoSecond.every((face) => face.v[3] === 40 && face.u[3] === -24), JSON.stringify(intoSecond.map((f) => [f.u[3], f.v[3]])));
+  // in the texture's own scale, added to its own offset; rooms of their own textures alike
+  const scaled = walls([first, { ...second, texture: { name: "W", scale: 2, offset: [3, 5] } }], { floor: "F", ceiling: "C", wall: "W" }); // prettier-ignore
+  sure(facing(scaled, 272, 1).every((face) => face.v[3] === 5 + 20 && face.u[3] === 3 - 12), JSON.stringify(facing(scaled, 272, 1).map((f) => [f.u[3], f.v[3]]))); // prettier-ignore
+  // a turned texture is left as it is
+  const turned = walls([first, second], { floor: "F", ceiling: "C", wall: { name: "W", rotation: 90 } });
+  sure(facing(turned, 272, 1).every((face) => face.v[3] === 0 && face.u[3] === 0), "a turned texture");
+});
+
 test("no map is written with an entity that precaches a model it does not name", () => {
   const glow = (keys) => ({ brushes: sealedRoom(), entities: [...roomEntities(), { classname: "env_glow", origin: "128 128 64", ...keys }] }); // prettier-ignore
   sure(/entity 3 \(env_glow\) precache a model/.test(refusal(() => writeMap(glow({})))), "a glow with no sprite");
