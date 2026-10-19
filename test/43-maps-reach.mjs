@@ -160,6 +160,27 @@ test("a ladder is climbed in a shaft that no place of the grid is in", () => {
   sure(!item(maps.reachOf(without)).reached, "without the ladder the ledge is not got onto");
 });
 
+test("a lift is ridden between its top and its bottom, as a ladder is climbed", () => {
+  // the ledge 64 high, past a jump; a func_plat before it built at its top, travelling 64 down to the floor
+  const item = (reach) => reach.entities.find((entity) => entity.classname === "item_test");
+  const ledge = maps.box([LEDGE_FACE, 0, 0], [320, 96, 64], "LEDGE");
+  const lift = maps.brushEntity("func_plat", maps.box([LEDGE_FACE - 64, 16, 48], [LEDGE_FACE, 80, 64], "RUST"), { height: 64 }); // prettier-ignore
+  const map = (more) => house({ brushes: [ledge], entities: [maps.pointEntity("item_test", [260, 48, 70]), ...more] });
+  sure(!item(maps.reachOf(map([]), { jump: true })).reached, "without the lift the ledge is not got onto");
+  const reach = maps.reachOf(map([lift]));
+  sure(item(reach).reached, `with it, it is: ${item(reach).why}`);
+  const way = maps.spaceOf(map([lift])).ladders[0];
+  sure(way.min[2] === -1 && way.max[2] === 64, `its shaft is its travel: ${JSON.stringify(way)}`);
+  sure(reach.facts.some((f) => /func_plat rides from z 64, where it is built, down to z 0/.test(f)) && !reach.warnings.some((w) => /func_plat/.test(w)), reach.warnings.join(" | "));
+  // built on the floor with a height under 0 it rides up, to no floor: told, with what the height means
+  const up = maps.brushEntity("func_plat", maps.box([LEDGE_FACE - 64, 16, -16], [LEDGE_FACE, 80, 0], "RUST"), { height: -40 });
+  const wrong = maps.reachOf(map([up]));
+  sure(wrong.warnings.some((w) => /func_plat rides from z 0, where it is built, up to z 40: at z 40 no floor lies within a step of it.*height under 0|one under 0 rides up/.test(w)), wrong.warnings.join(" | "));
+  // with a name it is ridden when something names it, as scenery is moved: said, not judged
+  const toggled = maps.reachOf(map([maps.brushEntity("func_plat", maps.box([LEDGE_FACE - 64, 16, -16], [LEDGE_FACE, 80, 0], "RUST"), { height: -40, targetname: "pillar" })])); // prettier-ignore
+  sure(!toggled.warnings.some((w) => /func_plat/.test(w)) && toggled.facts.some((f) => /"pillar" rides from z 0, where it is built, up to z 40 when named/.test(f)), toggled.warnings.join(" | ")); // prettier-ignore
+});
+
 test("a pit whose only way out is such a ladder is no one-way place", () => {
   // a pit 96 deep in the hall's floor, its east wall at x 199: a ladder 4 thick against it is touched with
   // the body's middle between x 178 and 183, off the grid

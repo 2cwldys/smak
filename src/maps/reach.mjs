@@ -1242,6 +1242,28 @@ export function reachOf(map, options = {}) {
     );
   if (carried.dead.length)
     warnings.push(`${carried.dead.length} teleports a player walks into lead nowhere: ${some(carried.dead)}`);
+  // each lift's two ends: a player stands on it at both, or it rides into a ceiling or the rock. A lift built
+  // level with a floor with a height under 0 rides up into the ceiling, never down to the pit it was for
+  for (const lift of (space.ladders ?? []).filter((way) => way.lift)) {
+    const middle = [(lift.min[0] + lift.max[0]) / 2, (lift.min[1] + lift.max[1]) / 2];
+    const [built, other] = lift.ends.map(Math.round);
+    const thing = things.find((each) => each.number === lift.number);
+    const said = `${thing ? named(thing) : `lift ${lift.number}`} rides from z ${built}, where it is built, ${other < built ? "down" : "up"} to z ${other}`;
+    // an end is of use where floor lies within a step of it: beside the lift to step off onto, or under it (a
+    // lift that fills its pit rests on the pit's floor)
+    const out = BODIES.standing.half + 8;
+    const around = [middle, [lift.min[0] - out, middle[1]], [lift.max[0] + out, middle[1]], [middle[0], lift.min[1] - out], [middle[0], lift.max[1] + out]];
+    const floorNear = (z) => around.some(([x, y]) => space.blocked(x, y, BODIES.standing).some(([, top]) => Math.abs(top - z) <= step));
+    const stuck = lift.ends.filter((z) => !restOf(space, [...middle, z + 1], BODIES.standing).fits).map(Math.round);
+    const nowhere = lift.ends.filter((z) => !floorNear(z)).map(Math.round);
+    // a lift with a name is ridden when something names it (a button, a script), as scenery is moved: its ends
+    // are said, not judged. Master Sword's own maps have three such (foutpost's falling tower, phobia's
+    // pillar, the_wall2's exit), none of them a lift a player steps on
+    if (thing?.targetname) facts.push(`${said} when named (it is not ridden by stepping on it)`);
+    else if (stuck.length || nowhere.length)
+      warnings.push(`${said}: ${[stuck.length ? `at z ${stuck.join(" and ")} a standing player does not fit on it (a ceiling, a wall or the rock is there)` : null, nowhere.length ? `at z ${nowhere.join(" and ")} no floor lies within a step of it, beside it or under it, to step off onto` : null].filter(Boolean).join("; ")}. A func_plat's height is how far it rides DOWN from where it is built; one under 0 rides up`);
+    else facts.push(said);
+  }
   // where a teleport puts a player is no place one goes to: it is not counted, unless a marker names it
   const landings = new Set(teleports.map((thing) => targetOf(thing)?.number));
 

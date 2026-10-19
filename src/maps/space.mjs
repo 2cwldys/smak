@@ -88,6 +88,17 @@ export function classUnder(list, classname) {
 }
 /** Brush entities a body climbs or swims up through: a ladder, and water that is an entity. */
 const LADDERS = /^func_ladder$/;
+/**
+ * A lift: a body rides it between its two ends, so the walk takes it as a ladder in its shaft, its brush not a
+ * wall (it moves). Its other end is `height` under where it is built, or with none its own height less 8 (the
+ * Half-Life SDK's dlls/plats.cpp, CFuncPlat::Setup); a height under 0 is over it: a lift built at the bottom
+ * that rides up.
+ */
+const LIFTS = /^func_plat$/;
+const liftOf = (number, min, max, height) => {
+  const other = max[2] - (Number(height) || max[2] - min[2] - 8);
+  return { number, lift: true, ends: [max[2], other], min: [min[0], min[1], Math.min(max[2], other) - 1], max: [max[0], max[1], Math.max(max[2], other)] }; // prettier-ignore
+};
 const WATERS = /^func_water$/;
 /**
  * Textures that make a brush nothing to a body; `clip` stops every body but the point. Measured in the clip hulls
@@ -323,16 +334,17 @@ function sourceSpace(map, { doors, walls, open, shut, off }) {
     const held = gives.gone || named.some((name) => open.includes(name));
     const kept = named.some((name) => shut.includes(name));
     const isOpen = !kept && (held || (isDoor && doors !== "closed"));
-    const solid = !NEVER_SOLID.test(classname) && !LADDERS.test(classname) && !WATERS.test(classname);
+    const solid = !NEVER_SOLID.test(classname) && !LADDERS.test(classname) && !LIFTS.test(classname) && !WATERS.test(classname); // prettier-ignore
     areas.push({
       ...{ number, classname, targetname: entity.targetname, min, max, door: isDoor, open: isOpen },
       ...{ solid, gives: gives.class },
     });
     if (isDoor || held)
       doorList.push({ number, classname, targetname: entity.targetname, min, max, open: isOpen });
-    if (LADDERS.test(classname)) {
-      climbs.push({ kind: "ladder", min, max });
-      ladders.push({ number, min, max });
+    if (LADDERS.test(classname) || LIFTS.test(classname)) {
+      const way = LIFTS.test(classname) ? liftOf(number, min, max, entity.height) : { number, min, max };
+      climbs.push({ kind: "ladder", min: way.min, max: way.max });
+      ladders.push(way);
     } else if (WATERS.test(classname)) for (const shape of real) climbs.push({ ...shape, kind: "liquid" });
     else if (solid && !isOpen) for (const shape of real) if (shape.matter !== "liquid") solids.push(shape);
   });
@@ -510,10 +522,11 @@ function compiledSpace(bsp, { doors, walls, open, shut, off }) {
     const held = gives.gone || named.some((name) => open.includes(name));
     const kept = named.some((name) => shut.includes(name));
     const isOpen = !kept && (held || (isDoor && doors !== "closed"));
-    const solid = !NEVER_SOLID.test(classname) && !LADDERS.test(classname) && !WATERS.test(classname);
+    const solid = !NEVER_SOLID.test(classname) && !LADDERS.test(classname) && !LIFTS.test(classname) && !WATERS.test(classname); // prettier-ignore
     areas.push({ number, classname, targetname, min, max, door: isDoor, open: isOpen, solid, gives: gives.class }); // prettier-ignore
     if (isDoor || held) doorList.push({ number, classname, targetname, min, max, open: isOpen });
     if (LADDERS.test(classname)) ladders.push({ number, min, max });
+    else if (LIFTS.test(classname)) ladders.push(liftOf(number, min, max, valueOf(entity, "height")));
     else if (WATERS.test(classname)) waters.push({ min, max });
     else if (solid && !isOpen) others.push({ model: bsp.models[model], origin, min, max });
   });
