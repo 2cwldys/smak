@@ -75,6 +75,8 @@ const areas = [
   "65-mod-code", // a mod's entities read from its C++ source and an FGD written from them; Biped's bones in their languages
   "66-sky", // a sky made from words, written as the game's Targa files, its sides meeting with no seam
   "67-height-plan", // a height plan read back into open space, storeys over storeys
+  "68-textures", // a wad spec: textures worn, in relief, made from another; each where a map shows it best, matched to a picture
+  "69-reference-textures", // a photograph made a texture: its material found, filtered to Valve's range, laid as it is or aged
   "19-example-and-kit-faults", // the examples' wrong arguments and refused models; the kits' fittings and rings
 ];
 
