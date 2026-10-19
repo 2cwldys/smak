@@ -72,6 +72,9 @@ const areas = [
   "62-sprites", // sprites made of layers of effects by rule: glows, flares, fire, beams, billows, blobs; measured against a reference; a .spr written as it is read
   "63-sounds", // sounds made of layers: a file written as it is read, measured, checked as the engine needs it, held against the game's own; a music track levelled by loudness
   "64-sound-shape", // noise shaped to a curve, a limiter, grains at a period, a sound's picture read back
+  "65-mod-code", // a mod's entities read from its C++ source and an FGD written from them; Biped's bones in their languages
+  "66-sky", // a sky made from words, written as the game's Targa files, its sides meeting with no seam
+  "67-height-plan", // a height plan read back into open space, storeys over storeys
   "19-example-and-kit-faults", // the examples' wrong arguments and refused models; the kits' fittings and rings
 ];
 

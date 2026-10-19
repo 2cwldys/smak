@@ -20,6 +20,8 @@ const SAME_RING = 1e-6;
 const AT_AN_END = 1e-9;
 /** Two places along a path nearer than this are one. */
 const SAME_PLACE = 1e-6;
+/** A ridge's end grows to its section over its length; a place within this share of that is close enough. */
+const NEAR_GROW = 0.15;
 /** The step, as a share of a surface's length and in radians, by which its slope at a point is measured. */
 const SLOPE_STEP = 1e-4;
 /** A surface whose two slopes at a point span less than this has no way of stepping over it there. */
@@ -223,7 +225,10 @@ export function rivet(x, y, cx, cy, rad) {
 /** A picture of `width` by `height` to paint zone by zone, all `ground` (a colour, 0 to 1) to begin with. */
 export function sheet(width, height, ground = [0.2, 0.18, 0.17]) {
   const rgb = new Uint8Array(width * height * 3);
-  const put = (px, py, c) => {
+  const put = (x, y, c) => {
+    // a whole pixel: a zone whose corner is not on one (a third of another) would write a channel off
+    const px = Math.floor(x);
+    const py = Math.floor(y);
     if (px < 0 || py < 0 || px >= width || py >= height) return;
     const i = (py * width + px) * 3;
     for (let k = 0; k < 3; k++) rgb[i + k] = Math.max(0, Math.min(255, c[k] * 255));
@@ -475,12 +480,14 @@ export function shape(width, height) {
    * other, `g` >= 0 the half thickness). Side A (g) goes in `zoneA` and side B (-g) in `zoneB`,
    * laid flat: `u = zone.x + (s - s0) * px`, `v = zone.yc - t * px`.
    * `at(s, t, g)` places the point (x, y, z unless told).
+   * `ends`: true closes the first and the last section, where they have a size (a bar's two tips, a blade's
+   * base): left open, an end that does not come to a point is a slot into the plate.
    */
   const plate = (
     stations,
     zoneA,
     zoneB,
-    { px = 48, s0 = stations[0].s, at = (s, t, g) => [s, t, g], part = 0 } = {},
+    { px = 48, s0 = stations[0].s, at = (s, t, g) => [s, t, g], part = 0, ends = false } = {},
   ) => {
     const pixelOf = (zone, s, t) => [zone.x + (s - s0) * px, zone.yc - t * px];
     const faceOf = (zone, sign) =>
@@ -504,6 +511,23 @@ export function shape(width, height) {
         for (let k = 0; k + 1 < corners[i].length; k++)
           quad(corners[i][k], corners[i + 1][k], corners[i + 1][k + 1], corners[i][k + 1], inside);
       }
+    }
+    if (!ends) return;
+    for (const which of [0, stations.length - 1]) {
+      const station = stations[which];
+      // the section's outline: side A along it, then side B back, without the points where the two meet
+      const front = station.pts.map(([t, g]) => V(at(station.s, t, g), pixelOf(zoneA, station.s, t), part));
+      const back = station.pts
+        .map(([t, g]) => V(at(station.s, t, -g), pixelOf(zoneB, station.s, t), part))
+        .filter((_, k) => station.pts[k][1] !== 0)
+        .reverse();
+      const outline = [...front, ...back];
+      // a point inside the plate, a little in from this end
+      const next = stations[which ? which - 1 : 1];
+      const middleT = (station.pts[0][0] + station.pts.at(-1)[0]) / 2;
+      const inside = at(station.s + (next.s - station.s) * 0.01, middleT, 0);
+      const centre = V(at(station.s, middleT, 0), pixelOf(zoneA, station.s, middleT), part);
+      for (let k = 0; k < outline.length; k++) tri(outline[k], outline[(k + 1) % outline.length], centre, inside);
     }
   };
   // ── since 0.6.0: surfaces that know where they are, and what is built on them ──
@@ -1057,7 +1081,10 @@ export function shape(width, height) {
     for (const end of [0, 1]) {
       const want = end ? lengths.at(-1) - grow[1] : grow[0];
       const j = lengths.findIndex((v) => v > want - SAME_PLACE);
-      if (!grow[end] || j < 1 || Math.abs(lengths[j] - want) < SAME_PLACE) continue;
+      // a place already near it (a ring's cut) serves: one put a hair from it makes a sliver that folds over
+      // where the surface bends at that ring
+      const near = lengths.findIndex((v) => Math.abs(v - want) < Math.max(SAME_PLACE, NEAR_GROW * grow[end]));
+      if (!grow[end] || j < 1 || near >= 0) continue;
       const t = (want - lengths[j - 1]) / (lengths[j] - lengths[j - 1]);
       places.splice(j, 0, [
         places[j - 1][0] + (places[j][0] - places[j - 1][0]) * t,
@@ -1129,8 +1156,11 @@ export function shape(width, height) {
         const e = sections[j + 1][c + 1];
         const f = sections[j][c + 1];
         const out = plus(surfaceNormals[j], surfaceNormals[j + 1]);
-        put(a, b, e, wrong(a, b, e, out));
-        put(a, e, f, wrong(a, e, f, out));
+        // one turn for the whole quad, from its diagonals: two triangles of one quad asked apart can come
+        // out turned apart where the surface bends sharply under them
+        const flip = dot(cross(sub(e.p, a.p), sub(f.p, b.p)), out) < 0;
+        put(a, b, e, flip);
+        put(a, e, f, flip);
       }
     // an end that is cut: its section closed, facing away from the ridge
     for (const end of [0, 1])
@@ -1331,11 +1361,11 @@ export function shape(width, height) {
  * unit. Do it once and keep the zones in the script: a part made larger later would move the others.
  */
 export function allot(width, height, parts, { gap = 6 } = {}) {
-  const list = Object.entries(parts).map(([name, [long, wide, weight = 1]]) => ({
-    name,
-    w: long * Math.sqrt(weight),
-    h: wide * Math.sqrt(weight),
-  }));
+  // laid tallest first, row by row (shelf packing): a row is as high as its first zone, and the short zones
+  // after it fill rows of their own height instead of each standing in a tall one's row
+  const list = Object.entries(parts)
+    .map(([name, [long, wide, weight = 1]]) => ({ name, w: long * Math.sqrt(weight), h: wide * Math.sqrt(weight) }))
+    .sort((a, b) => b.h - a.h);
   /** the zones at `px` pixels a unit, laid in rows; null when they do not all fit */
   const placeAt = (px) => {
     const out = { px };

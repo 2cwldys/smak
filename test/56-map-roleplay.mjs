@@ -199,7 +199,7 @@ test("wiringOf: properties by name, switches followed through relays, lifts, an 
   const said = wiring.facts.join(" | ");
   sure(/5 doors under 3 names .* 1 with no name/.test(said) && /said over the map: "alarm" from 3 speakers/.test(said), said); // prettier-ignore
   for (const [name, family] of [["resident7", "resident"], ["lux_apt_c", "lux_apt"], ["golgo.apt3.1", "golgo.apt3"], ["broth_gate", "broth_gate"], ["cell 2", "cell"]]) // prettier-ignore
-    sure(maps.familyOf(name) === family, `${name}: ${maps.familyOf(name)}`);
+    sure(maps.doorFamilyOf(name) === family, `${name}: ${maps.doorFamilyOf(name)}`);
 });
 
 test("smak map-wiring reads a .map and a .bsp, and lists each property and switch", () => {

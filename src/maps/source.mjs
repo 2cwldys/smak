@@ -1007,6 +1007,10 @@ export function subtract(solidBox, hole) {
  * A room may bring its own, `{ min, max, texture }`: the rock it is seen from wears that instead (a shop's
  * tiles behind a street's brick front, through one wall 16 thick). A piece of rock that faces two rooms
  * of different textures on one side (the slab under two rooms side by side) is cut where they meet.
+ * A room may carry `bands`, `[{ z0, z1, wall }]` (heights in the world, foot to head): the rock beside it is cut
+ * at their edges, and each slice's face to the room wears the band it is in, its picture standing on the band's
+ * foot, so a wall's texture joins fall on brush edges as Valve's do (src/maps/families.mjs). A room's `wears`,
+ * `{ floor, ceiling, wall }`, is its `texture` with what it does not name the carve's (a floor plan's areas).
  * It returns the list of brushes.
  */
 export function carve(rooms, wall, texture) {
@@ -1021,10 +1025,22 @@ export function carve(rooms, wall, texture) {
   const max = [0, 1, 2].map((i) => Math.max(...rooms.map((room) => room.max[i])) + wall);
   let rock = [{ min, max }];
   for (const room of rooms) rock = rock.flatMap((piece) => subtract(piece, room));
+  // a banded room's walls: each piece of rock beside it cut at its bands' edges, so that each slice's face to
+  // the room is one band
+  const beside = (piece, room) =>
+    [0, 1].some((axis) => (Math.abs(piece.max[axis] - room.min[axis]) < 1e-6 || Math.abs(piece.min[axis] - room.max[axis]) < 1e-6) && [0, 1, 2].filter((k) => k !== axis).every((k) => Math.min(piece.max[k], room.max[k]) - Math.max(piece.min[k], room.min[k]) > 0));
+  if (rooms.some((room) => room.bands?.length))
+    rock = rock.flatMap((piece) => {
+      const cuts = [...new Set(rooms.filter((room) => room.bands?.length && beside(piece, room)).flatMap((room) => room.bands.slice(1).map((band) => band.z0)))].filter((z) => z > piece.min[2] + 1e-6 && z < piece.max[2] - 1e-6).sort((a, b) => a - b);
+      const edges = [piece.min[2], ...cuts, piece.max[2]];
+      return edges.slice(1).map((z1, k) => ({ min: [piece.min[0], piece.min[1], edges[k]], max: [piece.max[0], piece.max[1], z1] }));
+    });
   const wears = roomTextures(texture);
   // each room's own, or the carve's; then each face of each piece by the room it is seen from
-  const own = rooms.map((room) => (room.texture === undefined ? wears : roomTextures(room.texture)));
-  const pieces = rooms.some((room) => room.texture !== undefined)
+  const own = rooms.map((room) =>
+    room.texture !== undefined ? roomTextures(room.texture) : room.wears ? { ...wears, ...room.wears } : wears,
+  );
+  const pieces = rooms.some((room) => room.texture !== undefined || room.wears)
     ? rock.flatMap((piece) => cutForRooms(piece, rooms, own))
     : rock;
   return pieces.map((piece) => {
@@ -1037,7 +1053,13 @@ export function carve(rooms, wall, texture) {
       // it up: its bands, its skirting and its seams fall where they were painted to, whatever the room's height
       // (from stevenlafl/smak: Steven's play-test, "texture alignment is off")
       else if (seen === undefined) sides[side.name] = of.wall;
-      else sides[side.name] = onFloor(of.wall, rooms[seen].min[2], rooms[seen].min[side.axis === 0 ? 1 : 0]);
+      else {
+        // a banded room's slice wears its band, standing on the band's foot
+        const middle = (piece.min[2] + piece.max[2]) / 2;
+        const band = rooms[seen].bands?.find((b) => middle >= b.z0 && middle <= b.z1);
+        const wall = band?.wall ?? of.wall;
+        sides[side.name] = onFloor(wall, band ? band.z0 : rooms[seen].min[2], rooms[seen].min[side.axis === 0 ? 1 : 0]);
+      }
     }
     return box(piece.min, piece.max, sides);
   });
@@ -1097,7 +1119,7 @@ function facingRooms(piece, side, rooms) {
 function cutForRooms(piece, rooms, own) {
   for (const side of CARVE_SIDES) {
     const seen = facingRooms(piece, side, rooms);
-    if (new Set(seen.map((nth) => own[nth])).size < 2) continue;
+    if (new Set(seen.map((nth) => JSON.stringify(own[nth]))).size < 2) continue;
     // cut along the side, where the first of those rooms ends inside the piece
     for (const i of [0, 1, 2]) {
       if (i === side.axis) continue;
@@ -1250,6 +1272,10 @@ export function brushEntity(classname, brushes, keys = {}) {
   const list = Array.isArray(brushes) ? brushes.flat() : [brushes];
   if (!list.length || !list.every((brush) => brush?.faces))
     throw new Error(`${classname}: a brush entity needs a brush at least`);
+  // a func_detail says its level: SDHLT takes one without the key as world, which cuts the map's leaves (a framed
+  // pump hall's 448 leaves became 629, its portals 1802 became 2432, hlvis 43 seconds became 262). The FGD's
+  // default of 1 is only what an editor writes for it
+  if (classname === "func_detail" && keys.zhlt_detaillevel === undefined) keys = { zhlt_detaillevel: 1, ...keys };
   return entity(classname, keys, list);
 }
 

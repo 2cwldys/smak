@@ -201,6 +201,20 @@ function cameraOf(opts, points, wide, high) {
 }
 
 /**
+ * Where a point of the model lands in a picture `render` would draw with the same options (an orbit view with no
+ * perspective): `(p) -> [x, y]` in pixels from the top left, and the bones' matrices of that pose (`pose`). For a
+ * picture drawn over a render, such as the skeleton a pose-guided drawing follows.
+ */
+export function placeIn(src, opts = {}) {
+  if (NAMED_VIEWS[opts.view]) opts = { ...opts, yaw: NAMED_VIEWS[opts.view].yaw + (opts.yaw ?? 0), pitch: NAMED_VIEWS[opts.view].pitch + (opts.pitch ?? 0), view: "orbit" };
+  if (opts.view === "first" || opts.dist > 0) throw new Error("placeIn: an orbit view with no perspective only");
+  const { width = 512, height = 512 } = opts;
+  const { tris, pose } = posed(src, opts);
+  const { right, up, mid, scale } = cameraOf(opts, pointsOf(tris), width, height);
+  return { pose, at: (p) => [width / 2 + dot(sub(p, mid), right) * scale, height / 2 - dot(sub(p, mid), up) * scale] };
+}
+
+/**
  * A polygon ([[x, y, z, ...], ...] in the camera's space) with what is nearer the eye than `near` cut off at
  * that plane.
  */
@@ -237,7 +251,8 @@ function cutNear(polygon, near) {
  *               model so that a foot under it is seen crossed. Only a level orbit view has such a line
  *               (pitch 0: "side", "front"); any other is refused
  *   width, height, background [r, g, b], light (false: the texture as it is), cull (false: both sides of
- *   every triangle)
+ *   every triangle; "solid": both sides of every triangle but a masked one's, whose holes show its far side
+ *   on purpose: a net)
  *   seq, frame, pose, body, skin   as in posed
  *   parts       only these bodyparts are drawn (their numbers), and the picture is framed by them alone: the
  *               weapon of a first-person file without the arms that hold it
@@ -289,7 +304,7 @@ export function render(src, opts = {}) {
     const flags = tex?.flags ?? 0;
     const picture = tex ? pictureOf(tex) : null;
     // seen from behind?
-    if (cull) {
+    if (cull === true || (cull === "solid" && flags & 64)) {
       const facing = cross(sub(t.c[1].p, t.c[0].p), sub(t.c[2].p, t.c[0].p)).map((v) => v * FRONT);
       const toEye = perspective ? sub(eye, t.c[0].p) : forward.map((v) => -v);
       if (dot(facing, toEye) <= 0) return;
@@ -471,6 +486,24 @@ const DARK = [20, 22, 26];
 const NAME_AT = 6;
 
 /** Writes `text` into a picture at (x, y), each dot `k` pixels, light on a dark band. */
+/**
+ * Text in the labels' letters as a mask: `{ width, height, at(x, y) }`, `at` true on a letter's dot, each dot
+ * `k` pixels square. Capitals, digits and a few marks (others are blank); for painting a word on a picture.
+ */
+export function textMask(text, k = 1) {
+  const letters = String(text).toUpperCase();
+  const width = Math.max(1, (letters.length * GLYPH_STEP - 1) * k);
+  const height = 5 * k;
+  const at = (x, y) => {
+    const n = Math.floor(x / k / GLYPH_STEP);
+    const bit = Math.floor(x / k) - n * GLYPH_STEP;
+    const row = Math.floor(y / k);
+    if (n < 0 || n >= letters.length || bit >= GLYPH_WIDE || row < 0 || row >= 5) return false;
+    return !!((GLYPHS[letters[n]] ?? NO_GLYPH)[row] & (4 >> bit));
+  };
+  return { width, height, at };
+}
+
 export function label(img, text, x, y, k = 2, colour = [235, 235, 235]) {
   const letters = String(text).toUpperCase();
   const put = (px, py, c) => {

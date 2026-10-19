@@ -56,7 +56,7 @@ const flagsOf = (entity) => Number.parseInt(entity.get("spawnflags") ?? "0", 10)
  * A door's name without the number or the letter that tells it from its neighbours: "resident7" is of
  * "resident", "lux_apt_c" of "lux_apt", "golgo.apt3.1" of "golgo.apt3"; "broth_gate" is its own.
  */
-export function familyOf(name) {
+export function doorFamilyOf(name) {
   const numbered = name.replace(/[\s._-]*\d+$/, "");
   const family = numbered !== name ? numbered : name.replace(/[\s._-][a-z]$/i, "");
   return family || name;
@@ -190,7 +190,7 @@ export function wiringOf(map, { mod } = {}) {
     doors: list.map((door) => door.number),
     at: placeOf(list[0]),
     opens: [...new Set(list.flatMap((door) => firers.get(door.number) ?? []))],
-    family: familyOf(name),
+    family: doorFamilyOf(name),
   }));
   const familyMap = new Map();
   for (const property of properties) familyMap.set(property.family, [...(familyMap.get(property.family) ?? []), property.name]); // prettier-ignore

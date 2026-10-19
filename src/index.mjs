@@ -1,6 +1,8 @@
 // SMAK, the Studio Model Agent Kit: everything, from one place.
 //   import { readMdl, swapMesh, render, png } from "smak";       (or from "./src/index.mjs")
 export * from "./mdl.mjs";
+export * from "./studio-file.mjs";
+export * from "./describe.mjs";
 export * from "./image.mjs";
 export * from "./vec.mjs";
 export * from "./mesh.mjs";
@@ -16,6 +18,8 @@ export * from "./layout.mjs";
 export * from "./place.mjs";
 export * from "./wear.mjs";
 export * from "./obj.mjs";
+export * from "./biped.mjs";
+export * from "./contract.mjs";
 export * as workshop from "./workshop.mjs";
 // the workshop's noise and colour helpers by name too, for painting by place (`paint` is in place.mjs)
 export { rand, noise, fbm, fbm3, seeded, step, mix, times, bell } from "./workshop.mjs";

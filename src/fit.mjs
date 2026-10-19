@@ -5,7 +5,10 @@ import { readMdl, readMesh, restPose, mul34, apply34, inverse34 } from "./mdl.mj
 import { sub, dot, cross, box, out, into, uniq, mainAxes } from "./vec.mjs";
 
 // The hands' own meshes, which a view model's submodel may hold next to the weapon.
-export const HANDS = /hands|arms|body/i;
+// the meshes of a first-person model that are its hands and sleeves, by their texture's name: Half-Life's
+// are GLOVED_sleeve, rubbergloveCHROME, GLOVED_knuckle, GLOVE_handpak and HAND_ForeArm1 (not "hand" alone:
+// the .357's grip is Pythonhandle)
+export const HANDS = /hands|arms|forearm|body|glove|sleeve|knuckle|handpak/i;
 
 /**
  * One submodel's weapon, measured: the meshes `pick` chooses, the bone that carries most
@@ -174,6 +177,8 @@ function outlineGap(theirs, ours) {
   });
   return shared ? sum / shared : Infinity;
 }
+/** Two turns whose outlines are within this share of each other follow the original about as well. */
+const UPRIGHT_TIE = 0.05;
 /**
  * The four ways of turning a piece round that keep it along its own axes: as it is, or half a turn about one.
  */
@@ -188,32 +193,56 @@ const TURNS = [
  * round, the one whose outline follows the original's best. Returns the placing and what
  * is left over between the two outlines, in units.
  */
-export function bestTurn(piece, original, haft = false) {
+export function bestTurn(piece, original, haft = false, only = null) {
   if (haft) {
     const fit = onHaft(piece, original);
     if (fit) return fit;
   }
   // what stands off a piece without being part of it (flames: `loose`) is not measured
   const solid = piece.some((tri) => tri.loose) ? piece.filter((tri) => !tri.loose) : piece;
-  const own = frameOf(solid);
-  const mine = solid.map((tri) => tri.map((corner) => into(own, corner.p)));
+  // "as drawn": the axes it was built along (+x its length), not its principal axes, which a hooked stock or a
+  // deep grip tilts; any other turn starts from the principal axes as before
+  const drawn = () => {
+    const b = box(uniq(solid));
+    return { X: [1, 0, 0], Y: [0, 1, 0], Z: [0, 0, 1], o: [0, 1, 2].map((a) => mid(b, a)) };
+  };
   const theirs = original.map((tri) => tri.map((corner) => corner.p));
   const theirBox = box(theirs.flat());
   const theirOutline = profile(theirs, theirBox.mn[0], theirBox.mx[0]);
-  let best = null;
-  for (const { about, turn } of TURNS) {
-    const name = about ? `turned about ${about}` : "as drawn";
-    const turned = mine.map((tri) => tri.map(turn));
-    const laid = overlay(turned.flat(), theirs.flat());
-    const outline = profile(
-      turned.map((tri) => tri.map(laid.at)),
-      theirBox.mn[0],
-      theirBox.mx[0],
-    );
-    const left = outlineGap(theirOutline, outline);
-    if (!best || left < best.left) best = { left, name, k: laid.k, at: (p) => laid.at(turn(into(own, p))) };
+  /** Of the turns `keep` lets through, in the axes `own`, the one whose outline follows the original's best. */
+  const bestIn = (own, keep) => {
+    const mine = solid.map((tri) => tri.map((corner) => into(own, corner.p)));
+    let best = null;
+    for (const { about, turn } of TURNS.filter(keep)) {
+      const name = about ? `turned about ${about}` : "as drawn";
+      const turned = mine.map((tri) => tri.map(turn));
+      const laid = overlay(turned.flat(), theirs.flat());
+      const outline = profile(
+        turned.map((tri) => tri.map(laid.at)),
+        theirBox.mn[0],
+        theirBox.mx[0],
+      );
+      const left = outlineGap(theirOutline, outline);
+      if (!best || left < best.left) best = { left, name, k: laid.k, at: (p) => laid.at(turn(into(own, p))) };
+    }
+    return best;
+  };
+  // "upright": a piece that knows its up and its front (a gun). The outline decides, as for any piece; where two
+  // turns follow it about as well (within UPRIGHT_TIE), the one that leaves its front and its top where laying it
+  // as drawn puts them. By its outline alone a shotgun was laid end for end in another player's hands, the two
+  // turns 0.99 off each; laid as drawn always, a submachine gun lay upside down there (1.9 off where the free fit
+  // had it right at 1.0), and a pistol's grip, which tilts the original's axes, 1.6 off for 0.7 (2026-10-17)
+  if (only === "upright") {
+    const asDrawn = bestIn(drawn(), (t) => !t.about);
+    const way = (fit, v) => sub(fit.at(v), fit.at([0, 0, 0]));
+    const keeps = (fit) => [[1, 0, 0], [0, 0, 1]].every((v) => dot(way(fit, v), way(asDrawn, v)) > 0);
+    const all = [asDrawn, ...TURNS.map((t) => bestIn(frameOf(solid), (u) => u === t))];
+    const least = Math.min(...all.map((fit) => fit.left));
+    const near = all.filter((fit) => fit.left <= least * (1 + UPRIGHT_TIE));
+    return (near.filter(keeps).length ? near.filter(keeps) : near).reduce((a, b) => (b.left < a.left ? b : a));
   }
-  return best;
+  // `only`: the one turn to take ("as drawn", "x", "y", "z"), when the outline cannot tell (a box)
+  return bestIn(only === "as drawn" ? drawn() : frameOf(solid), (t) => !only || (t.about ?? "as drawn") === only);
 }
 /**
  * Triangles in the groups that touch one another: two are in one group when they share a point (to two

@@ -146,7 +146,7 @@ test("definitions: a class has the keys, the size and the model of its bases, an
     maps.readFgd(`@BaseClass = Door [ spawnflags(flags) = [ 1 : "Starts Open" : 0 32 : "Toggle" : 0 256 : "Use Only" : 0 ] ]
 @SolidClass base(Door) = func_door_rotating : "A door" [ spawnflags(flags) = [ 2 : "Reverse Dir" : 0 64 : "X Axis" : 0 ] ]`),
   ).classes.func_door_rotating.keys.spawnflags;
-  sure(doors.flags.join() === "1,2,32,64,256", `${doors.flags}`);
+  sure(doors.flags.join() === "1,2,32,64,256" && doors.labels["256"] === "Use Only", `${doors.flags} ${JSON.stringify(doors.labels)}`);
   sure(
     refuses(() => maps.definitionsOf({}), /an \.fgd file's path, or what readFgd or loadFgd gave/) === true,
     "no FGD",

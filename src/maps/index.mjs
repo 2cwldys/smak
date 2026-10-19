@@ -3,8 +3,10 @@
 // both drawn.
 //   import { maps } from "smak";       maps.readBsp(bytes)
 export * from "./lumps.mjs";
+export * from "./sweep.mjs";
 export * from "./miptex.mjs";
 export * from "./wad.mjs";
+export * from "./families.mjs";
 export * from "./entities.mjs";
 export * from "./bsp.mjs";
 export * from "./check.mjs";
@@ -13,6 +15,7 @@ export * from "./compile.mjs";
 export * from "./plan.mjs";
 export * from "./fgd.mjs";
 export * from "./learn.mjs";
+export * from "./code.mjs";
 export * from "./dll.mjs";
 export * from "./mod.mjs";
 export * from "./rules.mjs";
@@ -42,4 +45,8 @@ export * from "./houses.mjs";
 export * from "./interiors.mjs";
 export * from "./decompile.mjs";
 export * from "./texlights.mjs";
+export * from "./places.mjs";
+export * from "./match.mjs";
 export * from "./fidelity.mjs";
+export * from "./describe.mjs";
+export * from "./dressing.mjs";
