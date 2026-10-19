@@ -186,3 +186,25 @@ test("importRigged: animations chosen by the end of their names and renamed; non
   }
   sure(/no animation run: it has Armature\|Bend/.test(said), said);
 });
+
+test("importRigged: where its feet stand as the first animation begins, and its triangles against the game's own of its size", () => {
+  const read = smak.readFbx(rigFbx());
+  const feetSaid = (made) => made.warnings.find((w) => /lowest point is at z/.test(w));
+  // on its own origin, the lower box's foot at 0: on the floor, nothing told
+  const kept = smak.importRigged(read, { name: "rig.mdl", fit: 12 });
+  near(kept.report.feet, 0, 0.05, "on its own origin");
+  sure(!feetSaid(kept), kept.warnings.join(" | "));
+  sure(/^Master Sword's own monsters and people of its size \(\d+ units corner to corner\) have 414 triangles at the median, three quarters under 579/.test(kept.report.kin), kept.report.kin);
+  // its middle on the origin, 12 high: 6 under the floor is within; 24 high, 12 under, is told
+  sure(!feetSaid(smak.importRigged(read, { name: "rig.mdl", origin: "centre", fit: 12 })), "6 under: within");
+  const sunk = smak.importRigged(read, { name: "rig.mdl", origin: "centre", fit: 24 });
+  sure(/at z -12: .* sink 12 into it\. Unless it flies, swims or rises out of the ground, import it with origin "base"$/.test(feetSaid(sunk)), feetSaid(sunk));
+  // 72 high on its middle, as a player's model stands: said so
+  const player = smak.importRigged(read, { name: "rig.mdl", origin: "centre", fit: 72 });
+  sure(/at z -36: .*\(-36 is where a player's model stands/.test(feetSaid(player)), feetSaid(player));
+  near(smak.importRigged(read, { name: "rig.mdl", origin: "base", fit: 72 }).report.feet, 0, 0.05, "base: on the floor");
+  // over three quarters of the small creatures' 579: told, with the way down
+  const heavy = { ...read, groups: read.groups.map((g) => ({ ...g, tris: Array.from({ length: 30 }, () => g.tris).flat() })) };
+  const made = smak.importRigged(heavy, { name: "rig.mdl", fit: 12 });
+  sure(made.warnings.some((w) => /^720 triangles, more than three quarters of Master Sword's own .*: they have 414 .* heavy for a pack of them/.test(w)), made.warnings.join(" | "));
+});

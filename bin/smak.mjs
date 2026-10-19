@@ -1063,6 +1063,7 @@ function imported({ command, file, flags }) {
     );
   for (const sequence of report.sequences ?? [])
     console.log(`  animation ${sequence.name}: ${sequence.frames} frames at ${sequence.fps} a second`);
+  if (report.kin) console.log(`  feet at z ${report.feet} as its first animation begins; ${report.kin}`);
   for (const warning of made.warnings) console.log(`WARN  ${warning}`);
   if (report.heavy) console.log(`WARN  ${report.heavy}`);
   const errors = sayChecks(made.mdl);

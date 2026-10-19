@@ -105,6 +105,13 @@ reads each animation at `fps` poses a second, names it by what follows its last 
 gives the model hit boxes about its bones. It is not yet a monster: activities, events, eyes and a walk
 that travels are added as for any monster (AGENTS.md, "A monster's parts").
 
+It says where the feet stand as the first animation begins (`report.feet`) and warns when they are more than 6
+units off z 0. A monster's origin is on the floor, and Master Sword's own stand there. A file whose origin is its
+hips stands sunk: a bought troll and a zombie kept their files' origins and stood 37 and 33 under the floor until
+`--origin base`. A player's model is the exception, at -36, the middle of the player's box. It also gives the
+triangles of Master Sword's own monsters and people of its size (`report.kin`: a person's size has 927 at the
+median, three quarters under 1607) and warns past the three quarters: right for one boss, heavy for a pack.
+
 **Something added to a rigged character before it is built** (a lantern in a hand, a pack on a back).
 `importRigged` gives back `parts`, what it built the model from, as `buildMdl` takes it: the bones, each mesh's
 triangles in the model at rest (corners `{ p, uv, n, bone }`, `bone` a number) with its texture, the

@@ -19,6 +19,7 @@ import { indexed, shrink, unpng, unbmp, rgbOf, rgbaOf } from "./image.mjs";
 import { IDENTITY, mul, apply, applyDir, inverse, rigid, sixOf, moved, stretched, turned } from "./import-math.mjs";
 import { importScale, importPictures, fewerTriangles, COMFORTABLE_TRIANGLES } from "./import-model.mjs";
 import { unjpeg } from "./import-jpeg.mjs";
+import { posed } from "./render.mjs";
 
 /** A bone's name is kept in 32 bytes, the last a zero; so is an animation's. */
 const NAME_MOST = 31;
@@ -39,6 +40,25 @@ const ORIGINS = ["keep", "base", "centre"];
 const TURN = Math.PI * 2;
 /** A triangle whose doubled area is under this (in the file's units) is a line or a point. */
 const NO_AREA = 1e-12;
+/**
+ * Master Sword's own monsters and people by the length of their box's diagonal as their first animation stands:
+ * the triangles of their first body at the median, the third quartile and the most. Measured 2026-10-19 on the
+ * 166 of its models/ that have a skeleton and five animations or more and stand on the floor (a copy counted once;
+ * no worm, plant, statue or bolt); numbers only. The idea, held to Half-Life's own of a size, is stevenlafl/smak's
+ * (56684de); Half-Life's spend less (a person about 750, the houndeye 308).
+ */
+export const CHARACTER_TRIANGLES = [
+  { under: 60, median: 414, q3: 579, most: 1552 }, // a crab, a small spider, a bat
+  { under: 160, median: 927, q3: 1607, most: 4026 }, // people, goblins, wolves, bears
+  { under: Infinity, median: 927, q3: 1552, most: 8696 }, // ogres, giant spiders, the hydra
+];
+/**
+ * Feet further than this from z 0 as the first animation stands are told: a monster's origin is on the floor, and
+ * Master Sword's own stand within it there, those that fly, swim or rise out of the ground aside.
+ */
+const FEET_OFF = 6;
+/** Where a player's model stands: its origin is the middle of the player's box, 72 high. */
+const PLAYER_FEET = -36;
 
 /** A name cut to what the format holds and made unlike the ones before it. */
 function nameWithin(name, most, taken) {
@@ -130,7 +150,9 @@ function nearestAngles(six, before) {
  * It throws when there are more bones than the engine holds (128), and when the model would not load.
  * `report` is { name, triangles, points, bodyparts, box, textures, scale, format, fewer, heavy, bones (their names),
  * sequences: [{ name, from, frames, fps, loops, seconds }], shared (how many points were held by several bones
- * and went to the heaviest), lostStretch (the animations in which a bone's stretch changes) }.
+ * and went to the heaviest), lostStretch (the animations in which a bone's stretch changes), feet (z of its lowest
+ * point as the first animation begins; warned of 6 off the floor), kin (Master Sword's own of its size, in
+ * triangles: CHARACTER_TRIANGLES; warned of past three quarters of them) }.
  * `parts` is what the model was built from, as `buildMdl` takes it: { name, bones, bodyparts (each mesh's
  * `tris` with corners { p (in the model, at rest), uv, n, bone (a number) } and its `texture`), sequences,
  * hitboxes, smooth, ownNormals }. Add to it (a bone after the others, a mesh on that bone, a frame value for
@@ -368,6 +390,7 @@ export function importRigged(scene, options = {}) {
     if (errors.length) throw new Error(`importRigged: the model would not load in ${engine}: ${errors.join("; ")}`);
   }
   const placedBox = { mn: low.map((value, a) => value + shift[a]), mx: high.map((value, a) => value + shift[a]) };
+  const kin = asCharacter(mdl, { first: sequences[0].name, origin, triangles }, warnings);
   return {
     mdl,
     parts,
@@ -400,6 +423,38 @@ export function importRigged(scene, options = {}) {
       })),
       shared,
       lostStretch,
+      feet: kin.feet,
+      kin: kin.said,
     },
   };
+}
+
+/**
+ * The model held to what a monster of the game is, as its first animation stands: where its feet are (warned of
+ * when off the floor: the troll of a bought pack kept its file's origin, at its hips, and stood 37 under the
+ * floor), and its triangles against Master Sword's own of its size (warned of past three quarters of them).
+ * Returns { feet (z of its lowest point), said (the sentence of its kind's triangles) }.
+ */
+function asCharacter(mdl, { first, origin, triangles }, warnings) {
+  const points = posed(mdl, { seq: 0, frame: 0 }).tris.flatMap((t) => t.c.map((c) => c.p));
+  const tenth = (v) => Math.round(v * 10) / 10 || 0;
+  if (!points.length) return { feet: null, said: null };
+  const low = [0, 1, 2].map((k) => Math.min(...points.map((p) => p[k])));
+  const high = [0, 1, 2].map((k) => Math.max(...points.map((p) => p[k])));
+  const feet = tenth(low[2]);
+  if (Math.abs(feet) > FEET_OFF) {
+    const player = Math.abs(feet - PLAYER_FEET) <= FEET_OFF;
+    warnings.push(
+      `as ${first} begins, its lowest point is at z ${feet}: a monster's origin is on the floor, so it would ${feet < 0 ? `sink ${-feet} into` : `float ${feet} over`} it${player ? ` (${PLAYER_FEET} is where a player's model stands, the middle of the player's box: right for a player, not for a monster)` : ""}. Unless it flies, swims or rises out of the ground, import it with origin "base"${origin === "base" ? ", and its animations stand otherwise than its rest: move them in the tool that made it" : ""}`,
+    );
+  }
+  const diagonal = Math.hypot(...high.map((v, k) => v - low[k]));
+  const band = CHARACTER_TRIANGLES.find((b) => diagonal < b.under);
+  const kin = `Master Sword's own monsters and people of its size (${Math.round(diagonal)} units corner to corner)`;
+  const spend = `${band.median} triangles at the median, three quarters under ${band.q3}, ${band.most} at the most`;
+  if (triangles > band.q3)
+    warnings.push(
+      `${triangles} triangles, more than three quarters of ${kin}: they have ${spend}. Right for one boss, heavy for a pack of them (the triangles option brings it down)`,
+    );
+  return { feet, said: `${kin} have ${spend}` };
 }

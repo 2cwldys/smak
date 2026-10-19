@@ -32,6 +32,11 @@ From Steven Linn's fork, [stevenlafl/smak](https://github.com/stevenlafl/smak), 
   `importRigged`; `fewerTriangles`): a bought model brought down first, each mesh and material by its share, the
   points where two materials meet kept so no crack opens; `report.fewer` says how far it got and why it stopped.
   A spear of 11430 triangles to 1216, a rigged archer of 1080 to 618 (docs/IMPORT.md).
+- **A rigged character is held to the game's monsters** (`importRigged`, the idea from the fork's character
+  checks): where its feet stand as its first animation begins, warned of 6 units off the floor (a bought troll
+  kept its file's origin at its hips and stood 37 under it; -36 is named as a player's model's place), and its
+  triangles against Master Sword's own monsters and people of its size, warned of past three quarters of them
+  (`report.feet`, `report.kin`, `CHARACTER_TRIANGLES`).
 - **`scripts/no-game-files.mjs`**: every tracked file (`--history`: every version ever committed) held against a
   game's folders by bytes, texture pixels and sound samples.
 
