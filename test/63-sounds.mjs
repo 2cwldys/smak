@@ -3,7 +3,7 @@
 import { readFileSync, existsSync, mkdirSync as mkdirOf, writeFileSync as writeOf } from "node:fs";
 import { join, delimiter } from "node:path";
 import * as smak from "../src/index.mjs";
-import { test, sure, tmp } from "./helper.mjs";
+import { test, sure, tmp, runSmak, runRefused, SMAK_CLI } from "./helper.mjs";
 import { buildSoundSpec, validateSoundSpec } from "../src/spec/sound.mjs";
 import { buildMusicSpec, validateMusicSpec } from "../src/spec/music.mjs";
 import { writeFileSync, mkdirSync } from "node:fs";
@@ -326,4 +326,17 @@ test("a sound in the place of one of the game's own is held to it: far in spectr
   writeFileSync(join(game, "sound", "headcrab", "hc_pain1.wav"), smak.audio.writeWav(theirs, { rate: 22050 }));
   const low = buildSoundSpec({ spec: "smak.sound/1", name: "headcrab/hc_pain1.wav", length: 0.25, layers: [{ kind: "tone", f: 120, env: { attack: 0.002, decay: 0.2 } }] }, { games: [game] });
   sure(low.report.warnings.some((w) => /far from the game's own sound it takes the place of/.test(w) && /too dark/.test(w)), low.report.warnings.join(" | "));
+});
+
+test("smak sound: a spec's sounds written under the folder's sound/, their picture beside the spec, the report said; a spec with errors refused", () => {
+  const folder = join(tmp, "sound-command");
+  const spec = join(tmp, "beep.sound.json");
+  writeFileSync(spec, JSON.stringify({ spec: "smak.sound/1", name: "buttons/beep1.wav", class: "click", length: 0.15, layers: [{ kind: "tone", f: 880, env: { attack: 0.002, decay: 0.1 } }] })); // prettier-ignore
+  const said = runSmak("sound", spec, "-o", folder);
+  const wav = A.readWav(readFileSync(join(folder, "sound", "buttons", "beep1.wav")));
+  sure(wav.rate === 22050 && wav.bits === 16 && /1 sounds built, and every check passed/.test(said), said);
+  sure(existsSync(join(tmp, "buttons_beep1.png")), "its picture beside the spec");
+  writeFileSync(spec, JSON.stringify({ spec: "smak.sound/1", name: "buttons/bad.wav", layers: [{ kind: "hum" }] }));
+  const refused = runRefused(SMAK_CLI, "sound", spec, "-o", folder);
+  sure(refused.code === 1 && /ERROR/.test(refused.out) && !existsSync(join(folder, "sound", "buttons", "bad.wav")), refused.out + refused.err);
 });

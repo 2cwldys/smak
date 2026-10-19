@@ -86,8 +86,8 @@ export function writeWav(x, { rate = 22050, bits = 16, loop = null, seed = 1 } =
   const random = () => ((state = (Math.imul(state, 1664525) + 1013904223) >>> 0) / 4294967296);
   for (let i = 0; i < x.length; i++) {
     const v = Math.max(-1, Math.min(1, x[i]));
-    if (width === 1) data[i] = Math.max(0, Math.min(255, Math.round(v * 127 + 128 + (random() - random()) * 0.5)));
-    else data.writeInt16LE(Math.round(v * 32767), i * 2);
+    if (width === 1) data[i] = Math.max(0, Math.min(255, Math.round(v * 128 + 128 + (random() - random()) * 0.5)));
+    else data.writeInt16LE(Math.max(-32768, Math.min(32767, Math.round(v * 32768))), i * 2);
   }
   const chunk = (id, body, length = body.length) => {
     const head = Buffer.alloc(8);

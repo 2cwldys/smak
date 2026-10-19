@@ -42,6 +42,12 @@ From Steven Linn's fork, [stevenlafl/smak](https://github.com/stevenlafl/smak), 
 - **`smak map-decompile`** (`decompile`, `textureFidelity`, `lightParity`, the texture-light table): a compiled map
   made back into brush source, the port of Steven's bsp2map. Master Sword's maps come back and compile again with
   SDHLT, their faces in the original's textures 91 to 100 in 100; a texture in no shipped .wad has to be given.
+- **`smak sound <spec.json>`** and **`smak music <spec.json>`** (`buildSoundSpec`, `buildMusicSpec`,
+  `smak.audio`; docs/SOUNDS.md): sounds made of layers (noise, shaped noise, tones, FM, struck modes, particles,
+  recordings) with a room, saturation, a limiter and a fit to their bands, checked as the engine needs them and
+  measured against the game's own of their kind; a recording made a track levelled by loudness, an MP3 under
+  media/ or a looped WAV. `writeWav` writes a file `readWav` read to the same bytes: Half-Life's and Master
+  Sword's sounds at the game's rates are written again byte for byte.
 - **`smak sprite <spec.json>`** (`buildSpriteSpec`, `writeSpr`; docs/SPRITES.md): sprites made of layers of
   effects (glow, flare, fire, smoke, explosion, billow, blobs, sparks, ring, beam), written as `.spr` with a sheet
   and an animated picture, measured against Half-Life's own of their kind. `readSpr` keeps a file's groups,
