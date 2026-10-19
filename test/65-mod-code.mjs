@@ -108,6 +108,13 @@ test("writeFgd: an FGD read back is the same, the code's keys joined to it, its 
   sure(joined.classes.func_slider.kind === "solid");
 });
 
+test("smak map-fgd: an FGD from the source and an FGD, with the keys the FGD lacked listed", () => {
+  writeFileSync(join(folder, "lamp.fgd"), FGD);
+  const out = runSmak("map-fgd", join(folder, "dlls"), "-o", join(folder, "out.fgd"), "--fgd", join(folder, "lamp.fgd"));
+  sure(/3 classes/.test(out) && /item_lamp: delay killtarget/.test(out), out);
+  sure(maps.readFgd(readFileSync(join(folder, "out.fgd"), "latin1")).classes.env_puff);
+});
+
 const MODTS = join(homedir(), "Projects/goldsrc.net/mod-ts/dlls");
 test("definitionsOfCode: The Specialists' source, where it is on the machine", () => {
   if (!existsSync(MODTS)) return "skipped: no mod-ts source";

@@ -42,6 +42,17 @@ From Steven Linn's fork, [stevenlafl/smak](https://github.com/stevenlafl/smak), 
 - **`smak map-decompile`** (`decompile`, `textureFidelity`, `lightParity`, the texture-light table): a compiled map
   made back into brush source, the port of Steven's bsp2map. Master Sword's maps come back and compile again with
   SDHLT, their faces in the original's textures 91 to 100 in 100; a texture in no shipped .wad has to be given.
+- **From the spec builder's ground** (Steven Linn's fork, the parts that stand without it): `smak map-fgd` (an FGD
+  from a mod's C++ source: each class `LINK_ENTITY_TO_CLASS` makes, with the keys its `KeyValue` and its bases'
+  read, joined to its FGD and maps), `smak map-dressing` (a map's dressing beside Valve's campaign, measured),
+  `smak map-sweep` (drops that hurt, lights in mid-air), `smak map-heights` (a height plan, layer by layer),
+  `smak contract` (what a mod's code asks of a model by name or number, and what a model breaks of another's),
+  `map-views --aim` (views aimed at the water, the lamps, each storey, a landmark; none facing a wall).
+  `carve` takes a room's `bands` (a wall's textures stacked up it, joined on brush edges) and `wears`; the
+  compilers are told how many threads to use and their limits are read; a map in a mod's `maps/` finds its .wad
+  files in the mod's folder; Half-Life leaves a map by its level changes; `bestTurn`'s `upright`; `clearModel`;
+  a plate's and a sword's ends closed; `allot` packs tallest first; `soundness` names parts that nearly touch.
+  `familyOf` of wiring.mjs is now `doorFamilyOf`: `familyOf` is a wall texture's family (families.mjs).
 - **`smak sound <spec.json>`** and **`smak music <spec.json>`** (`buildSoundSpec`, `buildMusicSpec`,
   `smak.audio`; docs/SOUNDS.md): sounds made of layers (noise, shaped noise, tones, FM, struck modes, particles,
   recordings) with a room, saturation, a limiter and a fit to their bands, checked as the engine needs them and

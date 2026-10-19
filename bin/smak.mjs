@@ -11,6 +11,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync, readdirSy
 import { join, dirname, basename, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import * as smak from "../src/index.mjs";
+import { heightPlanOf } from "../src/maps/heightplan.mjs";
 
 // the ports the two pages listen on unless told with --port
 const VIEWER_PORT = 8098;
@@ -33,6 +34,8 @@ const BODIES_LISTED = 6;
 const BONES_LISTED = 4;
 // the flags that are followed by a value: one given with nothing after it is said, not guessed at
 const VALUE_FLAGS = [
+  "against",
+  "landmark",
   "plan",
   "views",
   "wall",
@@ -128,6 +131,7 @@ const VALUE_FLAGS = [
 // the flags of the map commands that may be given more than once: each time adds to a list
 const LISTED_FLAGS = [
   "game",
+  "dll",
   "wad",
   "body",
   "model",
@@ -1298,7 +1302,7 @@ function existingFolder(folder) {
  * Where a map's .wad files are looked for: the folders given with --game (the mod's own, then valve), then
  * the map's own folder.
  */
-const gameFolders = (file, listed) => [...(listed.game ?? []).map(existingFolder), dirname(file)];
+const gameFolders = (file, listed) => [...(listed.game ?? []).map(existingFolder), ...maps.mapOwnFolders(file)];
 /** The textures of the .wad files given with --wad. */
 const wadTextures = (listed) =>
   (listed.wad ?? []).flatMap((wad) => maps.readWad(readFileSync(existing(wad))).textures);
@@ -1795,6 +1799,8 @@ async function mapViews({ command, file, flags, listed }) {
     ...figureOptions(flags, listed),
     ...defined({ mod: await profileOf(flags, listed) }),
     ...defined({ count: numberOf(flags, "count"), cols: numberOf(flags, "cols") }),
+    ...(flags.aim ? { aim: true } : {}),
+    ...defined({ landmark: typeof flags.landmark === "string" ? flags.landmark : undefined }),
   };
   for (const name of ["count", "cols"])
     if (name in options && !(Number.isInteger(options[name]) && options[name] >= 1))
@@ -1803,6 +1809,115 @@ async function mapViews({ command, file, flags, listed }) {
   savePicture(to, picture, `${picture.facts.views.length} views; light: ${picture.facts.light}`);
   for (const view of picture.facts.views)
     console.log(`      ${view.name}, from ${placeText(view.from)}: ${view.faces} faces`);
+}
+
+/**
+ * A map's dressing beside Valve's own (src/maps/dressing.mjs): a compiled map's walls, textures, lamps and floor
+ * light; its source's brush roles (a .map, or `--source` beside a .bsp); `--against` another compiled map, its
+ * numbers beside. `--json`: the rows.
+ */
+async function mapDressing({ file, flags }) {
+  if (isSource(file)) {
+    const roles = maps.dressingOfSource(maps.readMap(readFileSync(existing(file), "utf8")));
+    for (const [key, v] of Object.entries(roles)) console.log(`${key}: ${v === null ? "not measured" : key === "brushes" ? v : `${Math.round(v * 100)}%`}`);
+    console.log("the face measures (walls, textures, lamps, light) are of a compiled map: compile it, and give the .bsp");
+    return;
+  }
+  const source = typeof flags.source === "string" ? maps.readMap(readFileSync(existing(flags.source), "utf8")) : null;
+  const mine = maps.dressingOf(readCompiled(file).bsp, { source });
+  const theirs = typeof flags.against === "string" ? maps.dressingOf(readCompiled(flags.against).bsp) : null;
+  if (flags.json) return console.log(JSON.stringify({ rows: mine.rows, against: theirs?.rows ?? null }, null, 1));
+  for (const line of mine.facts) console.log(line);
+  for (const line of mine.warnings) console.log(`WARNING ${line}`);
+  if (theirs) for (const row of theirs.rows) console.log(`  ${flags.against}: ${row.key} ${row.value}`);
+}
+
+function mapHeights({ command, file, flags }) {
+  const dir = need(command, flags.o, "-o <folder>");
+  const { bsp } = readCompiled(file);
+  const cell = flags.cell === undefined ? 16 : numberOf(flags, "cell");
+  const { legend, layers } = heightPlanOf(bsp, { cell, pixels: flags.pixels === undefined ? 4 : numberOf(flags, "pixels") });
+  mkdirSync(dir, { recursive: true });
+  layers.forEach(({ floor, room }, L) => {
+    writeFileSync(join(dir, `floor-${L}.png`), smak.png(floor.width, floor.height, floor.rgba));
+    writeFileSync(join(dir, `room-${L}.png`), smak.png(room.width, room.height, room.rgba));
+  });
+  writeFileSync(join(dir, "legend.json"), `${JSON.stringify(legend, null, 1)}\n`);
+  console.log(`${dir}: ${legend.layers} layers of ${legend.width} x ${legend.height} cells of ${legend.cell} units (floor-N.png the floor's height, room-N.png the headroom over it; legend.json says which colour is which, and where the world's x0 and y1 are)`);
+  console.log(`      ${legend.heights.length} floor heights from ${legend.heights[0]?.h} to ${legend.heights.at(-1)?.h}; read back by a map spec's floorplan: { dir }`);
+}
+
+function mapFgd({ command, file, flags, listed }) {
+  const to = need(command, flags.o, "-o mod.fgd");
+  // the program first, so that what an FGD says of a key (its choices, its labels) stands over the code's type
+  const parts = [];
+  const code = file ? maps.definitionsOfCode(existingFolder(file)) : null;
+  if (code) parts.push(code);
+  if (listed.dll?.length) parts.push(maps.definitionsOfDll(listed.dll.map(existing)));
+  if (flags.maps) parts.push(maps.learnEntities(existingFolder(flags.maps)));
+  if (listed.fgd?.length) parts.push(maps.definitionsOf(listed.fgd.map(existing)));
+  if (!parts.length) fail(`${command}: the mod's source folder (dlls), or --fgd, --maps or --dll`);
+  const all = maps.joinDefinitions(parts);
+  const text = maps.writeFgd(all, { name: flags.name ?? basename(resolve(file ?? flags.maps ?? ".")) });
+  save(to, text);
+  const written = Object.keys(maps.definitionsOf(maps.readFgd(text)).classes).length;
+  console.log(`${to}  ${written} classes, from ${all.from.join(", ")}`);
+  for (const line of text.split("\n").slice(1, 3)) if (line.startsWith("// ")) console.log(`      ${line.slice(3)}`);
+  for (const sentence of code?.unread ?? []) console.log(`WARN  ${sentence}`);
+  // what the code reads that the FGDs given do not name: the keys a mapper cannot see in the editor
+  const fgd = parts.find((part) => part.fgd);
+  if (code && fgd) {
+    const lacking = [];
+    for (const [name, c] of Object.entries(code.classes)) {
+      const f = fgd.classes[name];
+      if (!f) continue;
+      const keys = Object.entries(c.keys).filter(([key, k]) => !k.engine && !f.keys[key]).map(([key]) => key);
+      if (keys.length) lacking.push(`${name}: ${keys.join(" ")}`);
+    }
+    if (lacking.length) console.log(`      ${lacking.length} classes have keys the code reads and the FGD given does not name (now written):`);
+    for (const line of lacking.slice(0, flags.all ? lacking.length : MARKS_PRINTED)) console.log(`        ${line}`);
+  }
+}
+async function contractCommand({ file, flags }) {
+  const { contractOf, compareContract } = await import("../src/contract.mjs");
+  const made = contractOf(readModelWithTextures(file));
+  if (flags.against) {
+    const { faults, notes } = compareContract(contractOf(readModelWithTextures(existing(flags.against))), made);
+    for (const f of faults) console.log(`FAULT ${f}`);
+    for (const n of notes) console.log(`note  ${n}`);
+    if (!faults.length) console.log(`${basename(file)} keeps the contract of ${basename(flags.against)}`);
+    if (faults.length) process.exit(1);
+    return;
+  }
+  if (flags.json) return console.log(JSON.stringify(made, null, 2));
+  console.log(`BONES (${made.bones.length}): ${made.bones.join(", ")}`);
+  console.log(`ANIMATIONS (${made.sequences.length}), by number: ${made.sequences.map((s, i) => `${i} ${s.name}${s.activity ? ` (activity ${s.activity})` : ""}`).join(", ")}`);
+  console.log(`ATTACHMENTS (${made.attachments.length}): ${made.attachments.map((a, i) => `${i} on ${a.bone}`).join(", ")}`);
+  console.log(`BODYPARTS: ${made.bodyparts.map((b) => `${b.name} (${b.bodies} bodies)`).join(", ")}`);
+  console.log(`HIT GROUPS: ${made.hitgroups.join(", ") || "none"}; CONTROLLERS: ${made.controllers.map((c) => c.bone).join(", ") || "none"}`);
+}
+/** A model read with its <name>t.mdl textures, as the other model commands read it. */
+const readModelWithTextures = (file) => smak.readStudio(file).src;
+
+/**
+ * video: a smak.video/1 spec made into a video (MP4 with ffmpeg, a GIF without), or with --preview its contact
+ * sheet only. Its models and maps are found in --models, or beside the spec; the map's textures in --wads.
+ */
+async function videoSpec({ command, file, flags, listed }) {
+  const out = need(command, flags.o, "-o <folder>");
+  mkdirSync(out, { recursive: true });
+  const { toolsFor } = await import("../mcp/tools.mjs");
+  const models = resolve(flags.models ?? dirname(resolve(file)));
+  const folders = { work: resolve(out), models, wads: listed.wads ?? [] };
+  const build = toolsFor(folders, { allowRun: false }).find((tool) => tool.name === "build");
+  const spec = JSON.parse(readFileSync(file, "utf8"));
+  const answer = await build.call({ spec, preview: flags.preview === true });
+  const said = answer.filter((piece) => piece.type === "text").map((piece) => piece.text).join("\n");
+  answer
+    .filter((piece) => piece.type === "image")
+    .forEach((piece) => writeFileSync(join(out, `${spec.name}-sheet.png`), Buffer.from(piece.data, "base64")));
+  console.log(said);
+  if (!said.startsWith("OK")) process.exit(1);
 }
 
 // ── the walk test, the section, the storeys, the openings ──────────────────
@@ -2296,7 +2411,7 @@ async function mapCompare({ command, file, rest, flags, listed }) {
   if ("cols" in options && !(Number.isInteger(options.cols) && options.cols >= 1))
     fail(`--cols: a whole number from 1, not ${options.cols}`);
   // each map's own folder is looked in for its .wad files, after the game's
-  options.folders = [...new Set([...options.folders, ...files.map((each) => dirname(each))])];
+  options.folders = [...new Set([...options.folders, ...files.flatMap((each) => maps.mapOwnFolders(each))])];
   const picture = maps.compareOf(
     files.map((each, nth) => ({ map: readEither(each), name: names[nth], ...defined({ z: cutOf(nth) }) })),
     options,
@@ -2836,6 +2951,15 @@ const COMMANDS = {
                                             scripts of your own, for a profile whose mod names scripts: of those named by nothing,
                                             this map's own are warned of, and every one with --all)`,
   },
+  "map-fgd": {
+    run: mapFgd,
+    own: true,
+    folder: true,
+    help: `  map-fgd [<source folder>] -o mod.fgd [--fgd file ...] [--maps <folder of .bsp>] [--dll file] [--all]
+                                            an FGD for a mod: its classes and the keys its C++ code reads (each typed by what the
+                                            code does with it), joined with its own FGDs and its maps; what the code reads that the
+                                            FGD given lacks is listed`,
+  },
   "map-learn": {
     run: mapLearn,
     own: true,
@@ -2878,7 +3002,10 @@ const COMMANDS = {
   "map-views": {
     run: mapViews,
     own: true,
-    help: `  map-views <bsp> -o out.png [--count 8] [--cols 4]   several views in one picture: from the places to start and the largest rooms
+    help: `  map-views <bsp> -o out.png [--count 8] [--cols 4] [--aim] [--landmark <n|name|class>]
+                                            several views in one picture: from the places to start and the largest rooms;
+                                            --aim: also aimed at what the map has (its water, its largest standing piece, its lamps,
+                                            its crowd, each storey, the landmark), and no level view that faces a wall
                                             (places to start that stand together get one view between them; a view that is nearly
                                             one colour is left out for the next largest room, and that is said)
         (the three take --width --height --game <folder> --wad <file.wad> --no-light --light start|off|steady|all --brightness 1.55 --entities all|models|game|none (game: only what is drawn by its model or sprite, no boxes);
@@ -2889,6 +3016,27 @@ const COMMANDS = {
          --mod <profile.mjs|.json|goldsrc> (with --game, --scripts <folder>): the mod's folders, the box each of its classes moves with and,
          with --models, the model the mod gives an entity that names none, a monster's from its script; map-section, map-storeys
          and map-openings take it too)`,
+  },
+  "map-dressing": {
+    run: mapDressing,
+    own: true,
+    help: `  map-dressing <bsp|map> [--source <map>] [--against <bsp>] [--json]
+                                            its dressing beside Valve's own campaign, measured: tall walls banded and where,
+                                            texture scale and shift, lamp faces a light, faces off the axes, detail a floor's
+                                            256 x 256, the floor's dark share and contrast; of source, its brushes' roles (panels,
+                                            strips, lamps, angled). A measure outside Valve's 5th to 95th in 100 is a WARNING,
+                                            with which way to go`,
+  },
+  "map-sweep": {
+    run: async ({ file, flags }) => {
+      const { sweepOf } = await import("../src/maps/sweep.mjs");
+      const swept = sweepOf(readFileSync(existing(file)));
+      if (flags.json) console.log(JSON.stringify(swept, null, 1));
+      else for (const line of swept.facts) console.log(line);
+    },
+    own: true,
+    help: `  map-sweep <bsp> [--json]           what a player walking it would find wrong: drops that hurt (over ${210} units: Half-Life's
+                                            safe fall) and lights in mid-air (nothing solid within 32), each with its place`,
   },
   "map-reach": {
     run: mapReach,
@@ -2948,6 +3096,13 @@ const COMMANDS = {
                                             folder (the spec's own unless told) with a sheet of its frames and an animated
                                             picture, and measured against Half-Life's own of its kind`,
   },
+  contract: {
+    run: contractCommand,
+    help: `  contract <mdl> [--json] [--against reference.mdl]
+                                            what a mod's code asks of a model by name or number: bones, animations in their
+                                            order with activities, attachments, bodyparts, hit groups; --against: what the model
+                                            breaks of a reference's (exit code 1 when it breaks any)`,
+  },
   sound: {
     run: soundCommand,
     own: true,
@@ -2980,6 +3135,14 @@ const COMMANDS = {
                                             each works in the end through relays (lights, sounds, lifts, doors, places that heal or
                                             hurt), its trains and their stops, the names said over the map from many speakers, its
                                             teleports, what comes back after it is broken. --list: each property and switch`,
+  },
+  "map-heights": {
+    run: mapHeights,
+    own: true,
+    help: `  map-heights <bsp> -o <folder> [--cell 16]   the map's height plan: one picture a layer of floor (floor-0.png the lowest at each
+                                            place, floor-1.png the next above it...) with each cell's height as a colour, room-N.png
+                                            the headroom over it, legend.json the colours' heights. A map spec's floorplan: { dir }
+                                            reads it back as its space: storeys over storeys carved in one`,
   },
   "map-light": {
     run: mapLight,

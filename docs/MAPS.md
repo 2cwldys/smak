@@ -167,6 +167,7 @@ of `image.mjs` take it as it is.
 | `textureFromWad(wad, name)` | One texture by name, whatever its case, or `undefined`. `wad`: the file's bytes, or what `readWad` gave. |
 | `writeWad(textures)` | A `.wad` file's bytes from `[{ name, image }]` or `[{ name, width, height, pixels, palette }]` (what `mapTexture` takes). A name given twice is refused. |
 | `listedWads(value)` | The file names in a worldspawn's `wad` value, as the engine looks for them: lower case, no path, `.wad` put on, the two decal files left out. |
+| `mapOwnFolders(file)` | The folders a map's own path says to look in for its `.wad` files: its folder, and for a map in a mod's `maps/`, the mod's folder over it, where the game looks. The command line and the MCP server add them after the game's folders. |
 | `wadsFor(bsp, folders)` | `{ found: [{ name, path }], missing: [name] }`: where the map's listed `.wad` files are, in the folders given, in that order (the mod's own, then `valve`). |
 | `texturesFor(bsp, folders, { pixels = false })` | `{ wads, textures: [{ name, wad, path, texture? }], missing: [name], unreadable }`: every texture the map wants from outside, in the first listed file that has it. With `pixels`, each brings its `texture`. |
 
@@ -254,7 +255,11 @@ console.log(view.facts.notes, view.facts.missing, view.facts.brightness);
 | --- | --- |
 | `drawMap(bsp, { from, to | yaw, pitch, fov, width, height, light, brightness, textures, folders, entities, labels, bodies, models, modelScale, sprites, sky })` |\| yaw, pitch, fov, width, height, light, brightness, textures, folders, entities, labels, bodies, models, sky })` | A view from a point inside the map, 640 x 480: textured, lit by the map's own lightmaps, `{` textures with their holes where the game gives them, liquids of the world letting the bottom show, brush entities where their `origin` puts them, and what stands (a start, a monster, an NPC) as the box it moves with, at its true size. With `folders`: the sky as its own picture and each sprite as its first frame; with `models` too, each named model with its textures. Without `from`: from the first place to start, at eye height, the way it faces. |
 | `planOf(bsp, { z, slice, scale, width, height, area, entities, labels, legend, heights, reach, only, ... })` | The map from straight above, `+y` up the picture and `+x` to its right: floors (their texture's mean colour under the map's light), walls as lines, every point entity a dot in the colour of its kind (with the outline of its box, when it stands), every brush entity outlined, a scale bar and a north arrow. With `z`: a cut at that height, what is solid there filled in one colour (a storey's floor plan, doorways open). `heights`: each floor's height written on it. `legend`: the entities listed beside it. `reach`: the walk test tinted on it. |
-| `viewsOf(bsp, { count, at, width, height, cols, ... })` | Several views in one picture, each named in its corner: from the places to start, and from the middle of the largest rooms looking four ways. An overview in one call. Places to start that stand together (each within 256 units of another: a row of them for many players, one for each map a player arrives from) are one group and get ONE view, from the first, named `1 ms_player_spawn +5`, with the others' boxes left out of it (`facts.starts`). A view that is nearly one colour (nine tenths of it, and not for want of light) is left out and the next largest room shown in its place (`facts.dropped`, and a note); with no room left, it stays and is said. `at`: views of your own, drawn as asked. |
+| `viewsOf(bsp, { count, at, aim, landmark, width, height, cols, ... })` | Several views in one picture, each named in its corner: from the places to start, and from the middle of the largest rooms looking four ways. An overview in one call. `aim`: views aimed at what the map has come next (`aimedStands`), and the rooms' level views the most open first, one facing a wall within 256 only when no other is left; `landmark` (an entity's number, targetname or class) is among them. Places to start that stand together (each within 256 units of another: a row of them for many players, one for each map a player arrives from) are one group and get ONE view, from the first, named `1 ms_player_spawn +5`, with the others' boxes left out of it (`facts.starts`). A view that is nearly one colour (nine tenths of it, and not for want of light) is left out and the next largest room shown in its place (`facts.dropped`, and a note); with no room left, it stays and is said. `at`: views of your own, drawn as asked. |
+| `aimedStands(bsp, { landmark })` | Places to look from at what a map has, each `{ from, to, name }`: the landmark asked for (unless told, an entity named `landmark`, the `info_target` a map spec's `focus` leaves over its landmark; a landmark's view also needs a clear line to its body, 48 lower, so a rail before it does not hide it), its largest water, its largest brush entity that stands, its largest cluster of lamps (faces wearing a lamp's texture, `lampsOf`), its largest cluster of monsters and items, and a room on each storey but the lowest. Each from a player's eye over a floor 192 to 512 away with a clear line to it. The views a judge and a maker see of a map (the original mod's judging, the MCP's map `views`, a map spec's `features` picture) are aimed so: a judged pump hall had its water, catwalks and bridge in none of its level views |
+| `texturePlaces(bsp)`, `placeView(bsp, place, { textures, folders, brightness })` | Each texture of the world at its largest face lit in every colour (else its largest lit, else its largest), with a camera square in front of it that stays inside the room: `{ name, width, height, from, yaw, pitch, area, lit, light: [r, g, b], across, up, turned, wall }`. `light` is the face's mean steady light as a view at `PLACE_BRIGHTNESS` (4.5) lays it on a texel; `across` the texels a view spans; `turned` the picture's top against up (a wall) or north. `placeView` draws one: what the reproduction test's judge, and the wad spec's `preview.each`, look at |
+| `matchTextures(picture, rect, textures, { count })` | The textures of a .wad (`readWad(...).textures`) most like a patch `[x, y, w, h]` of a picture, by their colours with the brightness divided out: `[{ name, width, height, distance }]`, nearest first. Candidates to look at, not a verdict (`src/maps/match.mjs` gives what it finds and what it cannot) |
+| `faceTextureAxes(bsp, face)` | `{ s, t }`: how a face lays its texture, each `[x, y, z, offset]` |
 | `compareOf([{ map, name, z, ... }], { scale, cols, width, height, entities, ... })` | Several maps from above in ONE picture at ONE scale, each under its name and the size of its world (`3424 x 1760 x 384  cut at z 100`), with one scale bar under them all: is the new map the size of the game's? Each entry is a compiled map or source, or an object with what its own plan takes (`z`: the height ITS plan is cut at, unset for one seen from above; `slice`, `area`, `heights`, `reach`). Without `scale`: the largest at which all fit 1920 x 1080. No entity is marked unless `entities` says. `facts.maps`: each plan's `left`, `top`, `x0`, `y0`, so that a point is at pixel `(left + (x - x0) * scale, top + (y0 - y) * scale)`. |
 | `drawSource(map, { from, to \| yaw, pitch, ... })` | A view of brush source (what `writeMap` takes and `readMap` gives), with no compile: each face one flat colour by its texture's name, shaded by the way it looks, its edges drawn. |
 | `planOfSource(map, { z, scale, area, entities, labels })` | The plan of brush source: a cut through its brushes at `z` (the first start's height unless told), entities marked as on `planOf`. |
@@ -398,7 +403,7 @@ const plan = maps.planOfSource(map, { reach, heights: true, legend: true });    
 | --- | --- |
 | `reachOf(bspOrMap, { from, mod, step, jump, speed, gravity, slopes, exits, markers, wiring, off, doors, walls, open, shut, bodies, to, cell, touch, hang, widest, parts })` | `{ warnings, facts, starts, entities, unreached, stuck, hanging, oneWay, leaps, steep, openings, routes, doors, cell, area, share, standable, parts, patches, walked(x, y, under), on(x, y, under), stands(x, y, under), jumped(x, y, under), trapped(x, y, under) }` |
 | `storeyCuts(bspOrMap, { cell, over, least })` | `[{ z, floors: [lowest, highest], area }]`: the heights to cut a map at so that every floor a player fits on is seen in one of the cuts, the highest first |
-| `wiringOf(bspOrMap, { mod })` | What the entities are wired to do (src/maps/wiring.mjs, `smak map-wiring`): `{ properties, families, unnamedDoors, switches, works, lifts, zones, broadcasts, teleports, comesBack, warnings, facts }`. A property is a name doors answer to; a switch is followed through multi_managers and relays to what it works (`light`, `sound`, `lift`, `door`, `heal`, `hurt` ...); a train's stops are its corners that wait to be fired again. `familyOf(name)`: `resident7` is of `resident` |
+| `wiringOf(bspOrMap, { mod })` | What the entities are wired to do (src/maps/wiring.mjs, `smak map-wiring`): `{ properties, families, unnamedDoors, switches, works, lifts, zones, broadcasts, teleports, comesBack, warnings, facts }`. A property is a name doors answer to; a switch is followed through multi_managers and relays to what it works (`light`, `sound`, `lift`, `door`, `heal`, `hurt` ...); a train's stops are its corners that wait to be fired again. `doorFamilyOf(name)`: `resident7` is of `resident` |
 | `spaceOf(bspOrMap, { doors, walls, open, shut, off, mod })` | `{ min, max, doors, areas, ladders, blocked(x, y, body), climbs(x, y, body), cut(x, y), sees(from, to), firstStop(from, to, precision) }`: the solid space, asked along upright lines. `firstStop` (a compiled map's only) is how far along a line it first meets something solid, or null: one walk, where `sees` would be asked of every length. `blocked` gives `[[from, to, slant]]`: `slant` is how the top of each stretch lies, the z of its normal (1 for a level floor). `body` is one of `BODIES` or its name (`"point"`, `"standing"`, `"large"`, `"crouching"`); anything else is refused in a sentence. `areas` has every brush entity's box with `solid` (its class stops a body) and `gives` (its class gives way) |
 | `restOf(space, feet, body)` | `{ fits, floor, hang, stretch }`: whether a body fits with its feet at a point, the floor it would rest on and how far over it it hangs |
 | `bodyFor(classname, targetname, bodies)` | `{ body, feet, mins, maxs }`: the box an entity stands in, or null |
@@ -576,6 +581,53 @@ dumpsters of a city built with the kit turned to the wall, as a player had seen)
 over the floor (most games drop it), a prop standing on another model (a candle on a table). On the game's
 own gatecity: 3 warnings and 116 notes in 182 things, which is why notes are to be looked at, not mended
 blindly. `smak map-props --views <folder>` draws each from the side with the most room.
+
+## A map's dressing (`src/maps/dressing.mjs`)
+
+How a map is dressed, in numbers, beside Valve's own: the facts a maker revising a map is told, measured
+(the fork's research/level-dressing.md: checks by rule agree with people where a picture judge does near chance). `smak
+map-dressing <bsp> [--source <map>] [--against <bsp>]` prints it.
+
+| Function | Gives |
+| --- | --- |
+| `dressingOf(bsp, { source, views, against, landmark })` | `{ measures, counts, rows, facts, warnings }`: each measure beside `VALVE_DRESSING`, a line each (`dressing: tall walls of one texture only: 100% (Valve's: 44% to 93%, median 68%)`), and a warning, with which way to go, for one outside Valve's band. `source`: the map's brush source, for its brushes' roles; `views`: pictures of it, for their complexity; `landmark`: `{ name, room, seen, of }`, a map spec's focus, named with how many of the ways into its room see it (a warning when one does not) |
+| `measureDressing(bsp, { source, views })` | The measures alone |
+| `dressingOfSource(map)` | The brush roles of a source: shares of its world (and `func_detail`) brushes that are panels, strips, lamps, angled |
+| `brushRole({ min, max, faces })` | One brush's role as Valve's c1a0 sources are read: `lit` (a lamp's texture, its long side 128 or less), `strip` (two thin sides of 16 and 24 or less, its long side three times the middle), `panel` (its thinnest 16 or less, the next 32 or more), else `block`; `angled` when it has other than six faces |
+| `lampsOf(bsp)`, `isLampTexture(name)` | Whether a texture is a lamp: the game's texture lights, a `~` name, a lamp's word, and every texture a map's `info_texlights` names (a map spec's glowing fixtures) |
+| `pictureComplexity(picture)` | `{ edges, compression }`: the share of pixels whose brightness steps over 24 to a neighbour, and its PNG's bytes over its raw size (Machado et al. 2015: such measures follow people's ratings of complexity) |
+| `VALVE_DRESSING` | Valve's own: each measure's 5th, 25th, 50th, 75th and 95th in 100 over the campaign's 96 maps, the roles over the SDK's c1a0 and c1a0d sources (widened a quarter each way, two being few). the fork's `research/valve-dressing.mjs` measures it again |
+
+The measures, of the world's faces (tool, sky and liquid faces left out):
+
+```
+Measure            What it is                                                       Valve's 5th to 95th (median)
+scaleOne           faces at texture scale 1                                         26% to 97% (79%)
+shifted            faces shifted off the world's texture grid                       28% to 98% (71%)
+bandedWalls        tall walls (128 or more, faces grouped by plane) with a texture   1% to 41% (13%)
+                   join up them: two textures meeting on the one plane
+oneTextureWalls    tall walls of one texture only                                    44% to 93% (68%)
+joinHeight         median height of a join over its wall's foot                      56 to 527 (160)
+lampFaces          lamp faces a light entity (light, light_spot)                      0 to 101 (5)
+nonAxial           world face area off the axes                                       7% to 60% (22%)
+detail             world planes a 256 x 256 of floor (up-facing face area)             2.3 to 23 (10.7)
+darkFloor          floor area whose steady light is under 24 of 255, sample by         6% to 60% (21%)
+                   sample (a face's mean evens out the pools under its lamps)
+contrast           the floor light's brightest tenth over its darkest, by sample       3.6 to 152 (12.9)
+panels, strips,    the brush roles, of source                                        about 39%, 15%, 15%, 6%
+litBrushes, angled
+edges              of views' pixels on an edge (six views aimed, 320 x 240)           1.6% to 15% (4.9%)
+compression        a view's PNG bytes over its raw size                               0.20 to 0.47 (0.34)
+```
+
+What it is worth: each measure is of the faces as the compiler left them, Valve's measured the same way from
+their compiled maps; a band at the 5th to 95th says where most of Valve's own lie, not what is good. `WALL_FAMILIES` (`src/maps/families.mjs`, `familyOf(name)`) is what Valve stacks under and over each of its wall
+textures, and at what height, over the 96 campaign maps (measured by the fork's research/valve-wall-families.mjs). The original mod's
+maps measure outside Valve's band on banding, one-texture walls, the share off the axes, the dark floor and the
+light's contrast; Valve's c1a0 only on the share off the axes, being among its boxiest. The views' edges and
+compression put the mod's three maps inside Valve's band (0.04 to 0.13, 0.28 to 0.40): photographic textures
+are busy enough, and these two tell little apart here.
+
 
 ## A map in numbers (`src/maps/measure.mjs`)
 

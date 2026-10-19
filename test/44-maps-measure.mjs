@@ -643,3 +643,10 @@ test("viewsOf with aim: views aimed at what the map has, a landmark among them, 
   const first = maps.aimedStands(marked)[0];
   sure(first?.name === "landmark landmark" && Math.hypot(first.to[0] - 96, first.to[1] - 96) < 1, JSON.stringify(maps.aimedStands(marked)));
 });
+
+test("smak map-dressing: a compiled map's dressing beside Valve's, its source's brush roles", () => {
+  const said = runSmak("map-dressing", join(FIXTURES, "tworooms.bsp"), "--source", join(FIXTURES, "tworooms.map"));
+  sure(/^dressing: faces at texture scale 1: 100%/m.test(said) && /^WARNING dressing: tall walls of one texture only/m.test(said) && /panels \(thin, wide\): 70%/.test(said), said);
+  const source = runSmak("map-dressing", join(FIXTURES, "tworooms.map"));
+  sure(/^panels: 70%/m.test(source) && /of a compiled map: compile it/.test(source), source);
+});
