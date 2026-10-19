@@ -25,6 +25,7 @@
 // hull is always the thing or more: what is extra has to be cut by hand, or carved with more pictures. A part
 // thinner than a cell (a fork's tip, a rail) is lost: give it more `cells`.
 
+import { textMask } from "../render.mjs";
 import { viewAxes, foregroundOf, outlineBox, VIEW_NAMES } from "./project.mjs";
 import { reduce } from "../qem.mjs";
 import { surfaceOf } from "./surface.mjs";
@@ -354,17 +355,42 @@ export function masksFromPicture(picture, area = [0, 0, picture.width, picture.h
   return { mask: { width, height, data }, rect: [box[0] - x0, box[1] - y0, box[2] - x0, box[3] - y0], centre: [width / 2, height / 2] };
 }
 
+/** The view `sheet` (src/render.mjs) draws sixth, where a sheet of six sides has the underside. */
+const THREE_QUARTER = { name: "three quarter", yaw: 35, pitch: 20 };
+/** Where `tile` writes a picture's name: this many pixels in from its top left, each dot of a letter 2 square. */
+const CAPTION_AT = 6;
+const CAPTION_DOT = 2;
+/** How well the caption of the tile at (x, y) reads as `text`: the share of its dots lit or dark as `tile` writes them. */
+function captionReads(picture, x, y, text) {
+  const mask = textMask(text, CAPTION_DOT);
+  let same = 0;
+  for (let j = 0; j < mask.height; j++)
+    for (let i = 0; i < mask.width; i++) {
+      const px = x + CAPTION_AT + i;
+      const py = y + CAPTION_AT + j;
+      const lit = px < picture.width && py < picture.height && picture.rgba[(py * picture.width + px) * 4] > 160;
+      if (lit === mask.at(i, j)) same++;
+    }
+  return same / (mask.width * mask.height);
+}
 /**
  * The views of a sheet of pictures laid out as the kit lays them (`tile`: `cols` across, each square of the
- * sheet's width over `cols`), named in order (front, left, back, right, top, below unless told): [{ mask, rect,
- * centre, yaw, pitch, name }] for carve.
+ * sheet's width over `cols`), named in order (unless told: front, left, back, right, top, and below, or three
+ * quarters where the sixth's caption says so, as `sheet` draws it; a name of VIEW_NAMES, or `{ name, yaw, pitch }`):
+ * [{ mask, rect, centre, yaw, pitch, name }] for carve. A sheet of `sheet`'s read as one of six sides took its
+ * three-quarter view for the underside, whose outline it never met: a box of 20 by 10 by 14 was carved again
+ * finer three times over for nothing, seven minutes and 4 GB.
  */
-export function sheetViews(picture, { cols = 3, names = Object.keys(VIEW_NAMES) } = {}) {
+export function sheetViews(picture, { cols = 3, names } = {}) {
   const side = Math.floor(picture.width / cols);
-  return names.map((name, i) => {
-    const [yaw, pitch] = VIEW_NAMES[name] ?? name;
-    const x = (i % cols) * side;
-    const y = Math.floor(i / cols) * side;
+  const at = (n) => [(n % cols) * side, Math.floor(n / cols) * side];
+  const sixth = !names && captionReads(picture, ...at(5), THREE_QUARTER.name) > captionReads(picture, ...at(5), "below");
+  const list = names ?? [...Object.keys(VIEW_NAMES).slice(0, 5), sixth ? THREE_QUARTER : "below"];
+  return list.map((given, i) => {
+    const named = typeof given === "object" && !Array.isArray(given) ? given : null;
+    const name = named ? named.name : given;
+    const [yaw, pitch] = named ? [named.yaw, named.pitch] : VIEW_NAMES[name] ?? name;
+    const [x, y] = at(i);
     return { ...masksFromPicture(picture, [x, y, x + side, y + side]), yaw, pitch, name: typeof name === "string" ? name : String(i) };
   });
 }

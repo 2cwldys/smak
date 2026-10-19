@@ -9,6 +9,9 @@ import { reduce } from "../src/qem.mjs";
 import { carve, masksFromPicture, sheetViews } from "../src/spec/carve.mjs";
 import { framing, render, tile } from "../src/render.mjs";
 import { test, sure, near, tmp } from "./helper.mjs";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { buildModelSpec } from "../src/spec/model.mjs";
 
 /** The lowest and highest of some points along an axis. */
 const spanOf = (ps, a) => ps.reduce(([lo, hi], p) => [Math.min(lo, p[a]), Math.max(hi, p[a])], [Infinity, -Infinity]);
@@ -232,4 +235,29 @@ test("carve: a side drawn empty is left out, and the side opposite carves for it
     refused = e.message;
   }
   sure(/no view shows anything/.test(refused), refused);
+});
+
+test("a carved part in a model spec: a box's sheet carved back to a box's size, sound", () => {
+  const work = join(tmp, "carved-part");
+  mkdirSync(work, { recursive: true });
+  const boxSpec = { spec: "smak.model/1", name: "b.mdl", kind: "prop", finish: false, parts: [{ id: "b", kind: "box", size: [20, 10, 14], material: { base: "paint", tone: [0.7, 0.2, 0.2] } }] };
+  const drawn = smak.sheet(buildModelSpec(boxSpec).mdl, {});
+  writeFileSync(join(work, "sides.png"), smak.png(drawn.width, drawn.height, drawn.rgba));
+  const { mdl, report } = buildModelSpec({ spec: "smak.model/1", name: "c.mdl", kind: "prop", smooth: 80, parts: [{ id: "hull", kind: "carved", size: [20, 10, 14], sheet: "sides.png", triangles: 60 }] }, { folder: work });
+  sure(report.ok, [...report.errors, ...report.faults].join("; "));
+  const size = smak.posed(mdl, {}).tris.flatMap((t) => t.c.map((c) => c.p)).reduce((b, p) => b.map((v, k) => (k < 3 ? Math.min(v, p[k]) : Math.max(v, p[k - 3]))), [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity]);
+  const extent = [size[3] - size[0], size[4] - size[1], size[5] - size[2]];
+  sure(extent.every((v, k) => Math.abs(v - [20, 10, 14][k]) < 1.5), `its size ${extent.map((v) => v.toFixed(1))}`);
+  sure(smak.check(mdl).errors.length === 0, "it passes check");
+});
+
+test("sheetViews: a sheet of `sheet`'s is read with its three-quarter view sixth, one of six sides with its underside", () => {
+  const src = buildModelSpec({ spec: "smak.model/1", name: "b.mdl", kind: "prop", finish: false, parts: [{ id: "b", kind: "box", size: [20, 10, 14], material: { base: "paint", tone: [0.7, 0.2, 0.2] } }] }).mdl;
+  const kits = sheetViews(smak.sheet(src, {}));
+  sure(kits[5].name === "three quarter" && kits[5].yaw === 35 && kits[5].pitch === 20, JSON.stringify(kits.map((v) => [v.name, v.yaw, v.pitch])));
+  const sides = [["front", 0, 0], ["left", 90, 0], ["back", 180, 0], ["right", 270, 0], ["top", 0, 90], ["below", 0, -90]];
+  const six = tile(sides.map(([, yaw, pitch]) => render(src, { view: "orbit", yaw, pitch, width: 192, height: 192 })), 3, sides.map(([n]) => n));
+  sure(sheetViews(six)[5].name === "below" && sheetViews(six)[5].pitch === -90, JSON.stringify(sheetViews(six).map((v) => v.name)));
+  // names given are taken as they are
+  sure(sheetViews(six, { names: ["front", "left", "back", "right", "top", "below"] }).every((v, i) => v.name === sides[i][0]), "names given");
 });
