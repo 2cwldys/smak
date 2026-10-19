@@ -545,6 +545,13 @@ test("the leak hint: a sealed room keeps the flood in, a room with a wall taken 
     plan.warnings.join("; "),
   );
   sure(plan.leak?.at, "the plan gives the leak");
+  // the compilers' marks as the east wall, as VHLT and SDHLT 1.3.1 compile them: these leak (NOCLIP and
+  // NULLNOCLIP in the hulls a player moves in), these seal
+  for (const [texture, leaks] of [["SKIP", true], ["SPLITFACE", true], ["NOCLIP", true], ["NULLNOCLIP", true], ["CLIP", true], ["SOLIDHINT", false], ["BEVELHINT", false], ["NULL", false]]) { // prettier-ignore
+    const wall = source.box([256, -16, -16], [272, 272, 144], texture);
+    const marked = checkPlan({ worldspawn: { wad: "smak.wad" }, brushes: [...openRoom(), wall], entities: roomEntities() });
+    sure(Boolean(marked.leak) === leaks, `a wall of ${texture}: ${marked.leak ? "leaks" : "seals"}`);
+  }
   // a wall that is a brush entity seals nothing; water does not either
   const eastWall = sealedRoom()[EAST_WALL];
   const withDoor = {

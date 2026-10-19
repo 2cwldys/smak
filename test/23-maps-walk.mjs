@@ -192,6 +192,15 @@ test("the walk test reaches a monster through a doorway and up a step, and says 
   sure(reach.unreached.length === 0 && reach.stuck.length === 0 && reach.hanging.length === 0, "no fault");
 });
 
+test("the compilers' marks in a doorway: some let a body through, the hints are solid to it", () => {
+  // as measured in the clip hulls of maps compiled with VHLT and SDHLT 1.3.1
+  const plug = (texture) => maps.box([320, DOOR.from, STUDY_FLOOR], [352, DOOR.to, STUDY_FLOOR + DOOR.high], texture);
+  for (const [texture, through] of [["NOCLIP", true], ["NULLNOCLIP", true], ["SKIP", true], ["SPLITFACE", true], ["SOLIDHINT", false], ["BEVELHINT", false]]) { // prettier-ignore
+    const reach = maps.reachOf(house({ brushes: [plug(texture)] }), { to: [THE_MONSTER] });
+    sure(monsterOf(reach).reached === through, `${texture} in the doorway: ${monsterOf(reach).reached ? "walked through" : "a wall"}`);
+  }
+});
+
 test("the walk test says what it would take where a walk does not reach", () => {
   // a step of 24: more than is walked, and a jump clears it
   const high = maps.reachOf(house({ floor: 24 }));

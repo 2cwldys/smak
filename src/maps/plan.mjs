@@ -25,17 +25,24 @@ import { checkEntities as checkAgainstMod } from "./rules.mjs";
  */
 export const SOURCE_LIMITS = { range: 4096, textureName: 15, key: 31, value: 1023, brushes: 32768, switchedLights: 32 };
 
-/** The compilers' own textures (their zhlt.wad, which compileMap adds itself): never looked for in the given list. */
+/**
+ * The compilers' own textures (VHLT's zhlt.wad, SDHLT's sdhlt.wad, which compileMap adds itself): never looked
+ * for in the given list. BEVELHINT, SPLITFACE and the !CUR_ currents are SDHLT's alone.
+ */
 const TOOL_TEXTURES = [
-  "AAATRIGGER", "BEVEL", "BLACK_HIDDEN", "BOUNDINGBOX", "CLIP", "CLIPBEVEL", "CLIPBEVELBRUSH", "CLIPHULL1",
-  "CLIPHULL2", "CLIPHULL3", "CONTENTEMPTY", "CONTENTWATER", "HINT", "NOCLIP", "NULL", "ORIGIN", "SKIP", "SKY",
-  "SOLIDHINT",
+  "AAATRIGGER", "BEVEL", "BEVELHINT", "BLACK_HIDDEN", "BOUNDINGBOX", "CLIP", "CLIPBEVEL", "CLIPBEVELBRUSH",
+  "CLIPHULL1", "CLIPHULL2", "CLIPHULL3", "CONTENTEMPTY", "CONTENTWATER", "HINT", "NOCLIP", "NULL", "ORIGIN",
+  "SKIP", "SKY", "SOLIDHINT", "SPLITFACE", "!CUR_0", "!CUR_90", "!CUR_180", "!CUR_270", "!CUR_UP", "!CUR_DWN",
 ]; // prettier-ignore
 /**
  * A brush that wears one of these is no wall against the void: water and other liquids (`!`, `*`), and the
- * compilers' marks for an origin, a clip, a hint and the like.
+ * compilers' marks for an origin, a clip, a hint and the like. Measured with VHLT and SDHLT 1.3.1 alike (a room
+ * whose one wall wears it, compiled): SKIP and SPLITFACE leak in every hull, CLIP in hull 0; NOCLIP and
+ * NULLNOCLIP seal hull 0 but leak in hulls 1 to 3, so a player walks out through them, which the compile
+ * reports as a leak; SOLIDHINT, BEVELHINT and NULL seal.
  */
-const SEALS_NOTHING = /^(!|\*|origin$|clip|hint$|boundingbox$|contentempty$|contentwater$|noclip$)/i;
+const SEALS_NOTHING =
+  /^(!|\*|origin$|clip|hint$|skip$|splitface$|boundingbox$|contentempty$|contentwater$|noclip$|nullnoclip$)/i;
 /** The entities that light a map. */
 const LIGHTS = ["light", "light_spot", "light_environment", "info_texlights"];
 /** How many of one kind of fault are listed before the rest are counted. */
