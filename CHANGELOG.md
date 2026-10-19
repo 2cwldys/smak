@@ -39,6 +39,9 @@ From Steven Linn's fork, [stevenlafl/smak](https://github.com/stevenlafl/smak), 
   kept its file's origin at its hips and stood 37 under it; -36 is named as a player's model's place), and its
   triangles against Master Sword's own monsters and people of its size, warned of past three quarters of them
   (`report.feet`, `report.kin`, `CHARACTER_TRIANGLES`).
+- **`smak map-decompile`** (`decompile`, `textureFidelity`, `lightParity`, the texture-light table): a compiled map
+  made back into brush source, the port of Steven's bsp2map. Master Sword's maps come back and compile again with
+  SDHLT, their faces in the original's textures 91 to 100 in 100; a texture in no shipped .wad has to be given.
 - **`scripts/no-game-files.mjs`**: every tracked file (`--history`: every version ever committed) held against a
   game's folders by bytes, texture pixels and sound samples.
 
