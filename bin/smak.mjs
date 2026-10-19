@@ -2393,6 +2393,38 @@ async function mapProps({ command, file, flags, listed }) {
   }
 }
 
+// ── map-decompile ──────────────────────────────────────────────────────────
+/**
+ * map-decompile: a compiled map made back into brush source. The .wad files its worldspawn lists are kept
+ * where they are found: in the --game folders, and in the folder its maps/ folder is in (`valve` for
+ * valve/maps/x.bsp). What it carries inside it that none of them has is written beside the .map as
+ * <name>_dc.wad, already named in the `wad` key.
+ */
+function mapDecompile({ command, file, flags, listed }) {
+  const to = need(command, flags.o, "-o out.map");
+  if (isSource(file)) fail(`${command}: a compiled map (.bsp) is what is decompiled, not ${basename(file)}`);
+  const name = basename(file).replace(/\.bsp$/i, "");
+  const folders = [...new Set([...(listed.game ?? []).map(existingFolder), dirname(dirname(resolve(file)))])];
+  const started = performance.now();
+  const result = maps.decompile(readFileSync(file), {
+    name,
+    folders,
+    canon: flags.canon !== false,
+    tips: flags.tips !== false,
+    cuts: flags.cuts !== false,
+    merge: flags.merge !== false,
+  });
+  save(to, result.map);
+  console.log(`      ${maps.decompileSummary(result)}`);
+  if (result.wad) {
+    const wadFile = join(dirname(to), result.wad.name);
+    save(wadFile, result.wad.bytes);
+    console.log(`      ${result.wad.textures.length === 1 ? "1 texture" : `${result.wad.textures.length} textures`} it carries inside it, in none of its .wad files: ${wadFile}`); // prettier-ignore
+  }
+  for (const warning of result.warnings) console.log(`WARN  ${warning}`);
+  console.log(`${to}: decompiled in ${((performance.now() - started) / 1000).toFixed(1)} s`);
+}
+
 // ── play ───────────────────────────────────────────────────────────────────
 /**
  * play: a map seen in the game itself, in a browser build of the engine at an address. The steps are checked
@@ -2922,6 +2954,15 @@ const COMMANDS = {
                                             in solid, the gap under it, how far a wall is in front, behind and aside by the way it
                                             faces; warned: in a wall, floating, its nose to a wall with room behind (turned the
                                             wrong way?). --views: a picture of each warned one from in front of it`,
+  },
+  "map-decompile": {
+    run: mapDecompile,
+    own: true,
+    help: `  map-decompile <bsp> -o out.map [--game <folder> ...] [--no-canon] [--no-tips] [--no-cuts] [--no-merge]
+                                            a compiled map made back into brush source (Valve 220): a brush for each solid region of
+                                            its tree, every face wearing the texture it wore. Its .wad files are kept where found
+                                            (--game, and the folder above its maps/); what it carries inside it that none has goes to
+                                            <name>_dc.wad beside the .map. --no-*: one of its rules off, to see what that rule does`,
   },
   "map-compile": {
     run: mapCompile,

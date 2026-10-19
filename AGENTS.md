@@ -134,6 +134,7 @@ node bin/smak.mjs wad <file.wad> [-o dir]          a .wad's textures listed; wit
 node bin/smak.mjs wad-make <pictures...> -o out.wad   a .wad from PNG or BMP pictures, each named after its file
 node bin/smak.mjs map-compile <file.map> -o out.bsp --wad a.wad [--wadinclude] [--fast] [--vhlt <folder>]
 node bin/smak.mjs map-compile <file.map> ... [--timeout 600 | --timeout hlvis=600,hlrad=1200] [--progress]   a stage seen and stopped
+node bin/smak.mjs map-decompile <bsp> -o out.map [--game <folder> ...]   a compiled map back into brush source, its own .wad beside it (docs/MAPS.md, "Decompiling")
 node bin/smak.mjs map-light <bsp> [--rooms rooms.json] [--switched start|off|on]   the light on the floors, room by room: what
                                                    the game lights a figure by; switched lights as the map starts (on unless made
                                                    to start dark) unless told

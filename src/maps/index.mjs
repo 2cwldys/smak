@@ -1,5 +1,6 @@
 // Maps, from one place: compiled maps read, checked and their entities changed; texture files read and
-// written; brush source written and compiled; and pictures of both drawn.
+// written; brush source written and compiled, and a compiled map decompiled back into it; and pictures of
+// both drawn.
 //   import { maps } from "smak";       maps.readBsp(bytes)
 export * from "./lumps.mjs";
 export * from "./miptex.mjs";
@@ -39,3 +40,6 @@ export * from "./ambience.mjs";
 export * from "./sizes.mjs";
 export * from "./houses.mjs";
 export * from "./interiors.mjs";
+export * from "./decompile.mjs";
+export * from "./texlights.mjs";
+export * from "./fidelity.mjs";
