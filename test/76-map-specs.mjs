@@ -15,7 +15,7 @@ import { validateWadSpec } from "../src/spec/wad.mjs";
 import { sword, taper } from "../kits/swordkit.mjs";
 import { definitionsOf } from "../src/maps/fgd.mjs";
 import { findCompilers, COMPILERS_VARIABLE } from "../src/maps/compile.mjs";
-import { test, testAsync, sure, near, tmp } from "./helper.mjs";
+import { test, testAsync, sure, near, tmp, runSmak, runRefused, SMAK_CLI } from "./helper.mjs";
 
 const { workshop: W, buildMdl, indexed, soundness, shapeSoundness, seeThrough } = smak;
 const folder = join(tmp, "map-specs");
@@ -699,4 +699,24 @@ test("the compilers' chart of the engine's limits is read; a map spec's furnitur
   const text = (as) => readFileSync(buildMapSpec(spec(as), { out: join(folder, `detail_${as}`), compilers: { found: false, message: "none" } }).files.map, "utf8");
   sure(/"classname" "func_detail"/.test(text()), "unless told, furniture is func_detail");
   sure(!/func_detail/.test(text("world")), "as: world keeps it in the world");
+});
+
+test("smak build: a map spec built in a folder of its name, its rooms listed, what changed said; one that is not OK exits 1", () => {
+  const folder = join(tmp, "build-map");
+  mkdirSync(folder, { recursive: true });
+  const spec = { spec: "smak.map/1", name: "twohalls", rooms: [{ id: "hall", size: [256, 256, 128] }, { id: "store", size: [192, 256, 128], place: { east_of: "hall" } }], links: [{ between: ["hall", "store"], kind: "door" }], entities: [{ class: "info_player_start", room: "hall", at: "centre" }] };
+  writeFileSync(join(folder, "twohalls.json"), JSON.stringify(spec));
+  // with no compilers here a map is built and not compiled, which is a fault: the command then exits 1
+  const compiled = findCompilers().found;
+  const build = (file) => (compiled ? runSmak("build", file) : runRefused(SMAK_CLI, "build", file).out);
+  const said = build(join(folder, "twohalls.json"));
+  sure(/^ROOMS: id, from x y z to x y z/m.test(said) && /^\s+hall -?\d+ /m.test(said) && /^\s+store -?\d+ /m.test(said), said);
+  for (const name of ["twohalls.map", "twohalls.wad", "twohalls.built.json"]) sure(existsSync(join(folder, "twohalls", name)), `${name} written`);
+  sure(readdirSync(join(folder, "twohalls")).some((name) => /plan.*\.png$/.test(name)), readdirSync(join(folder, "twohalls")).join(", "));
+  // built again with the store made longer: what changed is said
+  writeFileSync(join(folder, "twohalls.json"), JSON.stringify({ ...spec, rooms: [spec.rooms[0], { ...spec.rooms[1], size: [320, 256, 128] }] }));
+  sure(/^CHANGED since the last build of twohalls: /m.test(build(join(folder, "twohalls.json"))), "the change said");
+  writeFileSync(join(folder, "bad.json"), JSON.stringify({ spec: "smak.map/1", name: "bad", rooms: [{ id: "a", size: [128, 128, 128], place: { east_of: "nowhere" } }] }));
+  const refused = runRefused(SMAK_CLI, "build", join(folder, "bad.json"));
+  sure(refused.code === 1 && /ERROR/.test(refused.out), refused.out + refused.err);
 });

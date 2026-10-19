@@ -2389,8 +2389,50 @@ async function modelSpecCommand({ command, file, flags, listed }) {
   reportOut(report, "built, and every check passed");
 }
 
+/**
+ * map (smak.map/1, docs/SPEC.md): the map built in a folder of its name beside the spec (-o another): its .map,
+ * its own .wad, its models and sounds, compiled when the compilers are found (VHLT_DIR, the PATH or --vhlt) and
+ * then walked and lit, and its pictures (plan, views, sections, props). --game the folders the game's .wad files
+ * and models are found in; --fgd entity definitions its entities are held to; --reference drawn beside the plan.
+ */
+async function mapSpecCommand({ command, file, flags, listed }) {
+  const { buildMapSpec } = await import("../src/spec/map.mjs");
+  const spec = specOf(command, file, "map");
+  const folder = dirname(resolve(file));
+  const name = spec.name ?? "specmap";
+  const out = flags.o === undefined ? join(folder, name) : String(flags.o);
+  const readPicture = (picture) => {
+    try {
+      return smak.unpicture(readFileSync(resolve(folder, String(picture).replace(/^(work|models):/, ""))));
+    } catch (error) {
+      throw new Error(`${picture}: ${error.code === "ENOENT" ? "no such file beside the spec" : error.message}`);
+    }
+  };
+  const readFile = (given) => readFileSync(existing(resolve(folder, String(given).replace(/^(work|models):/, ""))));
+  const { report, files } = buildMapSpec(spec, {
+    out,
+    folder,
+    compilers: flags.vhlt === undefined ? undefined : String(flags.vhlt),
+    fgd: (listed.fgd ?? []).map(existing),
+    wads: (listed.game ?? []).map(existingFolder),
+    readPicture,
+    readFile,
+  });
+  if (report.rooms && Object.keys(report.rooms).length) for (const line of await changedSince(out, name, "map", spec, report)) console.log(line);
+  for (const made of Object.values(files)) console.log(`      ${made}`);
+  const plan = files.plan ?? files["plan-source"];
+  if (plan && typeof flags.reference === "string") {
+    const beside = besideOf(smak.unpicture(readFileSync(existing(flags.reference))), smak.unpng(readFileSync(plan)));
+    const path = join(out, `${name}-reference.png`);
+    save(path, smak.png(beside.width, beside.height, beside.rgba));
+    console.log(`      ${path} (the plan beside the reference)`);
+  }
+  reportOut(report, "built, and every check passed");
+}
+
 /** The spec builders by the spec each reads (docs/SPEC.md): `smak build` picks one by the spec's `spec`. */
 const BUILDERS = {
+  "smak.map/1": mapSpecCommand,
   "smak.model/1": modelSpecCommand,
   "smak.wad/1": wadSpecCommand,
   "smak.sound/1": (given) => soundCommand(given),
@@ -3313,8 +3355,10 @@ const COMMANDS = {
   build: {
     run: buildCommand,
     own: true,
-    help: `  build <spec.json> [-o <folder>] [--game <folder>]... [--reference x.png] [--focus <part> ...]
-                                            a spec built by its kind (its "spec"; docs/SPEC.md): smak.model/1 a model of parts,
+    help: `  build <spec.json> [-o <folder>] [--game <folder>]... [--reference x.png] [--focus <part> ...] [--fgd x.fgd ...] [--vhlt <folder>]
+                                            a spec built by its kind (its "spec"; docs/SPEC.md): smak.map/1 a map of rooms laid
+                                            out by words, in a folder of its name: its .map and own .wad, compiled when VHLT is
+                                            found, walked, lit, its plan, views and sections drawn; smak.model/1 a model of parts,
                                             checked, with its sheet of six views (a character on a game's skeleton, a weapon in
                                             place of a game's; --reference drawn beside it, --focus parts seen close); smak.wad/1
                                             textures painted into a .wad with a sheet of them (preview: { map, each }: the map
