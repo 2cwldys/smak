@@ -47,6 +47,8 @@ From Steven Linn's fork, [stevenlafl/smak](https://github.com/stevenlafl/smak), 
   they are, or aged), with panels, words, grime, wear and relief, made from one another or lifted off a map's
   view; a .wad and a sheet of them, and with `preview` the map drawn wearing them, each where it shows best.
   `smak.sound/1`, `smak.music/1` and `smak.sprite/1` as their own commands.
+- **PNG of every kind read**: 16 bits a channel, 1, 2 and 4, interlaced, a see-through colour. Of the 2856 PNG
+  files of the bought packs, 145 could not be read; all 2856 now read as Pillow reads them, pixel for pixel.
 - **From the spec builder's ground** (Steven Linn's fork, the parts that stand without it): `smak map-fgd` (an FGD
   from a mod's C++ source: each class `LINK_ENTITY_TO_CLASS` makes, with the keys its `KeyValue` and its bases'
   read, joined to its FGD and maps), `smak map-dressing` (a map's dressing beside Valve's campaign, measured),

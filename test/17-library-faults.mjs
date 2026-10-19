@@ -2,6 +2,7 @@
 // an animation whose values end early, textures of several skins, a texture given twice, a bodypart with
 // nothing in it, a handle that stands straight up, pictures that cannot be read, layers named wrongly, and a
 // shape's own normals.
+import { deflateSync } from "node:zlib";
 import * as smak from "../src/index.mjs";
 import { test, sure, near, knife } from "./helper.mjs";
 
@@ -336,12 +337,84 @@ test("unpng refuses a PNG it cannot read, saying what it reads", () => {
     refuses(() => smak.unpng(oddType), /colour type 5.*grey, RGB or a palette/),
     "a colour type that is none was read",
   );
-  const sixteenBits = Buffer.from(whole);
-  sixteenBits[PNG_BIT_DEPTH_AT] = 16;
-  sure(
-    refuses(() => smak.unpng(sixteenBits), /8 bits a channel and not interlaced/),
-    "16 bits a channel was read",
-  );
+  // RGBA has 8 and 16 bits a channel only
+  const fourBits = Buffer.from(whole);
+  fourBits[PNG_BIT_DEPTH_AT] = 4;
+  sure(refuses(() => smak.unpng(fourBits), /colour type 6 has no bit depth 4/), "a bit depth the colour type has not was read");
+});
+
+test("unpng reads every kind of PNG: 16 bits, fewer than 8, a palette of 16, interlaced, a see-through colour", () => {
+  // a picture of 5 by 3 written each way, its rows unfiltered, read back to the pixels it holds
+  const [w, h] = [5, 3];
+  const crcTable = Array.from({ length: 256 }, (_, n) => {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    return c >>> 0;
+  });
+  const crc = (bytes) => {
+    let c = 0xffffffff;
+    for (const b of bytes) c = crcTable[(c ^ b) & 0xff] ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  };
+  const chunk = (type, data) => {
+    const body = Buffer.concat([Buffer.from(type, "latin1"), data]);
+    const head = Buffer.alloc(4);
+    head.writeUInt32BE(data.length);
+    const tail = Buffer.alloc(4);
+    tail.writeUInt32BE(crc(body));
+    return Buffer.concat([head, body, tail]);
+  };
+  /** a PNG of `kind` and `depth` whose pixel (x, y) is the samples `at(x, y)` gives, interlaced or not */
+  const pngOf = (kind, depth, at, { interlaced = false, extra = [] } = {}) => {
+    const ihdr = Buffer.alloc(13);
+    ihdr.writeUInt32BE(w, 0);
+    ihdr.writeUInt32BE(h, 4);
+    ihdr[8] = depth;
+    ihdr[9] = kind;
+    ihdr[12] = interlaced ? 1 : 0;
+    const passes = interlaced ? [[0, 0, 8, 8], [4, 0, 8, 8], [0, 4, 4, 8], [2, 0, 4, 4], [0, 2, 2, 4], [1, 0, 2, 2], [0, 1, 1, 2]] : [[0, 0, 1, 1]];
+    const rows = [];
+    for (const [x0, y0, dx, dy] of passes) {
+      const xs = [];
+      for (let x = x0; x < w; x += dx) xs.push(x);
+      if (!xs.length) continue;
+      for (let y = y0; y < h; y += dy) {
+        const samples = xs.flatMap((x) => at(x, y));
+        const bits = [];
+        for (const v of samples) for (let b = depth - 1; b >= 0; b--) bits.push((v >> b) & 1);
+        while (bits.length % 8) bits.push(0);
+        const line = [0];
+        for (let i = 0; i < bits.length; i += 8) line.push(bits.slice(i, i + 8).reduce((a, b) => (a << 1) | b, 0));
+        rows.push(Buffer.from(line));
+      }
+    }
+    return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk("IHDR", ihdr), ...extra, chunk("IDAT", deflateSync(Buffer.concat(rows))), chunk("IEND", Buffer.alloc(0))]);
+  };
+  const colour = (x, y) => [x * 50, y * 100, (x * 37 + y * 91) % 256, 255 - x * 20];
+  const pixels = (picture) => Array.from({ length: w * h }, (_, i) => [...picture.rgba.subarray(i * 4, i * 4 + 4)].join(",")).join(" ");
+  const want = (f) => Array.from({ length: w * h }, (_, i) => f(i % w, Math.floor(i / w)).join(",")).join(" ");
+  // RGBA, 16 bits a channel: its upper 8
+  const rgba16 = pngOf(6, 16, (x, y) => colour(x, y).map((v) => v * 256 + (v ^ 0x5a)));
+  sure(pixels(smak.unpng(rgba16)) === want(colour), "16 bits a channel");
+  // the same in 8, interlaced
+  sure(pixels(smak.unpng(pngOf(6, 8, colour, { interlaced: true }))) === want(colour), "interlaced");
+  // grey of 1, 2 and 4 bits, stretched to 0 to 255
+  for (const depth of [1, 2, 4]) {
+    const most = (1 << depth) - 1;
+    const grey = (x, y) => (x + y * w) % (most + 1);
+    const read = smak.unpng(pngOf(0, depth, (x, y) => [grey(x, y)], { interlaced: depth === 2 }));
+    sure(pixels(read) === want((x, y) => { const v = Math.round((grey(x, y) * 255) / most); return [v, v, v, 255]; }), `grey of ${depth} bits`);
+  }
+  // a palette of 16 colours, 4 bits a pixel, its alphas in tRNS
+  const palette = Buffer.from(Array.from({ length: 16 * 3 }, (_, i) => (i * 17) % 256));
+  const index = (x, y) => (x * 3 + y) % 16;
+  const paletted = smak.unpng(pngOf(3, 4, (x, y) => [index(x, y)], { extra: [chunk("PLTE", palette), chunk("tRNS", Buffer.from([0, 128]))] }));
+  sure(pixels(paletted) === want((x, y) => { const k = index(x, y); return [palette[k * 3], palette[k * 3 + 1], palette[k * 3 + 2], k === 0 ? 0 : k === 1 ? 128 : 255]; }), "a palette of 4 bits");
+  // grey of 16 bits with a see-through colour (tRNS: its value in 16 bits)
+  const key = Buffer.alloc(2);
+  key.writeUInt16BE(0x1234);
+  const keyed = smak.unpng(pngOf(0, 16, (x, y) => (x === 2 ? [0x1234] : [x * 40 * 256 + 7]), { extra: [chunk("tRNS", key)] }));
+  sure(pixels(keyed) === want((x) => (x === 2 ? [0x12, 0x12, 0x12, 0] : [x * 40, x * 40, x * 40, 255])), "a see-through grey");
 });
 
 // ── layers ──
