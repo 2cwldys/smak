@@ -9,6 +9,7 @@ import {
   replaceMesh,
   addMesh,
   addModel,
+  addBodypart,
   clearModel,
   bones,
   boneParents,
@@ -552,4 +553,96 @@ export function putBody(
       norms: mesh.norms.length,
     },
   };
+}
+
+/**
+ * Rigid pieces, each wholly on one bone, put into a model as bodyparts of their own (`addBodypart`): as many as
+ * the engine's points and normals a submodel need (`budget`, 2048 each in GoldSrc), each of one submodel, so
+ * every body shows them all. For a figure of hard pieces on a game's skeleton: nothing in them stretches when
+ * the game's animations play, and the model's own bodies keep their numbers.
+ *   pieces    [{ bone, tris, name? }]: `bone` a name or a number; `tris` [[{ p, uv } x3]], `uv` 0 to 1, a corner
+ *             may carry `group` and `smooth` (as `meshOf`). Each piece's faces are smoothed among themselves
+ *             only: two pieces that touch do not share a normal
+ *   space     "bone" (`p` in the space of the piece's bone) or "rest" (in model space, the bones at rest)
+ *   texture   a texture, an image with a `name`, or the name of one in the file
+ *   budget    the most points, and the most normals, a submodel is given (2048)
+ *   name      the bodyparts are called `name`, `name2`, `name3`... ("rigid")
+ *   smooth    as `meshOf` (30)
+ * The pieces are laid into the bodyparts in the order given, a new one begun when the next would pass the
+ * budget. Returns { mdl, bodyparts: [number], report: [{ bodypart, name, pieces, tris, verts, norms }] }.
+ * Throws when one piece alone needs more than the budget, or the bodyparts would pass the engine's 32.
+ */
+export function putRigid(
+  src,
+  { pieces, texture, budget = 2048, space = "bone", name = "rigid", smooth = 30 },
+) {
+  if (!Array.isArray(pieces) || !pieces.length) throw new Error("putRigid: no pieces");
+  if (space !== "bone" && space !== "rest")
+    throw new Error(`putRigid: space is "bone" or "rest", not ${space}`);
+  const info = readMdl(src);
+  const given = textureGiven(src, texture);
+  if (!given.name) throw new Error("putRigid: the texture needs a name");
+  const into = space === "rest" ? restPose(src).map(inverse34) : null;
+  const numberOf = (bone) => {
+    const number = typeof bone === "number" ? bone : info.bones.indexOf(bone);
+    if (info.bones[number] === undefined)
+      throw new Error(`putRigid: no bone ${bone}: it has ${info.bones.join(", ")}`);
+    return number;
+  };
+  // each piece's corners as meshOf takes them, its faces in a group of their own, and what it costs alone
+  const built = pieces.map((piece, k) => {
+    const bone = numberOf(piece.bone);
+    const corners = piece.tris.map((t) =>
+      t.map((c) => ({
+        p: c.p,
+        uv: c.uv,
+        group: `${k}:${c.group ?? ""}`,
+        smooth: c.smooth,
+        bone,
+        ...(into ? { to: into[bone] } : {}),
+      })),
+    );
+    const alone = meshOf(null, corners, given, bone, smooth);
+    const what = piece.name ?? `piece ${k}`;
+    if (alone.verts.length > budget || alone.norms.length > budget)
+      throw new Error(
+        `putRigid: ${what} alone has ${alone.verts.length} points and ${alone.norms.length} normals, past the budget of ${budget}`,
+      );
+    return { corners, verts: alone.verts.length, norms: alone.norms.length };
+  });
+  // the pieces in order, a new bodypart when the next would pass the budget (the sums are the most it can be:
+  // points two pieces share on one bone are kept once)
+  const groups = [];
+  let open = null;
+  built.forEach((b, k) => {
+    if (!open || open.verts + b.verts > budget || open.norms + b.norms > budget)
+      groups.push((open = { pieces: [], verts: 0, norms: 0 }));
+    open.pieces.push(k);
+    open.verts += b.verts;
+    open.norms += b.norms;
+  });
+  if (info.bodyparts.length + groups.length > 32)
+    throw new Error(
+      `putRigid: ${groups.length} bodyparts more than the ${info.bodyparts.length} the model has pass the engine's 32: fewer points, or a larger budget`,
+    );
+  let mdl = src;
+  const bodyparts = [];
+  const report = [];
+  groups.forEach((group, g) => {
+    const part = info.bodyparts.length + g;
+    const partName = g ? `${name}${g + 1}` : name;
+    const corners = group.pieces.flatMap((k) => built[k].corners);
+    const mesh = meshOf(null, corners, given, corners[0][0].bone, smooth);
+    mdl = replaceMesh(addBodypart(mdl, partName), { bodypart: part, model: 0, mesh: 0 }, mesh, given);
+    bodyparts.push(part);
+    report.push({
+      bodypart: part,
+      name: partName,
+      pieces: group.pieces.length,
+      tris: mesh.tris.length,
+      verts: mesh.verts.length,
+      norms: mesh.norms.length,
+    });
+  });
+  return { mdl, bodyparts, report };
 }

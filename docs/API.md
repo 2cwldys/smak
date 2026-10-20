@@ -53,6 +53,7 @@ A point of a mesh in model space, in some pose: `apply34(pose[corner.bone], corn
 | `replaceMesh(src, where, mesh, texture)` | Replaces one mesh. `mesh`: `{ bone, verts, norms, tris: [[[vert, norm, s, t] ×3]], vertBones?, normBones? }` (what `meshOf` returns). `texture` is added to the file unless one of that name is there. |
 | `addMesh(src, { bodypart, model })` | One more mesh in a submodel, empty; `replaceMesh` fills it. For a part that needs a texture of its own. |
 | `addModel(src, bodypart, name)` | One more submodel in a bodypart, with one empty mesh. Its number is the old count. |
+| `addBodypart(src, name, models = [name])` | One more bodypart after the others, a submodel (with one empty mesh) for each name in `models`. Its base is the product of the counts before it, so every body number the file had shows what it showed and the new bodypart's first submodel. The engine draws a submodel of every bodypart: one of a single submodel is always shown. |
 | `emptyMesh(src, where)` | Leaves a mesh without triangles. |
 | `filterMesh(src, where, keep)` | Keeps the triangles for which `keep([bone, bone, bone])` is true. |
 | `addBones(src, [{ name, parent, pos, rot }])` | More bones after the ones it has, at rest in every animation. Old bones keep their numbers. |
@@ -433,6 +434,25 @@ where one of the old body lay (a part that only moved keeps its paint), or when 
 within `tol` pixels' worth of where the old one did; else it is **moved**, or **fresh** when the old body wore
 nothing there. `share` is moved and fresh over the pixels worn; `bare` the pixels only the old one wore; `warning`
 a sentence when `share` passes 0.02, else null.
+
+### Rigid pieces in bodyparts of their own
+
+`putRigid(src, { pieces, texture, space = "bone", budget = 2048, name = "rigid", smooth = 30 })` → `{ mdl, bodyparts, report }`
+
+Pieces each wholly on one bone (a robot's plates, rods and fittings on a game's skeleton) put into new bodyparts
+of one submodel each (`addBodypart`), so every body shows them, the model's own bodies keep their numbers, and
+nothing stretches as the game's animations play. As many bodyparts as the points and normals need, `budget` each
+(GoldSrc holds 2048 a submodel).
+
+| Option | Meaning |
+| --- | --- |
+| `pieces` | `[{ bone, tris, name? }]`: `bone` a name or a number; `tris` `[[{ p, uv } ×3]]`, `uv` 0 to 1, corners may carry `group` and `smooth`. A piece's faces share normals among themselves only. |
+| `space` | `"bone"`: `p` in the space of the piece's bone. `"rest"`: in model space with the bones at rest (what `solids` and the kitbash kit make). |
+| `budget` | The most points, and the most normals, one bodypart's submodel is given. The pieces go in the order given, a new bodypart begun when the next would pass it. |
+| `name` | The bodyparts are `name`, `name2`, `name3`... |
+
+`bodyparts` are their numbers; `report` one `{ bodypart, name, pieces, tris, verts, norms }` each. It throws for a
+piece that alone passes the budget, and when the bodyparts would pass the engine's 32.
 
 ### A picture carried to a changed shape
 

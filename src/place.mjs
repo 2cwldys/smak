@@ -7,7 +7,7 @@
 //   layers.mjs    layersOf, layerMap        what each pixel of an old picture is, declared by rule
 //   paint.mjs     paint                     painting by place, in passes, over layers
 //   pieces.mjs    pieces, dropTriangles     loose pieces, and taking triangles off
-//   bodies.mjs    graft, copyBody, together, putBody, layoutMoved
+//   bodies.mjs    graft, copyBody, together, putBody, putRigid, layoutMoved
 //                                           whole bodies moved, copied and added
 //   carry.mjs     carryPicture              a painted picture carried to a changed shape
 //

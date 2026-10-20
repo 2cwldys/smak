@@ -5,6 +5,14 @@ mending for, says so under **Mind**.
 
 ## Not released yet
 
+From the figures research (a robot of rigid hard-surface pieces on Half-Life's soldier, its parts made in plain
+JavaScript), the tools that are not about that one robot:
+
+- **`addBodypart`** and **`putRigid`**: a bodypart added after the others, whose base keeps every body number the
+  model had (each shows what it did, and the new bodypart's first submodel); and pieces each on one bone laid into
+  as many such bodyparts as the engine's 2048 points and normals a submodel need. A robot of 528 pieces on the
+  soldier went in as three bodyparts beside its own, every animation kept, nothing stretched.
+
 - **`buildMdl({ skins })`**: skin families after the first, each the textures it changes by the name of the one
   each stands for (of the same size); a script or an entity shows family n with skin n. A bought character in
   liveries of its own (the Old Orchard's militia) is one model, not one a livery.

@@ -11,7 +11,7 @@
 //               frameValues events attachments hitboxes boneControllers drawnCorners
 //   posing      restPose poseAt poseBetween poseOf boneMatrices
 //               (matrices: 3 rows of 4, bone space -> model space)
-//   meshes      replaceMesh addMesh addModel emptyMesh clearModel filterMesh
+//   meshes      replaceMesh addMesh addModel addBodypart emptyMesh clearModel filterMesh
 //   pictures    retexture replaceTexture withTextures
 //   animations  replaceSequence addSequence setEvents addBones
 //   a monster's setHitboxes autoHitboxes setAttachments setBoneControllers
@@ -709,6 +709,56 @@ export function addModel(src, bodypart, name) {
     if (count > 0 && base > 0 && base % count === 0)
       file.head.writeInt32LE((base / count) * (count + 1), baseAt);
   }
+  return engineLayout(file.whole());
+}
+
+/**
+ * Returns a copy of the file with one more bodypart, after the ones it has, holding a submodel for each name
+ * in `models` (one, called as the bodypart, unless told), each with one empty mesh: replaceMesh fills it. Its
+ * number is the old count. The engine draws one submodel of every bodypart, so a bodypart of one submodel is
+ * always shown, whatever the body number: a piece of gear that every body wears, or the room for more points
+ * than one submodel holds (2048).
+ * Its base is the product of the counts of the bodyparts before it (`basesByRule`), or more when a base of the
+ * file reaches past that: every body number the file had shows the first submodel of the new bodypart, so each
+ * keeps what it showed. The bodypart table is written again at the end of the file; the old one stays, unused.
+ */
+export function addBodypart(src, name, models = [name]) {
+  if (!models.length) throw new Error("addBodypart: a bodypart needs one submodel at least");
+  const file = growing(Buffer.from(src));
+  const count = int32(src, HDR.numbodyparts);
+  const oldTable = int32(src, HDR.bodypartindex);
+  // the base: past every body number the file has, which is the product of the counts by the compiler's rule
+  let base = 1;
+  for (let i = 0; i < count; i++) {
+    const entry = oldTable + i * BODYPART.sizeof;
+    base = Math.max(
+      base * int32(src, entry + BODYPART.nummodels),
+      int32(src, entry + BODYPART.base) * int32(src, entry + BODYPART.nummodels),
+    );
+  }
+  // the submodels, each followed by nothing yet: its one mesh and that mesh's empty commands come after them all
+  const meshes = models.length * MODEL.sizeof;
+  const commands = meshes + models.length * MESH.sizeof;
+  const modelTable = Buffer.alloc(commands + NO_COMMANDS);
+  const modelsAt = file.add(modelTable);
+  models.forEach((modelName, k) => {
+    const entry = k * MODEL.sizeof;
+    writeName(modelTable, entry + MODEL.name, modelName, LONG_NAME);
+    modelTable.writeFloatLE(NEW_MODEL_RADIUS, entry + MODEL.boundingradius);
+    modelTable.writeInt32LE(1, entry + MODEL.nummesh);
+    modelTable.writeInt32LE(modelsAt + meshes + k * MESH.sizeof, entry + MODEL.meshindex);
+    // every mesh points at the one end of commands: none has triangles
+    modelTable.writeInt32LE(modelsAt + commands, meshes + k * MESH.sizeof + MESH.triindex);
+  });
+  const table = Buffer.alloc((count + 1) * BODYPART.sizeof);
+  src.copy(table, 0, oldTable, oldTable + count * BODYPART.sizeof);
+  const entry = count * BODYPART.sizeof;
+  writeName(table, entry + BODYPART.name, name, LONG_NAME);
+  table.writeInt32LE(models.length, entry + BODYPART.nummodels);
+  table.writeInt32LE(base, entry + BODYPART.base);
+  table.writeInt32LE(modelsAt, entry + BODYPART.modelindex);
+  file.head.writeInt32LE(file.add(table), HDR.bodypartindex);
+  file.head.writeInt32LE(count + 1, HDR.numbodyparts);
   return engineLayout(file.whole());
 }
 
