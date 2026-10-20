@@ -27,6 +27,10 @@ JavaScript), the tools that are not about that one robot:
   how much deeper than they stand as built, frame by frame, each pair told as on bones next to each other (a
   joint's own parts) or apart (a fault); only pairs whose spheres meet are measured. 436 of the robot's pieces
   through the soldier's walk and run in under a second.
+- **`unwrap`** (src/unwrap.mjs): pieces laid out on one picture as their own nets, unfolded about their edges at
+  one texel density, packed by their shapes rather than their boxes, every corner on a whole texel; a left and
+  its right on one set of texels (`share`), a piece of the middle by its one half (`mirror`); `withUV` puts the
+  places on the corners for `putRigid`.
 
 - **`buildMdl({ skins })`**: skin families after the first, each the textures it changes by the name of the one
   each stands for (of the same size); a script or an entity shows family n with skin n. A bought character in

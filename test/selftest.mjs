@@ -93,6 +93,7 @@ const areas = [
   "83-kitbash", // the kitbash kit's 45 parts: closed, within their reach, the same for one seed
   "84-linkage", // a piston across a hinge: the anchors on its axis found, animations kept elsewhere named
   "85-motion-overlaps", // pieces on bones driven into each other: a pair swung together caught, a pair apart not
+  "86-unwrap", // pieces unfolded into nets on one picture: no texel twice, true density, mirrored halves on one
   "19-example-and-kit-faults", // the examples' wrong arguments and refused models; the kits' fittings and rings
 ];
 

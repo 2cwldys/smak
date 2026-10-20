@@ -756,6 +756,30 @@ in its bone, in degrees). `found` is false and the rest null when no pair leaves
 
 `posesFor(src, { seqs, step = 2 })` → `{ poses, used, skipped }`: the poses it tries, what `motionOverlaps` poses too.
 
+## Pieces laid out on a picture (`src/unwrap.mjs`)
+
+`unwrap(pieces, { density = 3, width = 256, fold = 100, margin = 1, rows = 512, pow2 = true })` → layout
+
+Each piece's faces are opened out flat about their edges, as a paper model's net, at their true size (`density`
+texels a unit everywhere: the pixel-art look), the flattest folds first; a face that would land on the net, or
+folds more than `fold` degrees, starts an island of its own. The islands are packed by their shapes, not their
+boxes: the largest first, each at the first place where its texels and `margin` about them touch no other's.
+Corners land on whole texels, as GoldSrc keeps them. The height is what the islands need, a power of two (or a
+multiple of 8 without `pow2`), at most `rows`; an island wider than the picture is turned a quarter.
+
+| A piece | |
+| --- | --- |
+| `tris` | `[[{ p } ×3]]` or triangles of points, in a space of its own (its bone's, or the model's at rest). |
+| `up`, `alt` | The way that is up on the picture ([0, 0, 1]) and the ways tried after it, for a face that looks up. |
+| `axis` | Its length: faces across it (its ends) get islands of their own. |
+| `share` | Pieces of one share wear the first one's texels triangle by triangle (a left plate and its right: built alike). |
+| `mirror` | `{ n, at }`, a plane: the half on `n`'s side is laid out, the other half wears its mirror's texels. |
+
+The layout: `{ width, height, density, islands: [{ id, piece, tris, x, y, w, h }], pieces: [{ uv, islandOf,
+primary }] }`, `uv` for each triangle of each piece its three corners in texels. `withUV(pieces, layout)` gives the
+pieces back with each corner's `uv` 0 to 1, as `putRigid` and `buildMdl` take it. `unfold(tris, { up, alt, fold,
+axis })` is the net of one list of triangles: `[{ faces, flat }]`, `flat` each face's corners in units.
+
 ## The workshop (`src/workshop.mjs`, exported as `workshop`)
 
 | | |

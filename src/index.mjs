@@ -24,6 +24,7 @@ export * from "./contract.mjs";
 export * as workshop from "./workshop.mjs";
 export * as solids from "./solids.mjs";
 export * from "./linkage.mjs";
+export * from "./unwrap.mjs";
 // the workshop's noise and colour helpers by name too, for painting by place (`paint` is in place.mjs)
 export { rand, noise, fbm, fbm3, seeded, step, mix, times, bell } from "./workshop.mjs";
 export * from "./reskin.mjs";
