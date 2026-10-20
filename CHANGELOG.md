@@ -12,6 +12,10 @@ JavaScript), the tools that are not about that one robot:
   model had (each shows what it did, and the new bodypart's first submodel); and pieces each on one bone laid into
   as many such bodyparts as the engine's 2048 points and normals a submodel need. A robot of 528 pieces on the
   soldier went in as three bodyparts beside its own, every animation kept, nothing stretched.
+- **`solids`** (src/solids.mjs): convex solids in plain JavaScript, no Blender: boxes cut and bevelled, plates of
+  any convex outline, prisms, cylinders, rods, beams, faceted balls and lofts on a place, made into triangles that
+  face out, with their planes, their points counted and a check that they close. `inset` no longer turns a
+  rectangle moved in past its middle inside out (the research's own kept it, at its full size the other way).
 
 - **`buildMdl({ skins })`**: skin families after the first, each the textures it changes by the name of the one
   each stands for (of the same size); a script or an entity shows family n with skin n. A bought character in

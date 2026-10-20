@@ -89,6 +89,7 @@ const areas = [
   "79-video", // a video of models and maps from a shot list: camera paths, a turntable, a GIF written here
   "80-map-overlay", // a map's edges laid over a picture of it, and the camera found that lays them best
   "81-rigid", // a bodypart added that keeps every body number, rigid pieces laid into as many as the limits need
+  "82-solids", // convex solids in plain JavaScript: closed, facing out, convex, their points counted
   "19-example-and-kit-faults", // the examples' wrong arguments and refused models; the kits' fittings and rings
 ];
 

@@ -696,6 +696,28 @@ it). From the command line: `smak view <folder|mdl> ... [--port n]`. It listens 
 `sub`, `dot`, `cross`, `unit`, `box(points)` → `{ mn, mx }`, `uniq(tris)` (distinct points), `mainAxes(samples)`
 (principal axes of weighted points `[x, y, z, weight]`), `into`, `out`.
 
+## Convex solids (`src/solids.mjs`, exported as `solids`)
+
+Hard-surface pieces in plain JavaScript: each solid a stack of convex rings along a place's Z, its sides quads, its
+ends capped, made into triangles that face out. A piece of these is all planes: `motionOverlaps` measures one inside
+another by them. A **place** is `{ at, X, Y, Z }` (a point and three axes at right angles); a **solid** is
+`{ place, rings: [{ z, poly: [[x, y]] }], mat }`, every ring of as many corners, convex and counter-clockwise.
+`import { solids as S } from "./smak/src/index.mjs"`.
+
+| | |
+| --- | --- |
+| `place(at, z, xHint = [0, 0, 1])` | A place with Z along `z`, X as near `xHint` as Z lets it. |
+| `at(pl, x, y, z)`, `shift(pl, x, y, z)`, `quarter(pl)`, `flip(pl)`, `along(pl, "X" | "Y")` | A point of a place; the place moved in its own axes, turned a quarter about Z, upside down, or with its Z along its X or Y. |
+| `rect(sx, sy, cut = 0, cx = 0, cy = 0)`, `ngon(n, rx, ry = rx, turn)`, `outline(points)`, `inset(poly, d)`, `area2(poly)` | Outlines: a rectangle (its corners cut: an octagon), a regular polygon, corners in any order put counter-clockwise, an outline moved in by `d` (shrunk to half about its middle when `d` would fold it), its area. |
+| `box(pl, sx, sy, sz, { cut, bevel, bevelFoot, taper, taperY, foot, mat })` | A box about the place (its foot at 0 with `foot`), its upright edges `cut`, its top's and foot's edges bevelled, its top `taper` times the foot. Cuts under 0.15 are left off. |
+| `plate(pl, poly, t, { bevel, z0, top, mat })`, `prism(pl, poly, z0, z1, { top, mat })` | An outline `t` thick from `z0` along Z, its top's edges bevelled; an outline from z0 to z1, its top `top` times its foot. |
+| `cyl(pl, r, z0, z1, { n = 6, r1, bevel, mat })`, `tube(p0, p1, r, options)`, `beam(p0, p1, w, d, up, options)`, `ball(c, r, axis, { n })`, `loft(pl, rings, mat)` | A cylinder along Z (four-sided under 0.3 across), a rod and a box between two points, a faceted ball of three rings, any stack of rings. |
+| `trisOf(solid)` | Its triangles, counter-clockwise seen from outside: `[[{ p, k }]]` (`k` the corner's number as built). |
+| `pointsOf(solids)` | The points they cost, each corner once (GoldSrc holds 2048 a submodel). |
+| `planesOf(tris)` | A convex piece's planes, `[{ n, d }]`, `n` outward: a point is inside when `n.p < d` for every one. |
+| `closed(tris)` | `{ closed, open, doubled }`: every edge met by two faces, once each way round. |
+| `add`, `sub`, `mul`, `dot`, `cross`, `len`, `unit`, `orth`, `lerp3` | The vector arithmetic they use. |
+
 ## The workshop (`src/workshop.mjs`, exported as `workshop`)
 
 | | |
