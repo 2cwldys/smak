@@ -91,6 +91,7 @@ const areas = [
   "81-rigid", // a bodypart added that keeps every body number, rigid pieces laid into as many as the limits need
   "82-solids", // convex solids in plain JavaScript: closed, facing out, convex, their points counted
   "83-kitbash", // the kitbash kit's 45 parts: closed, within their reach, the same for one seed
+  "84-linkage", // a piston across a hinge: the anchors on its axis found, animations kept elsewhere named
   "19-example-and-kit-faults", // the examples' wrong arguments and refused models; the kits' fittings and rings
 ];
 

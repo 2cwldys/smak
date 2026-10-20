@@ -19,6 +19,10 @@ JavaScript), the tools that are not about that one robot:
 - **The kitbash kit** (kits/kitbash.mjs): 45 parametric hard-surface parts of those solids, a bolt to a motor,
   each `PARTS[name](place, size, rnd)` set on a surface, the same for the same seed (`seeded`), grouped by what
   they suit (`SETS`), within a reach their size gives them (`REACH`).
+- **`findPiston`** (src/linkage.mjs): a telescopic piston across a joint, its cylinder on one bone and its rod on
+  the other, anchored where the rod strays least from the cylinder through the animations, and sized to stay in
+  it. On Half-Life's soldier it finds what the research's own found, and says what that one passed over in
+  silence: two of the animations it was given are kept in another file and were never posed (`skipped`).
 
 - **`buildMdl({ skins })`**: skin families after the first, each the textures it changes by the name of the one
   each stands for (of the same size); a script or an entity shows family n with skin n. A bought character in

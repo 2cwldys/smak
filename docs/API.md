@@ -718,6 +718,33 @@ another by them. A **place** is `{ at, X, Y, Z }` (a point and three axes at rig
 | `closed(tris)` | `{ closed, open, doubled }`: every edge met by two faces, once each way round. |
 | `add`, `sub`, `mul`, `dot`, `cross`, `len`, `unit`, `orth`, `lerp3` | The vector arithmetic they use. |
 
+## Linkages across a joint (`src/linkage.mjs`)
+
+Two halves of a part rigid on two bones, which the animations must not pull apart: a telescopic piston, its
+cylinder on one bone and its rod on the other. Neither half can turn about its anchor, so the rod stays in the
+cylinder only where the anchors keep their bearing to each other (a hinge's own axis is such a place).
+
+`findPiston(src, { boneA, boneB, candidatesA, candidatesB, seqs, step = 2, r = 0.4, clearance = 0.5 })` →
+`{ found, cylinder, rod, report, skipped }`
+
+| Option | Meaning |
+| --- | --- |
+| `boneA`, `boneB` | The cylinder's bone and the rod's, by name or number. |
+| `candidatesA`, `candidatesB` | Points where each end may be anchored, in model space with the bones at rest. Every pair is tried. |
+| `seqs` | The animations it must work through, by name or number: all the file keeps unless told. Every `step`th frame is posed. |
+| `r`, `clearance` | The cylinder's radius (the rod's is half); how far short of the rod's eye the cylinder stops at the joint's narrowest. |
+
+The pair kept is the one whose rod strays least off the cylinder's axis (a longer one a little preferred); each half
+is aimed at the other's mean bearing in its own bone and sized so that the rod is in the cylinder at the joint's
+widest and short of its floor at its narrowest. `cylinder` and `rod` are lists of `solids` in model space at rest
+(for `putRigid` with `space: "rest"`). `report`: `{ anchorA, anchorB, axisA, axisB, dmin, dmax, cylinder, rod,
+stray, angleA, angleB, bore, frames, sequences }` (`stray` in units, the angles the most each half's bearing turns
+in its bone, in degrees). `found` is false and the rest null when no pair leaves a cylinder of 1.5 and a rod of 1.
+**Animations kept in other files** (`group` not 0) are not posed: they are left out and listed in `skipped`
+(`[{ name, why }]`), with names the model has not.
+
+`posesFor(src, { seqs, step = 2 })` → `{ poses, used, skipped }`: the poses it tries, what `motionOverlaps` poses too.
+
 ## The workshop (`src/workshop.mjs`, exported as `workshop`)
 
 | | |
