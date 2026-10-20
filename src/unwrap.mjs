@@ -3,9 +3,10 @@
 // by their shapes, not their boxes, each at the first place where its texels and a ring about them touch no
 // other's. Corners land on whole texels, as GoldSrc keeps them. Pieces of one `share` wear one set of texels (a
 // left arm's plate and its right's); a piece with a `mirror` plane is laid out by its one half, the other half
-// wearing the same texels mirrored.
+// wearing the same texels mirrored. Pieces of one `net` are laid together: their islands touching at corners, as
+// one shape on the picture, packed as one (a limb's plates side by side, where a painter looks for them).
 //
-//   unwrap(pieces, { density, width, fold, margin, rows, pow2 }) -> layout
+//   unwrap(pieces, { density, width, fold, margin, rows, pow2, nets }) -> layout
 //   withUV(pieces, layout) -> the pieces, each corner with its `uv` (0 to 1), for `putRigid` or `buildMdl`
 //
 // Plain ESM, no dependencies.
@@ -228,6 +229,106 @@ function maskOf(isl, margin) {
   return out;
 }
 
+/** The texels whose middles an island's triangles cover (its corners rounded as they will be), as "x,y" keys. */
+function coreOf(isl) {
+  const out = new Set();
+  const side = (p, q, r) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+  for (const i of isl.tris) {
+    const T = isl.tri(i);
+    const area = side(T[0], T[1], T[2]);
+    if (Math.abs(area) < 1e-9) continue;
+    const x0 = Math.min(...T.map((t) => t[0]));
+    const x1 = Math.max(...T.map((t) => t[0]));
+    const y0 = Math.min(...T.map((t) => t[1]));
+    const y1 = Math.max(...T.map((t) => t[1]));
+    for (let y = y0; y < y1; y++)
+      for (let x = x0; x < x1; x++) {
+        const p = [x + 0.5, y + 0.5];
+        const a = side(T[0], T[1], p);
+        const b = side(T[1], T[2], p);
+        const c = side(T[2], T[0], p);
+        if (area > 0 ? a > 0 && b > 0 && c > 0 : a < 0 && b < 0 && c < 0) out.add(`${x},${y}`);
+      }
+  }
+  return out;
+}
+
+/**
+ * The islands as units to pack: each alone, or those of one net key laid together, the largest first, then each
+ * where one of its corners lands on a corner of the net already laid, its texels on none of the net's, the net's
+ * box kept smallest (and no wider than the picture). An island that cannot touch the net without lying on it is
+ * a unit alone. `islands` carry `tri(i)`: a triangle's corners in whole texels from the island's box's corner.
+ * Returns [{ w, h, mask?, members: [{ isl, dx, dy }], name }].
+ */
+function netUnits(islands, keyOf, margin, width) {
+  const groups = new Map();
+  const units = [];
+  const alone = (isl) => ({ w: isl.w, h: isl.h, members: [{ isl, dx: 0, dy: 0 }], name: `an island of piece ${isl.piece}` }); // prettier-ignore
+  for (const isl of islands) {
+    const key = keyOf(isl);
+    if (key === undefined || key === null) {
+      units.push(alone(isl));
+      continue;
+    }
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(isl);
+  }
+  for (const [key, list] of groups) {
+    list.sort((a, b) => b.w * b.h - a.w * a.h);
+    const taken = new Set();
+    const corners = new Set();
+    const members = [];
+    let box = null;
+    for (const isl of list) {
+      const core = [...coreOf(isl)].map((c) => c.split(",").map(Number));
+      const mine = [...new Set(isl.tris.flatMap((i) => isl.tri(i).map(([u, v]) => `${u},${v}`)))].map((c) => c.split(",").map(Number)); // prettier-ignore
+      let best = null;
+      if (!members.length) best = { dx: 0, dy: 0, cost: 0 };
+      else {
+        const tried = new Set();
+        for (const c of corners) {
+          const [cx, cy] = c.split(",").map(Number);
+          for (const [mx, my] of mine) {
+            const dx = cx - mx;
+            const dy = cy - my;
+            if (tried.has(`${dx},${dy}`)) continue;
+            tried.add(`${dx},${dy}`);
+            const x0 = Math.min(box.x0, dx);
+            const y0 = Math.min(box.y0, dy);
+            const x1 = Math.max(box.x1, dx + isl.w);
+            const y1 = Math.max(box.y1, dy + isl.h);
+            if (x1 - x0 + 2 * margin > width) continue;
+            const cost = (x1 - x0) * (y1 - y0) + 0.5 * Math.max(x1 - x0, y1 - y0) ** 2;
+            if (best && cost >= best.cost) continue;
+            if (core.some(([x, y]) => taken.has(`${x + dx},${y + dy}`))) continue;
+            best = { dx, dy, cost };
+          }
+        }
+      }
+      if (!best) {
+        units.push(alone(isl));
+        continue;
+      }
+      for (const [x, y] of core) taken.add(`${x + best.dx},${y + best.dy}`);
+      for (const [x, y] of mine) corners.add(`${x + best.dx},${y + best.dy}`);
+      members.push({ isl, dx: best.dx, dy: best.dy });
+      box = box
+        ? { x0: Math.min(box.x0, best.dx), y0: Math.min(box.y0, best.dy), x1: Math.max(box.x1, best.dx + isl.w), y1: Math.max(box.y1, best.dy + isl.h) } // prettier-ignore
+        : { x0: 0, y0: 0, x1: isl.w, y1: isl.h };
+    }
+    if (!members.length) continue;
+    for (const m of members) {
+      m.dx -= box.x0;
+      m.dy -= box.y0;
+    }
+    const mask = new Map();
+    for (const m of members)
+      for (const [x, y] of maskOf(m.isl, margin)) mask.set(`${x + m.dx},${y + m.dy}`, [x + m.dx, y + m.dy]);
+    units.push({ w: box.x1 - box.x0, h: box.y1 - box.y0, mask: [...mask.values()], members, name: `the net ${key}` }); // prettier-ignore
+  }
+  return units;
+}
+
 /**
  * Pieces unfolded and packed on one picture.
  *   pieces   [{ tris, up?, axis?, alt?, share?, mirror? }]: `tris` [[{ p } x3]] or triangles of points, each
@@ -242,6 +343,9 @@ function maskOf(isl, margin) {
  *            with `pow2`, the default), at most `rows` (512)
  *   fold     the most two faces may fold about their edge and stay in one island, in degrees (100)
  *   margin   texels kept free about each island (1)
+ *   nets     (piece, n) -> a key (null for none), or each piece's own `net` when not given: the islands of the
+ *            pieces of one key laid together into one net, each touching one laid before it at a corner, and the
+ *            net packed as one
  * Returns { width, height, density, islands: [{ id, piece, tris, x, y, w, h }], pieces: [{ uv, islandOf,
  * primary }] }: for each piece and each of its triangles, the three corners' places on the picture in whole
  * texels ([u, v], 0 to width and height), and the island each lies in. An island wider than the picture is
@@ -249,7 +353,7 @@ function maskOf(isl, margin) {
  */
 export function unwrap(
   pieces,
-  { density = 3, width = 256, fold = 100, margin = 1, rows = 512, pow2 = true } = {},
+  { density = 3, width = 256, fold = 100, margin = 1, rows = 512, pow2 = true, nets } = {},
 ) {
   const D = density;
   const islands = [];
@@ -327,18 +431,29 @@ export function unwrap(
     [isl.w, isl.h] = [isl.h, isl.w];
   }
   // packed by their shapes: the largest first, each at the first place (top down, left to right) where its
-  // texels and a ring of `margin` about them touch no other island's
+  // texels and a ring of `margin` about them touch no other island's; the islands of one net as one
+  const netOf = (n) => (typeof nets === "function" ? nets(pieces[n], n) : pieces[n].net);
+  const units = islands.some((isl) => netOf(isl.piece) != null)
+    ? netUnits(
+        islands.map((isl) => ({
+          ...isl,
+          of: isl,
+          tri: (i) => [0, 1, 2].map((k) => isl.uvOf(i, k)).map(([u, v]) => [Math.round(u - isl.u0), Math.round(v - isl.v0)]), // prettier-ignore
+        })),
+        (isl) => netOf(isl.piece),
+        margin,
+        width,
+      )
+    : islands.map((isl) => ({ w: isl.w, h: isl.h, members: [{ isl, dx: 0, dy: 0 }], name: `an island of piece ${isl.piece}` })); // prettier-ignore
   const taken = new Uint8Array(width * rows);
   let bottom = 0;
-  for (const isl of [...islands].sort((a, b) => b.w * b.h - a.w * a.h)) {
-    if (isl.w + 2 * margin > width)
-      throw new Error(
-        `unwrap: an island of piece ${isl.piece} is ${isl.w} texels both ways, more than ${width}`,
-      );
-    const mask = maskOf(isl, margin);
+  for (const unit of [...units].sort((a, b) => b.w * b.h - a.w * a.h)) {
+    if (unit.w + 2 * margin > width)
+      throw new Error(`unwrap: ${unit.name} is ${unit.w} texels both ways, more than ${width}`);
+    const mask = unit.mask ?? maskOf(unit.members[0].isl, margin);
     let placed = false;
-    for (let y = 0; y + isl.h + margin <= rows && !placed; y++)
-      for (let x = 0; x + isl.w + 2 * margin <= width && !placed; x++) {
+    for (let y = 0; y + unit.h + margin <= rows && !placed; y++)
+      for (let x = 0; x + unit.w + 2 * margin <= width && !placed; x++) {
         let free = true;
         for (const [mx, my] of mask) {
           const X = x + mx;
@@ -354,15 +469,15 @@ export function unwrap(
           const Y = y + my;
           if (X >= 0 && Y >= 0 && X < width && Y < rows) taken[Y * width + X] = 1;
         }
-        isl.x = x + margin;
-        isl.y = y + margin;
-        bottom = Math.max(bottom, isl.y + isl.h);
+        for (const m of unit.members) {
+          const isl = m.isl.of ?? m.isl;
+          isl.x = x + m.dx + margin;
+          isl.y = y + m.dy + margin;
+        }
+        bottom = Math.max(bottom, y + margin + unit.h);
         placed = true;
       }
-    if (!placed)
-      throw new Error(
-        `unwrap: no room for an island of piece ${isl.piece} in ${width} by ${rows}: lower the density`,
-      );
+    if (!placed) throw new Error(`unwrap: no room for ${unit.name} in ${width} by ${rows}: lower the density`);
   }
   let height = Math.max(8, Math.ceil((bottom + margin) / 8) * 8);
   if (pow2) height = 2 ** Math.ceil(Math.log2(height));
@@ -375,7 +490,7 @@ export function unwrap(
     for (const i of isl.tris) {
       e.uv[i] = [0, 1, 2].map((k) => {
         const [u, v] = isl.uvOf(i, k);
-        return [Math.round(u - isl.u0 + isl.x), Math.round(v - isl.v0 + isl.y)];
+        return [Math.round(u - isl.u0) + isl.x, Math.round(v - isl.v0) + isl.y];
       });
       e.islandOf[i] = isl.id;
     }
@@ -414,7 +529,7 @@ export function unwrap(
         const w = bary(T, p);
         const u = w[0] * flat[0][0] + w[1] * flat[1][0] + w[2] * flat[2][0];
         const v = w[0] * flat[0][1] + w[1] * flat[1][1] + w[2] * flat[2][1];
-        return [Math.round(u - isl.u0 + isl.x), Math.round(v - isl.v0 + isl.y)];
+        return [Math.round(u - isl.u0) + isl.x, Math.round(v - isl.v0) + isl.y];
       });
     });
   }

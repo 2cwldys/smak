@@ -829,7 +829,7 @@ poses too.
 
 ## Pieces laid out on a picture (`src/unwrap.mjs`)
 
-`unwrap(pieces, { density = 3, width = 256, fold = 100, margin = 1, rows = 512, pow2 = true })` → layout
+`unwrap(pieces, { density = 3, width = 256, fold = 100, margin = 1, rows = 512, pow2 = true, nets })` → layout
 
 Each piece's faces are opened out flat about their edges, as a paper model's net, at their true size (`density`
 texels a unit everywhere: the pixel-art look), the flattest folds first; a face that would land on the net, or
@@ -845,6 +845,12 @@ multiple of 8 without `pow2`), at most `rows`; an island wider than the picture 
 | `axis` | Its length: faces across it (its ends) get islands of their own. |
 | `share` | Pieces of one share wear the first one's texels triangle by triangle (a left plate and its right: built alike). |
 | `mirror` | `{ n, at }`, a plane: the half on `n`'s side is laid out, the other half wears its mirror's texels. |
+| `net` | A key: the islands of the pieces of one key are laid together as one net and packed as one (or the option `nets: (piece, n) => key`, which a piece's own `net` gives way to). |
+
+**Nets**: the islands of one key are laid the largest first, then each where one of its corners lands on a corner
+of the net laid so far, none of its texels on the net's, the net's box kept smallest and no wider than the
+picture; one that cannot touch the net without lying on it is packed alone. A limb's plates side by side on the
+picture, where a painter looks for them, instead of scattered among the rest.
 
 The layout: `{ width, height, density, islands: [{ id, piece, tris, x, y, w, h }], pieces: [{ uv, islandOf,
 primary }] }`, `uv` for each triangle of each piece its three corners in texels. `withUV(pieces, layout)` gives the

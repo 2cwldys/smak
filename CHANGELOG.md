@@ -26,6 +26,12 @@ mending for, says so under **Mind**.
   share kept alike; `triangleVisibility` and `sphereViews` under it. `reduceWithin` and `reducePieces` bring each
   piece down through `reduce` as far as keeps its shape within a tolerance (`shapeDeviation`, both ways). From
   the figures research, where they took a robot for The Specialists from 7,618 triangles to 4,996.
+- **`unwrap` lays nets**: the islands of the pieces of one `net` key (each piece's `net`, or `nets: (piece, n) =>
+  key`) laid together, each touching one before it at a corner and on none of its texels, and packed as one: a
+  limb's plates side by side on the picture. The figures research's bake packed them so again after unwrap, and
+  now does not. A corner's place on the picture is its place in its island rounded, then moved by the island's
+  whole texels, as the packing measured it (it was rounded after the move, which at a half texel could put a
+  corner one texel off where the packing had measured it).
 
 ## 0.22.0 (2026-10-20)
 

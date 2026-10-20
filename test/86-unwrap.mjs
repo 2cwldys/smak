@@ -134,3 +134,49 @@ test("unwrap: an island too large for the picture is refused", () => {
   }
   sure(/unwrap: /.test(said), `it said: ${said}`);
 });
+
+test("unwrap: nets: the islands of one key laid together, each touching another at a corner, no texel twice", () => {
+  const key = (piece) => (piece.name === "slab" || piece.name === "drum" ? "limb" : null);
+  const netted = smak.unwrap(pieces, { density: 3, width: 128, nets: key });
+  const byField = smak.unwrap(pieces.map((p) => ({ ...p, net: key(p) ?? undefined })), { density: 3, width: 128 });
+  sure(JSON.stringify(netted) === JSON.stringify(byField), "a function and each piece's `net` give one layout");
+  sure(JSON.stringify(smak.unwrap(pieces, { density: 3, width: 128 })) === JSON.stringify(layout), "no nets: as before");
+  // the net's islands: each shares a corner with another of them, and together they make one shape
+  const ofNet = netted.islands.filter((isl) => isl.piece <= 1);
+  const cornersOf = (isl) => new Set(isl.tris.flatMap((i) => netted.pieces[isl.piece].uv[i].map((c) => c.join())));
+  const reached = new Set([0]);
+  for (let grown = true; grown; ) {
+    grown = false;
+    ofNet.forEach((isl, j) => {
+      if (reached.has(j)) return;
+      const mine = cornersOf(isl);
+      if ([...reached].some((r) => [...cornersOf(ofNet[r])].some((c) => mine.has(c)))) {
+        reached.add(j);
+        grown = true;
+      }
+    });
+  }
+  sure(ofNet.length >= 4 && reached.size === ofNet.length, `${reached.size} of ${ofNet.length} islands joined`);
+  // no texel in two islands
+  const owner = new Map();
+  let clash = 0;
+  const side = (p, q, r) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+  for (const isl of netted.islands)
+    for (const i of isl.tris) {
+      const T = netted.pieces[isl.piece].uv[i];
+      const whole = side(T[0], T[1], T[2]);
+      for (let y = Math.min(...T.map((t) => t[1])); y < Math.max(...T.map((t) => t[1])); y++)
+        for (let x = Math.min(...T.map((t) => t[0])); x < Math.max(...T.map((t) => t[0])); x++) {
+          const c = [x + 0.5, y + 0.5];
+          const a = side(T[0], T[1], c);
+          const b = side(T[1], T[2], c);
+          const d = side(T[2], T[0], c);
+          if (!(whole > 0 ? a > 0 && b > 0 && d > 0 : a < 0 && b < 0 && d < 0)) continue;
+          const was = owner.get(y * netted.width + x);
+          if (was !== undefined && was !== isl.id) clash++;
+          owner.set(y * netted.width + x, isl.id);
+        }
+    }
+  sure(clash === 0, `${clash} texels in two islands`);
+  sure(JSON.stringify(smak.unwrap(pieces, { density: 3, width: 128, nets: key })) === JSON.stringify(netted), "the same every time"); // prettier-ignore
+});

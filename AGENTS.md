@@ -810,7 +810,7 @@ const hits = motionOverlaps(mdl, pieces, undefined, { space: "rest" });        /
   left with none dropped): The Specialists' robot went from 7,618 triangles to 4,996. Give the pieces of a left and
   its right one `share`, so that they keep the same faces and still wear one set of texels.
 - **The paint**: `unwrap` lays each piece out as its own net at one texel density (give a left and its right one
-  `share`, a piece of the middle a `mirror` plane), `withUV` puts the places on the corners; paint the picture by
+  `share`, a piece of the middle a `mirror` plane, the pieces of one limb one `net` to lay them side by side), `withUV` puts the places on the corners; paint the picture by
   place (`paint`), or bake a detailed copy onto it in Blender with `bakeMaps` where the machine has Blender.
 - `findPiston` and `motionOverlaps` pose every animation the file keeps unless told; those kept in other files
   are posed when you give `groups: sequenceFilesOf(file, src)`, and listed in `skipped` when you do not: give
