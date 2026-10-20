@@ -97,8 +97,8 @@ animation of the file is written again by it. Animations kept in other files (`g
 
 ## A skeleton's proportions (`src/reproportion.mjs`)
 
-`reproportion(src, factors, { mirror = true, ground, stride, body = 0, groups, fit = true })` →
-`{ mdl, factors, mirrored, stride, lift, ground, boxes }`
+`reproportion(src, factors, { mirror = true, ground, stride, body = 0, groups, fit = true, hitboxes = "along" })` →
+`{ mdl, factors, mirrored, stride, lift, ground, boxes, along }`
 
 Bones made longer or shorter, every animation kept: a tall, thin robot on a soldier's skeleton.
 
@@ -117,6 +117,7 @@ const { mdl } = reproportion(src, { "Bip01 L Thigh": 1.2, "Bip01 L Calf": 1.2, "
 | `fit` | The roots' height becomes `slope * z + lift`, fitted by least squares over every frame of every animation that can be read whose lowest point stands on the ground (within 1 unit): standing, walking, crouching and lying keep their lowest point where it was. `false`, or too few frames standing: the slope is the stride's and the lift puts the reference pose's foot back. |
 | `body` | The body number whose points the ground is measured on. |
 | `groups` | The files of animations (`sequenceFilesOf`): their animations' boxes are measured through them, and the ground fitted over them too. |
+| `hitboxes` | `"along"`: a hit box on a bone that changed is longer or shorter along the bone by the factor on that axis, and as thick across it as it was (a shorter spine is not a thinner target). The axis along a bone is the one its children stand out along most (for a bone of no side, its children of no side: a neck's head, not its clavicles; x, as Biped's, for a bone with none); `along` says it for each such bone (`{ "Bip01 L Thigh": "x" }`). `"all"`: every axis times the factor, as before 0.23. |
 
 How it works: a frame's value is the bone's rest plus a stored step times the bone's scale, so the rest
 position and the position scale of a bone multiplied together multiply that position in every frame of every
@@ -125,8 +126,9 @@ angles of every bone in every frame are what they were, to the bit.
 
 - **Points stay in their bone's space**: they move with their bone and keep their shape (rigid pieces are not
   stretched; a skinned body whose thigh grows opens a gap at the knee).
-- **Hit boxes and attachments** on a bone that grows are multiplied by its factor (a thigh's box reaches the new
-  knee). The eye goes with the bone nearest it in the reference pose.
+- **Hit boxes** on a bone that grows grow along it (a thigh's box reaches the new knee) and keep their thickness
+  across it (`hitboxes`); **attachments** are multiplied by its factor. The eye goes with the bone nearest it in
+  the reference pose.
 - **Boxes**: each animation's measured again through its frames, as studiomdl does, where they can be read
   (`boxes.measured`); the others' (`boxes.carried`, names), and the header's, carried axis by axis from the
   reference pose's box before onto after. A header box of zeros stays zeros.
@@ -152,8 +154,8 @@ bones' rest values and scales in place, nothing else touched: what `reproportion
 `setModelBoxes(src, { eyes, min, max, bbmin, bbmax })` writes the header's eye and boxes that are given.
 
 `smak reproportion <mdl> "Bip01 L Thigh=1.2" "Bip01 Spine=1,1,1.05" -o out.mdl [--no-mirror] [--stride n]
-[--reference <seq>[:frame] | rest] [--no-ground] [--body n]` does it on the command line, reading the files of
-animations beside the model.
+[--reference <seq>[:frame] | rest] [--no-ground] [--body n] [--hitboxes all]` does it on the command line,
+reading the files of animations beside the model.
 
 ## A monster's parts
 

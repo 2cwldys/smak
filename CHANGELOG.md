@@ -32,6 +32,14 @@ mending for, says so under **Mind**.
   now does not. A corner's place on the picture is its place in its island rounded, then moved by the island's
   whole texels, as the packing measured it (it was rounded after the move, which at a half texel could put a
   corner one texel off where the packing had measured it).
+- **`reproportion` keeps a hit box's thickness**: a box on a bone that changed grows or shrinks along the bone
+  only (the axis its children stand out along, x for a Biped bone; `along` says which), and is as thick across it
+  as it was, as fairness wants: a shorter spine made The Specialists' robot a thinner target, and its research
+  put the merc's thickness back by hand. `hitboxes: "all"` (`smak reproportion --hitboxes all`) is the old way.
+
+**Mind**: a model `reproportion` makes now has the hit boxes of the bones it changed as thick as the original's;
+made again, a model made before gets those, and `hitboxes: "all"` makes it as it was. `strip` refuses an
+animation kept in another file without `groups`, where it drew the bones at rest.
 
 ## 0.22.0 (2026-10-20)
 

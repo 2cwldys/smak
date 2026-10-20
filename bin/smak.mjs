@@ -726,6 +726,7 @@ function reproportioned({ command, file, src, rest, flags }) {
     stride: numberOf(flags, "stride"),
     body: numberOf(flags, "body") ?? 0,
     groups,
+    hitboxes: flags.hitboxes === undefined ? "along" : String(flags.hitboxes),
   });
   save(to, made.mdl);
   const three = (f) => (f.every((v) => v === f[0]) ? `${f[0]}` : f.join(","));
@@ -3240,12 +3241,13 @@ const COMMANDS = {
   reproportion: {
     run: reproportioned,
     help: `  reproportion <mdl> "Bip01 L Thigh=1.2" "Bip01 Spine=1,1,1.05" ... -o out.mdl [--no-mirror] [--stride n]
-                              [--reference <seq>[:frame] | rest] [--no-ground] [--body n]
+                              [--reference <seq>[:frame] | rest] [--no-ground] [--body n] [--hitboxes all]
                                             bones made longer or shorter: a factor is a bone's length (where the bones hanging
                                             from it stand), x,y,z in its own axes; the other side follows unless --no-mirror.
                                             Every animation keeps its turns, those in <name>01.mdl too (read for their boxes, not
                                             changed); the roots and every travel follow the legs (--stride), the feet stay on
-                                            the ground (fitted over every frame that stands; --reference: the pose of its level)`,
+                                            the ground (fitted over every frame that stands; --reference: the pose of its level).
+                                            A hit box grows along its bone only (--hitboxes all: across it too)`,
   },
   reskin: {
     run: reskin,

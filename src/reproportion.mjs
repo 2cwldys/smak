@@ -28,8 +28,9 @@
 //
 // WHAT HANGS ON THE BONES. A mesh's points are kept in their bone's own space: they move with their bone and
 // keep their shape. Nothing is stretched, as is right for rigid pieces (a robot's plates); a skinned body
-// whose thigh grows shows a gap between its thigh's points and its calf's. Hit boxes and attachments on a bone
-// that grows are multiplied by its factor (a thigh's box reaches the new knee). The eye goes with the bone
+// whose thigh grows shows a gap between its thigh's points and its calf's. A hit box on a bone that grows is
+// that much longer along the bone (a thigh's box reaches the new knee) and as thick across it as it was: a
+// shorter or thinner bone does not make a smaller target. Attachments are multiplied by the factor. The eye goes with the bone
 // nearest it. Each sequence's box is measured again through its frames, as studiomdl measures it, where its
 // frames can be read (its own file, or `groups`); the others' boxes, and the header's, are carried from the
 // reference pose's box before to after.
@@ -80,6 +81,22 @@ function factorsOf(names, given, mirror) {
       mirrored.push(names[j]);
     }
   return { factor, mirrored };
+}
+
+/**
+ * The axis of a bone's own space that runs along it (0, 1, 2 for x, y, z): the one the bones hanging from it stand
+ * out along most (their rest places' sizes on each axis, summed). Where a bone of no side has children of no side
+ * (a neck's head beside its clavicles, a pelvis's spine beside its thighs), those alone: the others spread to the
+ * sides. X, as a Biped bone's, when none hangs from it.
+ */
+function alongOf(bones, bone) {
+  const children = bones.filter((b) => b.parent === bone);
+  const middle = children.filter((b) => !sideOf(b.name));
+  const counted = !sideOf(bones[bone].name) && middle.length ? middle : children;
+  const reach = [0, 0, 0];
+  for (const b of counted) b.pos.forEach((v, a) => (reach[a] += Math.abs(v)));
+  const most = Math.max(...reach);
+  return most > 0 ? reach.indexOf(most) : 0;
 }
 
 /** Every point of the shown submodels (`body` a body number) or of every submodel (`body` null), with its bone. */
@@ -193,15 +210,21 @@ function groundFit(src, limbs, { root, low, shown, groups }) {
  *            body (0): the body number whose points are the ground's
  *            groups: the files of animations kept beside the model (sequenceFilesOf), for their boxes, the fit,
  *              and a ground in one of them
+ *            hitboxes ("along"): a hit box on a bone that changed is that much longer along the bone (the axis
+ *              its children stand out along: alongOf) and as thick across it as it was; "all": every axis times
+ *              the factor, as before 0.23
  * It returns { mdl, factors ({ bone: [x, y, z] } of those not 1), mirrored (bones given their other side's),
- * stride, lift, ground ({ seq, frame, bone, low, frames, slope } or null), boxes ({ measured, carried }) }.
+ * stride, lift, ground ({ seq, frame, bone, low, frames, slope } or null), boxes ({ measured, carried }), along
+ * ({ bone: "x" | "y" | "z" }: the axis each changed bone's hit box grew along) }.
  * With every factor 1 (and no stride) the file comes back as it was, byte for byte.
  */
 export function reproportion(
   src,
   factors,
-  { mirror = true, ground, stride, body = 0, groups, fit = true } = {},
+  { mirror = true, ground, stride, body = 0, groups, fit = true, hitboxes = "along" } = {},
 ) {
+  if (hitboxes !== "along" && hitboxes !== "all")
+    throw new Error(`reproportion: hitboxes is "along" or "all", not ${JSON.stringify(hitboxes)}`);
   const all = bonesOf(src);
   const names = all.map((bone) => bone.name);
   const parents = boneParents(src);
@@ -210,7 +233,7 @@ export function reproportion(
     throw new Error(`reproportion: stride is a number over 0, not ${stride}`);
   const told = Object.fromEntries(factor.flatMap((f, i) => (isOne(f) ? [] : [[names[i], f]])));
   if (factor.every(isOne) && (stride === undefined || stride === 1))
-    return { mdl: Buffer.from(src), factors: told, mirrored, stride: 1, lift: 0, ground: null, boxes: { measured: 0, carried: [] } }; // prettier-ignore
+    return { mdl: Buffer.from(src), factors: told, mirrored, stride: 1, lift: 0, ground: null, boxes: { measured: 0, carried: [] }, along: {} }; // prettier-ignore
 
   // the limbs: each bone's place, and the scale its stored steps are read by, times its parent's factor
   const limbs = setBoneValues(
@@ -280,16 +303,21 @@ export function reproportion(
     }),
   );
 
-  // hit boxes and attachments on a bone that grew, grown with it
+  // hit boxes on a bone that grew: longer along the bone with it, as thick across it as they were (a thinner
+  // target is not fairer); every axis times the factor with hitboxes: "all"; attachments grown with their bone
   const boxes = hitboxesOf(src);
+  const along = {};
   if (boxes.some((box) => !isOne(factor[box.bone])))
     out = setHitboxes(
       out,
-      boxes.map((box) => ({
-        ...box,
-        min: box.min.map((v, a) => v * factor[box.bone][a]),
-        max: box.max.map((v, a) => v * factor[box.bone][a]),
-      })),
+      boxes.map((box) => {
+        const f = factor[box.bone];
+        if (isOne(f)) return box;
+        const axis = alongOf(all, box.bone);
+        along[names[box.bone]] = "xyz"[axis];
+        const k = hitboxes === "all" ? f : f.map((v, a) => (a === axis ? v : 1));
+        return { ...box, min: box.min.map((v, a) => v * k[a]), max: box.max.map((v, a) => v * k[a]) };
+      }),
     );
   const points = attachmentsOf(src);
   if (points.some((point) => !isOne(factor[point.bone])))
@@ -370,6 +398,7 @@ export function reproportion(
     lift,
     ground: groundSaid,
     boxes: said,
+    along,
   };
 }
 

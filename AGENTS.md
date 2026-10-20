@@ -794,7 +794,8 @@ const hits = motionOverlaps(mdl, pieces, undefined, { space: "rest" });        /
   shoulders narrower before any piece is laid on it, `reproportion(src, { "Bip01 L Thigh": 1.2, "Bip01 L Calf":
   1.2, "Bip01 L Clavicle": 0.8 }, { groups: sequenceFilesOf(file, src) })`. A factor is a bone's length (where the
   bones under it stand); the other side follows; the turns of every animation stay, the roots are raised so the
-  feet stand where they stood and every walk's travel grows with the legs. The model's own body is not stretched
+  feet stand where they stood and every walk's travel grows with the legs. A hit box grows along its bone and
+  keeps its thickness across it, so a shorter bone is not a thinner target. The model's own body is not stretched
   (its points stay in their bones): look at it from the front and the side, then build on the new skeleton.
 - **One piece, one bone, one convex solid** where you can: `motionOverlaps` measures convex pieces (a part of
   several solids is several pieces). Pairs on bones next to each other (`near`) are a joint's own parts; pairs

@@ -203,6 +203,38 @@ test("reproportion: a bone's factor is its length, the place of the bones hangin
   sure(!smak.check(OUT, "goldsrc").errors.length, `check: ${smak.check(OUT, "goldsrc").errors}`);
 });
 
+test("reproportion: a hit box grows along its bone and keeps its thickness across it; all three axes when told", () => {
+  const boxOf = (mdl, name) => smak.hitboxes(mdl).find((box) => box.bone === numberOf(name));
+  // the thigh runs along its x (the calf stands out along it), the spine along its z (the neck)
+  sure(MADE.along["Bip01 L Thigh"] === "x" && MADE.along["Bip01 Spine"] === "z", JSON.stringify(MADE.along));
+  for (const [name, axis, k] of [["Bip01 L Thigh", 0, LEG], ["Bip01 R Calf", 0, LEG], ["Bip01 Spine", 2, 1.1], ["Bip01 L Clavicle", 0, 0.8]]) {
+    const was = boxOf(SRC, name);
+    const now = boxOf(OUT, name);
+    if (!was) continue;
+    for (let a = 0; a < 3; a++) {
+      const f = a === axis ? k : 1;
+      near(now.min[a], was.min[a] * f, 1e-4, `${name} min ${"xyz"[a]}`);
+      near(now.max[a], was.max[a] * f, 1e-4, `${name} max ${"xyz"[a]}`);
+    }
+  }
+  sure(boxOf(SRC, "Bip01 L Thigh") && boxOf(SRC, "Bip01 Spine"), "the thigh and the spine have boxes");
+  // the pelvis runs up to the spine (z), not out to the thighs at its sides (x)
+  const hips = smak.reproportion(SRC, { "Bip01 Pelvis": 1.1 });
+  sure(boxOf(SRC, "Bip01 Pelvis") && hips.along["Bip01 Pelvis"] === "z", JSON.stringify(hips.along));
+  // the old way: every axis times the factor
+  const all = smak.reproportion(SRC, FACTORS, { hitboxes: "all" }).mdl;
+  const thigh = boxOf(SRC, "Bip01 L Thigh");
+  near(boxOf(all, "Bip01 L Thigh").max[1], thigh.max[1] * LEG, 1e-4, "all: the thigh thicker too");
+  near(boxOf(all, "Bip01 L Thigh").max[0], boxOf(OUT, "Bip01 L Thigh").max[0], 1e-4, "all: as long");
+  let said = "";
+  try {
+    smak.reproportion(SRC, FACTORS, { hitboxes: "thick" });
+  } catch (e) {
+    said = e.message;
+  }
+  sure(/hitboxes is "along" or "all"/.test(said), `a wrong one: ${said}`);
+});
+
 test("reproportion: the feet stay on the ground, standing, walking and crouching, and the pelvis rises", () => {
   near(MADE.stride, LEG, 1e-6, "the stride is the leg's change");
   for (const seq of ["idle", "walk", "crouch"]) {
