@@ -16,6 +16,9 @@ JavaScript), the tools that are not about that one robot:
   any convex outline, prisms, cylinders, rods, beams, faceted balls and lofts on a place, made into triangles that
   face out, with their planes, their points counted and a check that they close. `inset` no longer turns a
   rectangle moved in past its middle inside out (the research's own kept it, at its full size the other way).
+- **The kitbash kit** (kits/kitbash.mjs): 45 parametric hard-surface parts of those solids, a bolt to a motor,
+  each `PARTS[name](place, size, rnd)` set on a surface, the same for the same seed (`seeded`), grouped by what
+  they suit (`SETS`), within a reach their size gives them (`REACH`).
 
 - **`buildMdl({ skins })`**: skin families after the first, each the textures it changes by the name of the one
   each stands for (of the same size); a script or an entity shows family n with skin n. A bought character in
