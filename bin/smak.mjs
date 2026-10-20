@@ -129,6 +129,18 @@ const VALUE_FLAGS = [
   "frames",
   "source",
   "stride",
+  "library",
+  "kind",
+  "judges",
+  "judge",
+  "box",
+  "reference-box",
+  "reference-scale",
+  "reference-picture",
+  "mask",
+  "pose",
+  "sheet",
+  "weights",
 ];
 // the flags of the map commands that may be given more than once: each time adds to a list
 const LISTED_FLAGS = [
@@ -152,6 +164,8 @@ const LISTED_FLAGS = [
   "expect-not",
   "put",
   "over",
+  "reference",
+  "reference-picture",
 ];
 // `map-entities` and `map-plan` print no more lines than this of one list unless told all of it is wanted
 const MARKS_PRINTED = 40;
@@ -740,6 +754,214 @@ function reproportioned({ command, file, src, rest, flags }) {
   const missing = groups.flatMap((g, i) => (i && !g ? [smak.sequenceFileOf(file, i)] : []));
   if (missing.length) console.log(`  not found beside it (their animations' boxes carried, not measured): ${missing.join(", ")}`);
   console.log(`${to}: ${made.boxes.measured} animations' boxes measured, ${made.boxes.carried.length} carried`);
+}
+
+// ── the figure judges ──────────────────────────────────────────────────────
+const F = smak.figures;
+/** The library the figure commands read and write: --library, else SMAK_FIGURES, else ~/.smak/figures.json. */
+const libraryAsked = (flags) => (typeof flags.library === "string" ? flags.library : F.libraryFile());
+/** The figure style --mod (and --kind) asks for: a profile's name or file; the plain one without. */
+const styleAsked = async (flags) => F.figureStyleOf(typeof flags.mod === "string" ? flags.mod : undefined, { kind: flags.kind });
+/**
+ * The corpora a figure is judged against: --against (names with commas), else the profile's corpus; each
+ * must be in the library for that judge, or the command says how to survey it.
+ */
+function corporaAsked(command, flags, style, library, judge) {
+  const names = typeof flags.against === "string" ? flags.against.split(",") : style.corpus ? [style.corpus.name] : null;
+  if (!names) fail(`${command}: whose figures to judge against: --mod <profile> (msc, ts, halflife ...) or --against <corpus,...>`);
+  const held = F.corporaOf(library[judge]);
+  const missing = names.filter((name) => !held.includes(name));
+  if (missing.length)
+    fail(`${command}: the library (${libraryAsked(flags)}) has no ${judge} measures of ${missing.join(", ")}${held.length ? ` (it has ${held.join(", ")})` : ""}: survey the game first, smak figure-survey <Half-Life folder> --mod ${flags.mod ?? "<profile>"}`); // prettier-ignore
+  return names;
+}
+/** The models of a folder, or the one model given: a reference of several figures. */
+const modelsOf = (path) =>
+  statSync(path).isDirectory() ? readdirSync(path).filter((name) => /\.mdl$/i.test(name) && !/(t|\d\d)\.mdl$/i.test(name)).map((name) => join(path, name)) : [path]; // prettier-ignore
+/** A mask from a PNG: white (over half) is the figure. */
+function maskOfPng(file) {
+  const img = smak.unpng(readFileSync(existing(file)));
+  const data = new Uint8Array(img.width * img.height);
+  for (let k = 0; k < data.length; k++) data[k] = img.rgba[k * 4] > 127 ? 1 : 0;
+  return { width: img.width, height: img.height, data };
+}
+/** `view=file` pairs of a listed flag: { view: file }. */
+function viewFiles(command, listed, name) {
+  const out = {};
+  for (const each of listed[name] ?? []) {
+    const said = /^([A-Za-z0-9_]+)=(.+)$/.exec(each);
+    if (!said) fail(`${command}: --${name} <view>=<file.png> (front=mask_front.png), not ${each}`);
+    out[said[1]] = said[2];
+  }
+  return out;
+}
+
+/**
+ * figure-survey: every figure of a game's models measured into the library, as its corpus: the profile's
+ * (--mod, its folder found under the folder given), or --as <name>.
+ */
+async function figureSurvey({ command, file, flags }) {
+  const style = await styleAsked(flags);
+  const corpus = typeof flags.as === "string" ? flags.as : style.corpus?.name;
+  if (!corpus) fail(`${command}: which corpus these figures are: --mod <profile> (msc, ts, halflife ...) or --as <name>`);
+  if (!statSync(file).isDirectory()) fail(`${command}: ${file} is a file: give the Half-Life folder, the game's or its models folder`);
+  const folder = F.modelsFolderOf(file, style.corpus?.folders?.[0] ?? corpus);
+  const judges = typeof flags.judges === "string" ? flags.judges.split(",") : style.judges;
+  const to = libraryAsked(flags);
+  const library = F.readLibrary(to);
+  F.surveyFigures(folder, { corpus, judges, library, log: (line) => console.log(line) });
+  F.writeLibrary(library, to);
+  const held = F.libraryCorpora(library);
+  console.log(`${to}: ${Object.entries(held).map(([name, c]) => `${name} ${c.style || c.texture || c.shape} figures`).join(", ")}`);
+  console.log("(measures of the game's own figures, on this machine: keep the file out of any repository you share)");
+}
+
+/** figure-judge: the style judge, a model against the corpus of its game's profile (or --against). */
+async function figureJudge({ command, file, flags }) {
+  if (!/\.mdl$/i.test(file)) fail(`${command}: a model (.mdl)`);
+  const style = await styleAsked(flags);
+  const library = F.readLibrary(libraryAsked(flags));
+  const games = corporaAsked(command, flags, style, library, "style");
+  const data = library.style;
+  const weights = flags.weights === "library" || flags.weights === "even" ? flags.weights : F.weightsFor(style, "style");
+  const { weights: w } = F.styleSetup(data, { weights, groups: style.groups, least: style.least });
+  const f = F.figureFacts(file);
+  if (f.skip) fail(`${command}: ${file} is not judged: ${f.skip}`);
+  const { measures, by } = F.styleMeasures(f);
+  const prep = F.prepareStyle(F.styleCorpus(data, games), w);
+  const verdict = F.judgeStyle(measures, prep, { hash: f.hash, textures: by.textures, parts: by.parts });
+  verdict.among = F.rangeOf(Object.values(F.styleLeaveOneOut(prep)).map((v) => v.score));
+  if (flags.json) return console.log(JSON.stringify({ file, corpus: games, profile: style.name, measures, ...verdict }, null, 1));
+  console.log(F.styleTold(basename(file), verdict, games, { most: flags.all ? 99 : 12 }));
+  if (style.name && weights !== "library") console.log(`  (weighed as ${style.title}: the profile's weights)`);
+}
+
+/** A texture's measures from a file: a model's textures, or a picture of an atlas (its box, its pixels a texel). */
+function textureOfFile(file, { box, scale }) {
+  if (/\.mdl$/i.test(file)) return F.textureOfModel(file);
+  if (/\.png$/i.test(file)) return F.textureOfPicture(smak.unpng(readFileSync(existing(file))), { box, scale });
+  fail(`figure-texture: a model (.mdl) or a picture of an atlas (.png), not ${file}`);
+}
+
+/** figure-texture: the texture judge, a model's textures or an atlas' picture against a corpus and a reference. */
+async function figureTexture({ command, file, flags }) {
+  const style = await styleAsked(flags);
+  const library = F.readLibrary(libraryAsked(flags));
+  const games = corporaAsked(command, flags, style, library, "texture");
+  const own = textureOfFile(file, { box: numbersOf(flags, "box", 4, "x0,y0,x1,y1 in pixels"), scale: numberOf(flags, "scale") });
+  let ref = null,
+    refName = "the reference";
+  if (typeof flags.reference === "string") {
+    const at = flags.reference;
+    if (!existsSync(at)) fail(`no such file: ${at}`);
+    refName = basename(at).replace(/\.\w+$/, "");
+    if (/\.png$/i.test(at)) ref = textureOfFile(at, { box: numbersOf(flags, "reference-box", 4, "x0,y0,x1,y1 in pixels"), scale: numberOf(flags, "reference-scale") }); // prettier-ignore
+    else {
+      const list = modelsOf(at).map((model) => F.textureOfModel(model));
+      ref = { measures: F.referenceOfMeasures(list.map((x) => x.measures)), atlases: list[0].atlases };
+    }
+  }
+  const v = F.judgeTexture(own.measures, library.texture, games, ref?.measures, { refName });
+  if (flags.sheet) {
+    const items = [{ name: basename(file).replace(/\.\w+$/, ""), ...own }, ...(ref ? [{ name: refName, ...ref }] : [])];
+    const img = F.textureSheet(items, library.texture);
+    save(flags.sheet, smak.png(img.width, img.height, img.rgba));
+    console.log(`${flags.sheet}: the atlases side by side, every measure over the library's spread`);
+  }
+  if (flags.json) return console.log(JSON.stringify({ file, corpus: games, reference: ref ? refName : null, scale: own.scale, measures: own.measures, ...v }, null, 1)); // prettier-ignore
+  if (own.scale && own.scale !== 1) console.log(`(the picture read at ${own.scale.toFixed(2)} pixels a texel)`);
+  console.log(F.textureTold(basename(file), v, games, refName));
+}
+
+/**
+ * A reference's shape for figure-shape: models (a folder or one, each measured, the medians), or masks by
+ * view (`--reference front=mask.png`, with `--reference-picture front=shot.png` for the inside's edges).
+ */
+function shapeReference(command, flags, listed) {
+  const given = listed.reference ?? (typeof flags.reference === "string" ? [flags.reference] : []);
+  if (!given.length) return null;
+  if (given.every((each) => /^[A-Za-z0-9_]+=/.test(each))) {
+    const pictures = viewFiles(command, listed, "reference-picture");
+    const masks = {};
+    for (const [view, maskFile] of Object.entries(viewFiles(command, listed, "reference")))
+      masks[view] = { mask: maskOfPng(maskFile), img: pictures[view] ? smak.unpng(readFileSync(existing(pictures[view]))) : null };
+    return { name: "the reference", masks, ...F.shapeOfReference(masks) };
+  }
+  if (given.length > 1) fail(`${command}: --reference is a folder of models, a model, or masks by view (front=mask.png ...)`);
+  const at = given[0];
+  if (!existsSync(at)) fail(`no such file: ${at}`);
+  const list = modelsOf(at).map((model) => F.shapeOfModel(model));
+  const bands = {};
+  for (const [band] of F.BANDS)
+    bands[band] = Object.fromEntries(["holes", "fine", "notches"].map((k) => [k, F.medianOf(list.map((x) => x.bands[band]?.[k]))]));
+  return { name: basename(at).replace(/\.\w+$/, ""), measures: F.referenceOfMeasures(list.map((x) => x.measures)), bands };
+}
+
+/** figure-shape: the shape judge, a model's (or a picture's, with its mask) shape against a corpus and a reference. */
+async function figureShape({ command, file, flags, listed }) {
+  const style = await styleAsked(flags);
+  const library = F.readLibrary(libraryAsked(flags));
+  const games = corporaAsked(command, flags, style, library, "shape");
+  const ref = shapeReference(command, flags, listed);
+  let x;
+  if (/\.mdl$/i.test(file)) {
+    let masks;
+    if (typeof flags.pose === "string") {
+      // the model drawn in the reference's pose and from its views: a module giving the pose and the cameras
+      if (!ref?.masks) fail(`${command}: --pose draws the model as the reference's masks see it: give them, --reference front=mask.png ...`);
+      const posing = await import(pathToFileURL(resolve(existing(flags.pose))).href);
+      const poseOf = posing.pose ?? posing.default;
+      if (typeof poseOf !== "function") fail(`${command}: ${flags.pose} exports pose(src) (or a default function): the bones' matrices`);
+      const src = readModel(file, command);
+      const cameras = posing.views ?? {};
+      const views = Object.fromEntries(Object.entries(ref.masks).map(([view, { mask }]) => [view, { ...cameras[view], mask }]));
+      masks = F.masksLikeReference(src, { pose: await poseOf(src), views, background: posing.background });
+    }
+    x = F.shapeOfModel(file, { masks, keep: Boolean(flags.sheet) });
+  } else if (/\.png$/i.test(file)) {
+    if (typeof flags.mask !== "string") fail(`${command}: a picture needs its mask, --mask m.png (white figure on black)`);
+    const masks = { picture: { mask: maskOfPng(flags.mask), img: smak.unpng(readFileSync(file)) } };
+    x = { ...F.shapeOfReference(masks, { keep: Boolean(flags.sheet) }) };
+  } else fail(`${command}: a model (.mdl), or a picture (.png) with --mask`);
+  const refName = ref?.name ?? "the reference";
+  const v = F.judgeShape(x, library.shape, games, ref, refName);
+  if (flags.sheet) {
+    const items = Object.entries(x.pictures ?? {}).map(([view, p]) => ({ name: `${basename(file).replace(/\.\w+$/, "")} ${view}`, at: p.at, note: `HOLES ${(100 * x.views[view].measures.holes).toFixed(1)}PC` })); // prettier-ignore
+    const img = F.shapeSheet(items);
+    save(flags.sheet, smak.png(img.width, img.height, img.rgba));
+    console.log(`${flags.sheet}: the silhouettes as measured`);
+  }
+  if (flags.json) return console.log(JSON.stringify({ file, corpus: games, reference: ref ? refName : null, measures: x.measures, bands: x.bands, ...v }, null, 1)); // prettier-ignore
+  console.log(F.shapeTold(basename(file), v, games, refName));
+}
+
+/** figure-validate: does each judge tell the library's corpora apart (AUC, confusion), with each one's own weights or the library's. */
+async function figureValidate({ command, file, flags }) {
+  const library = F.readLibrary(file);
+  const judge = typeof flags.judge === "string" ? flags.judge : "style";
+  if (!F.JUDGES.includes(judge)) fail(`${command}: --judge ${F.JUDGES.join(" | ")}, not ${judge}`);
+  const data = library[judge];
+  const games = F.corporaOf(data);
+  if (games.length < 2) fail(`${command}: the library has ${games.length} corpus with ${judge} measures: the judges are validated between two or more`);
+  let out;
+  if (judge === "style") {
+    const { weights, sep } = F.styleSetup(data, { weights: flags.weights === "even" ? "even" : "library" });
+    let weightsFor;
+    if (flags.weights === "profiles") {
+      const floors = F.styleFloors(data);
+      const own = {};
+      for (const game of games) {
+        if (!F.FIGURE_PROFILES[game]) continue;
+        const style = await F.figureStyleOf(game);
+        own[game] = { ...F.styleWeightsOf(style.weights.style, { groups: style.groups, least: style.least }), __floor: floors };
+      }
+      weightsFor = (game) => own[game] ?? weights;
+    }
+    out = F.validateStyle(data, { weights, sep, weightsFor });
+  } else if (judge === "texture") out = F.validateTexture(data);
+  else out = F.validateShape(data);
+  if (flags.json) return console.log(JSON.stringify(out.report, null, 1));
+  console.log(out.text);
 }
 
 // ── re-skin by rules ───────────────────────────────────────────────────────
@@ -3248,6 +3470,57 @@ const COMMANDS = {
                                             changed); the roots and every travel follow the legs (--stride), the feet stay on
                                             the ground (fitted over every frame that stands; --reference: the pose of its level).
                                             A hit box grows along its bone only (--hitboxes all: across it too)`,
+  },
+  "figure-survey": {
+    run: figureSurvey,
+    own: true,
+    folder: true,
+    help: `  figure-survey <Half-Life folder | game folder | models folder> --mod <profile> [--kind hd] [--as <corpus>] [--library <file>]
+                              [--judges style,texture,shape]
+                                            the game's own figures measured for the figure judges, into a library of yours (unless
+                                            told: SMAK_FIGURES, else ~/.smak/figures.json; never in the kit). --mod: whose figures
+                                            (msc, ts, halflife; the profile names the folder), or --as <name> for a game with no
+                                            profile. Each corpus is kept beside the others; surveying one again replaces it`,
+  },
+  "figure-judge": {
+    run: figureJudge,
+    own: true,
+    help: `  figure-judge <mdl> --mod <profile> [--kind hd] [--against <corpus,...>] [--library <file>] [--weights library|even] [--all] [--json]
+                                            the style judge: 52 measures of the figure against the game's own figures, a score of
+                                            0 to 100 and what is out (the part or texture at fault, what to do), weighed as the
+                                            profile says the game's manner is told (--weights library: as the corpora of the
+                                            library tell each other apart)`,
+  },
+  "figure-texture": {
+    run: figureTexture,
+    own: true,
+    help: `  figure-texture <mdl | atlas.png> --mod <profile> [--against <corpus,...>] [--box x0,y0,x1,y1] [--scale <px a texel>]
+                              [--reference <atlas.png | model.mdl | folder of models>] [--reference-box ...] [--reference-scale 4]
+                              [--sheet out.png] [--json] [--library <file>]
+                                            the texture judge: the texture as painting (repetition, flat fills, ramps, speckle,
+                                            slant, charts, occlusion, value, colours) against the game's figures and a reference in
+                                            the manner wanted: a picture of an atlas (its pixels a texel found, or --reference-scale),
+                                            or models (each measure's median). What is off, in words. --sheet: the atlases and bars`,
+  },
+  "figure-shape": {
+    run: figureShape,
+    own: true,
+    help: `  figure-shape <mdl | picture.png --mask m.png> --mod <profile> [--against <corpus,...>]
+                              [--reference <model.mdl | folder of models> | --reference <view>=mask.png ... [--reference-picture <view>=shot.png ...]]
+                              [--pose pose.mjs] [--sheet out.png] [--json] [--library <file>]
+                                            the shape judge: silhouettes (holes, notches, inner edges, symmetry) and mesh (pieces,
+                                            layers, mirror, likeness, boxes) against the game's figures and a reference's. --pose:
+                                            a module exporting pose(src) (the bones' matrices) and views ({ front: { yaw, pitch,
+                                            dist, fov, target } }): the model drawn in the reference's pose, from its cameras, framed
+                                            as its masks' figure stands`,
+  },
+  "figure-validate": {
+    run: figureValidate,
+    own: true,
+    help: `  figure-validate <library.json> [--judge style|texture|shape] [--weights library|even|profiles] [--json]
+                                            does a judge tell the library's corpora apart: each corpus' own figures against the
+                                            others' (AUC: 1 perfect, 0.5 a coin), who stands best where, the measures by how far
+                                            apart they put the games. --weights profiles: each corpus with its profile's weights`,
   },
   reskin: {
     run: reskin,
