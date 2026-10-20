@@ -363,9 +363,10 @@ const OVERLAP_TOLERANCE = 0.25;
  *   pieces   [{ bone, tris, name? }], each convex (as `solids` makes them): `bone` a name or a number, `tris`
  *            [[{ p } x3]] or triangles of points, in the bone's space (or in model space at rest, `space: "rest"`)
  *   seqs     the animations, by name or number (every one the file keeps when not given); those kept in other
- *            files are left out and named in `skipped`
+ *            files are read from `groups`, or without their file left out and named in `skipped`
  *   options  { step = 2 (every how many frames), tol = 0.25 (the depth past which a pair is told), still: { seq,
- *            frame } (the pose the pieces are built in; the rest pose unless told), space = "bone" }
+ *            frame } (the pose the pieces are built in; the rest pose unless told), space = "bone", groups (the
+ *            files of animations kept beside the model, as sequenceFilesOf reads them) }
  * Returns { built, sequences: [{ name, frames, pairs }], worst, skipped }: `built` the pairs already more than
  * `tol` inside each other as built ({ a, b, deep }); each sequence's `pairs` [{ a, b, deep, frame, near }],
  * deepest first, `deep` how much deeper than built, `near` true for bones next to each other (the same parent,
@@ -377,7 +378,7 @@ export function motionOverlaps(
   src,
   pieces,
   seqs,
-  { step = 2, tol = OVERLAP_TOLERANCE, still = null, space = "bone" } = {},
+  { step = 2, tol = OVERLAP_TOLERANCE, still = null, space = "bone", groups } = {},
 ) {
   const names = readMdl(src).bones;
   const parents = boneParents(src);
@@ -419,7 +420,9 @@ export function motionOverlaps(
     const C = ps.map((p) => apply34(pose[p.bone], p.c));
     return (i, j) => Math.hypot(...sub(C[i], C[j])) < ps[i].r + ps[j].r;
   };
-  const standing = still ? poseAt(src, sequenceAt(src, still.seq ?? 0), still.frame ?? 0) : restPose(src);
+  const standing = still
+    ? poseAt(src, sequenceAt(src, still.seq ?? 0), still.frame ?? 0, 0, groups)
+    : restPose(src);
   const builtDepth = new Map();
   {
     const inv = standing.map(inverse34);
@@ -442,7 +445,7 @@ export function motionOverlaps(
   const sequencesOut = [];
   let worst = null;
   for (const which of seqs ?? sequences(src).map((_, n) => n)) {
-    const { poses, used, skipped: left } = posesFor(src, { seqs: [which], step });
+    const { poses, used, skipped: left } = posesFor(src, { seqs: [which], step, groups });
     skipped.push(...left);
     if (!used.length) continue;
     const pairs = new Map();

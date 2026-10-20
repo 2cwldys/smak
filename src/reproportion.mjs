@@ -2,6 +2,8 @@
 //
 //   reproportion(src, { "Bip01 L Thigh": 1.15, "Bip01 L Clavicle": 0.8, "Bip01 Spine": [1.05, 1, 1] }, opts)
 //     -> { mdl, factors, mirrored, stride, lift, ground, boxes }
+//   footSlide(mdl, "walk", { feet, body, parts, groups }) -> { planted, mean, most, lows, ground }: how far a
+//     walk's planted foot slides, its travel applied, and the lowest point of each frame; before and after
 //
 // A studio model's bone lengths are where each bone stands from its parent: its rest position, and the
 // position channels of every frame of every animation. A frame's value is the bone's rest plus a stored step
@@ -31,7 +33,7 @@
 // nearest it. Each sequence's box is measured again through its frames, as studiomdl measures it, where its
 // frames can be read (its own file, or `groups`); the others' boxes, and the header's, are carried from the
 // reference pose's box before to after.
-import { readMdl, readMesh, bodyOf, bones as bonesOf, boneParents, sequences as sequencesOf, sequenceAt, frameValues, poseOf, hitboxes as hitboxesOf, attachments as attachmentsOf, setHitboxes, setAttachments, setBoneValues, replaceSequence, modelBoxes, setModelBoxes, apply34, inverse34 } from "./mdl.mjs"; // prettier-ignore
+import { readMdl, readMesh, bodyOf, bones as bonesOf, boneParents, sequences as sequencesOf, sequenceAt, frameValues, poseOf, poseAt, hitboxes as hitboxesOf, attachments as attachmentsOf, setHitboxes, setAttachments, setBoneValues, replaceSequence, modelBoxes, setModelBoxes, apply34, inverse34 } from "./mdl.mjs"; // prettier-ignore
 import { boneIn, otherSideOf } from "./biped.mjs";
 import { engineLayout } from "./layout.mjs";
 
@@ -368,5 +370,90 @@ export function reproportion(
     lift,
     ground: groundSaid,
     boxes: said,
+  };
+}
+
+/** The bones of a Biped's feet, in English or in Italian: their points are what stands on the ground. */
+const FEET = /(Foot|Toe|Piede)/;
+/** A bone's side by its name: L or SX is the left, R or DX the right; null for neither. */
+const sideOf = (name) => (/ (L|SX) /.test(` ${name} `) ? "L" : / (R|DX) /.test(` ${name} `) ? "R" : null);
+
+/**
+ * How a walk's feet meet the ground: each frame where each foot touches (the middle of its points within
+ * `contact` of its lowest, so that a flat sole is not read as its heel one frame and its toe the next), the
+ * animation's travel added as the game moves the model (its `movement` spread over its frames). The lower foot
+ * bears the weight and should not move over the ground while it does: the slide is how far its touch goes across
+ * the floor from one frame to the next while the same foot is down. A measure of a walk before and after `reproportion` (or of a
+ * figure against the model it is built on); the lowest point of each frame says where the floor is.
+ *   seq     the animation, by name or number
+ *   feet    which bones are the feet: a pattern on their names (Biped's Foot and Toe, English or Italian, unless
+ *           told) or a list of names or numbers; each is the left's or the right's by its name (L or SX, R or DX)
+ *   body    the body number whose points are measured (0); `parts`: only these bodyparts' (every one unless told:
+ *           leave out a weapon held low)
+ *   groups  the files of animations kept beside the model (sequenceFilesOf), for an animation kept in one
+ *   contact how far above a foot's lowest point its points count as touching (0.5)
+ * Returns { seq (its name), frames, movement, planted (the frame-to-frame steps on one planted foot), mean, most
+ * (the slide a step, in units), lows (the lowest point of the feet, each frame), ground: [lowest, highest] of
+ * those }. It throws when no foot's points are found.
+ */
+export function footSlide(src, seq, { feet = FEET, body = 0, parts, groups, contact = 0.5 } = {}) {
+  const n = sequenceAt(src, seq);
+  const all = sequencesOf(src);
+  if (n < 0) throw new Error(`footSlide: no animation ${seq}`);
+  const s = all[n];
+  const names = readMdl(src).bones;
+  const isFoot = Array.isArray(feet)
+    ? (bone) => feet.some((f) => (typeof f === "number" ? f === bone : names[bone] === f))
+    : (bone) => feet.test(names[bone]);
+  // the feet's points, each with its side, once
+  const info = readMdl(src);
+  const shown = bodyOf(src, body);
+  const points = [];
+  info.bodyparts.forEach((bodypart, i) => {
+    if (parts && !parts.includes(i)) return;
+    const model = bodypart.models[shown[i]];
+    if (!model) return;
+    for (const mesh of model.meshes) {
+      if (!mesh.numtris) continue;
+      for (const tri of readMesh(src, model, mesh))
+        for (const c of tri) {
+          const side = isFoot(c.bone) ? sideOf(names[c.bone]) : null;
+          if (side) points.push({ p: c.p, bone: c.bone, side });
+        }
+    }
+  });
+  if (!points.length)
+    throw new Error(`footSlide: no points on the feet (${Array.isArray(feet) ? feet.join(", ") : feet}) with a side in their names`); // prettier-ignore
+  const move = s.movement ?? [0, 0, 0];
+  const per = s.frames > 1 ? move.map((v) => v / (s.frames - 1)) : [0, 0, 0];
+  const down = [];
+  const lows = [];
+  for (let f = 0; f < s.frames; f++) {
+    const pose = poseAt(src, n, f, 0, groups);
+    const at = points.map(({ p, bone }) => apply34(pose[bone], p));
+    const low = { L: Infinity, R: Infinity };
+    points.forEach(({ side }, i) => (low[side] = Math.min(low[side], at[i][2])));
+    lows.push(Math.min(low.L, low.R));
+    // the foot that bears the weight: the lower of the two; where it touches, the middle of its lowest points
+    const k = low.L <= low.R ? "L" : "R";
+    const touching = at.filter((q, i) => points[i].side === k && q[2] <= low[k] + contact);
+    const mid = [0, 1, 2].map((a) => touching.reduce((v, q) => v + q[a], 0) / touching.length);
+    down.push({ f, k, p: mid.map((v, a) => v + per[a] * f) });
+  }
+  const slides = [];
+  for (let i = 1; i < down.length; i++) {
+    const a = down[i - 1];
+    const b = down[i];
+    if (a.k === b.k && b.f === a.f + 1) slides.push(Math.hypot(b.p[0] - a.p[0], b.p[1] - a.p[1]));
+  }
+  return {
+    seq: s.name,
+    frames: s.frames,
+    movement: move,
+    planted: slides.length,
+    mean: slides.length ? slides.reduce((x, y) => x + y, 0) / slides.length : 0,
+    most: slides.length ? Math.max(...slides) : 0,
+    lows,
+    ground: [Math.min(...lows), Math.max(...lows)],
   };
 }

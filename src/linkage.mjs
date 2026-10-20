@@ -3,14 +3,15 @@
 // the cylinder only where the two anchors keep their bearing to each other through the animations. A hinge's own
 // axis is such a place: two anchors on it keep their bearing however far the hinge turns.
 //
-//   findPiston(src, { boneA, boneB, candidatesA, candidatesB, seqs, step, r, clearance })
+//   findPiston(src, { boneA, boneB, candidatesA, candidatesB, seqs, step, r, clearance, groups })
 //     -> { found, cylinder, rod, report, skipped }
 //
 // Every pair of anchors offered is tried over the frames of the animations given (every one the file keeps by
 // default), and the pair whose rod strays least off the cylinder's axis is kept; each half is aimed at the
 // other's mean bearing in its own bone's space, and sized so that the rod is in the cylinder when the joint is
 // at its widest and does not strike its floor at its narrowest. Animations kept in other files (`group` not 0)
-// are not posed here: they are left out, and named in `skipped`.
+// are posed from `groups` (the files beside the model, sequenceFilesOf); without their file they are left out,
+// and named in `skipped`.
 import { restPose, poseAt, sequences, sequenceAt, inverse34, apply34, readMdl } from "./mdl.mjs";
 import { add, sub, mul, dot, len, unit, cyl, box, place } from "./solids.mjs";
 
@@ -37,9 +38,10 @@ function boneNumber(names, bone) {
 
 /**
  * The poses a linkage is tried over: every `step`th frame of the animations named (all the file keeps when
- * `seqs` is not given). Returns { poses, used, skipped }: the names posed, and those left out and why.
+ * `seqs` is not given), those kept in other files read from `groups` (sequenceFilesOf). Returns { poses, used,
+ * skipped }: the names posed, and those left out and why.
  */
-export function posesFor(src, { seqs, step = 2 } = {}) {
+export function posesFor(src, { seqs, step = 2, groups } = {}) {
   const all = sequences(src);
   const names = seqs ?? all.map((s) => s.name);
   const poses = [];
@@ -48,10 +50,11 @@ export function posesFor(src, { seqs, step = 2 } = {}) {
   for (const name of names) {
     const n = sequenceAt(src, name);
     if (n < 0) skipped.push({ name, why: "not in the model" });
-    else if (all[n].group) skipped.push({ name: all[n].name, why: "kept in another file" });
+    else if (all[n].group && !groups?.[all[n].group])
+      skipped.push({ name: all[n].name, why: "kept in another file" });
     else {
       used.push(all[n].name);
-      for (let f = 0; f < all[n].frames; f += step) poses.push(poseAt(src, n, f));
+      for (let f = 0; f < all[n].frames; f += step) poses.push(poseAt(src, n, f, 0, groups));
     }
   }
   return { poses, used, skipped };
@@ -64,6 +67,7 @@ export function posesFor(src, { seqs, step = 2 } = {}) {
  *   step       every how many frames a pose is taken (2)
  *   r          the cylinder's radius (0.4); the rod's is half of it
  *   clearance  how far short of the rod's eye the cylinder stops at the joint's narrowest (0.5)
+ *   groups     the files of animations kept beside the model (sequenceFilesOf): those animations are tried too
  * Returns { found, cylinder, rod, report, skipped }: `cylinder` and `rod` lists of solids in model space at
  * rest (for `putRigid` with `space: "rest"`, the cylinder on boneA, the rod on boneB); `report` { anchorA,
  * anchorB, axisA, axisB (model space at rest), dmin, dmax (how near and far apart the anchors come), cylinder,
@@ -73,13 +77,13 @@ export function posesFor(src, { seqs, step = 2 } = {}) {
  */
 export function findPiston(
   src,
-  { boneA, boneB, candidatesA, candidatesB, seqs, step = 2, r = 0.4, clearance = 0.5 },
+  { boneA, boneB, candidatesA, candidatesB, seqs, step = 2, r = 0.4, clearance = 0.5, groups },
 ) {
   const names = readMdl(src).bones;
   const A = boneNumber(names, boneA);
   const B = boneNumber(names, boneB);
   const rest = restPose(src);
-  const { poses, used, skipped } = posesFor(src, { seqs, step });
+  const { poses, used, skipped } = posesFor(src, { seqs, step, groups });
   if (!poses.length) throw new Error("findPiston: no frames to try it over");
   const invA = inverse34(rest[A]);
   const invB = inverse34(rest[B]);

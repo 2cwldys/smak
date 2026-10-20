@@ -3,6 +3,19 @@
 The newest first. A version that changes what a model's file looks like, or that a model made before needs
 mending for, says so under **Mind**.
 
+## Not released yet
+
+- **Animations kept in other files are posed everywhere a model is posed**: `posed`, `render`, `strip`
+  (and `sheet`, `animationGif`), `poseBetween`, `posesFor`, `findPiston` and `motionOverlaps` (its `still` pose
+  too) take `groups`, the files `sequenceFilesOf` reads beside a model, as `poseAt` has since 0.22.0. Without
+  them `findPiston` and `motionOverlaps` still name such an animation in `skipped`, and `strip` now refuses it
+  instead of drawing the bones at rest frame after frame. `smak render`, `sheet`, `strip` and `gif`, and the MCP
+  server's pictures, read `<name>01.mdl` beside the model themselves.
+- **`footSlide`** (src/reproportion.mjs): how far a walk's planted foot slides over the floor with its travel
+  applied, and the lowest point of the feet each frame; the feet are found by their Biped names in English or
+  Italian, and where a foot touches is the middle of its lowest points, so a flat sole is not read as its heel
+  one frame and its toe the next. The figures research measured a robot's walk against the model under it so.
+
 ## 0.22.0 (2026-10-20)
 
 - **`reproportion`** (src/reproportion.mjs, `smak reproportion`): a skeleton's bones made longer or shorter, a tall

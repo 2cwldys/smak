@@ -1001,16 +1001,17 @@ export function sequences(mdl) {
 /**
  * Every bone's matrix at a moment of an animation between its frames (`at` in frames, fractional), each
  * matrix's numbers mixed between the two frames around it: near enough a turn for the small steps of one
- * frame. With `loop`, past the last frame goes on to the first.
+ * frame. With `loop`, past the last frame goes on to the first. An animation kept in another file is read from
+ * `groups`, as poseAt reads it.
  */
-export function poseBetween(mdl, seq, at, loop = true) {
+export function poseBetween(mdl, seq, at, loop = true, groups) {
   const frames = int32(mdl, seqAt(mdl, seq) + SEQ.numframes);
   const moment = loop ? ((at % frames) + frames) % frames : Math.max(0, Math.min(frames - 1, at));
   const frame = Math.floor(moment);
   const next = loop ? (frame + 1) % frames : Math.min(frame + 1, frames - 1);
   const mix = moment - frame;
-  const from = poseAt(mdl, seq, frame);
-  const to = mix ? poseAt(mdl, seq, next) : from;
+  const from = poseAt(mdl, seq, frame, 0, groups);
+  const to = mix ? poseAt(mdl, seq, next, 0, groups) : from;
   return from.map((matrix, bone) =>
     matrix.map((row, r) => row.map((v, c) => v + (to[bone][r][c] - v) * mix)),
   );

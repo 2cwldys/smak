@@ -70,11 +70,12 @@ const GROUND = [240, 200, 70];
 
 /**
  * The model's triangles as it is shown: { seq (a name or a number; null: the bones at rest), frame (may fall
- * between two), pose (matrices of its own, instead), body, skin }. Each triangle: { tex, where, tri, c: [{ p,
- * n, u, v, bone }] } in model space, u and v in pixels; `where` is its mesh ({ bodypart, model, mesh }),
- * `tri` its number in that mesh (as readMesh lists them), `bone` a bone's number.
+ * between two), pose (matrices of its own, instead), body, skin, groups (the files of animations kept beside
+ * the model, as sequenceFilesOf reads them: without them such an animation is shown at rest) }. Each triangle:
+ * { tex, where, tri, c: [{ p, n, u, v, bone }] } in model space, u and v in pixels; `where` is its mesh
+ * ({ bodypart, model, mesh }), `tri` its number in that mesh (as readMesh lists them), `bone` a bone's number.
  */
-export function posed(src, { seq = 0, frame = 0, pose, body = 0, skin = 0 } = {}) {
+export function posed(src, { seq = 0, frame = 0, pose, body = 0, skin = 0, groups } = {}) {
   const info = readMdl(src);
   const list = sequences(src);
   const number = seq === null ? -1 : sequenceAt(src, seq);
@@ -84,11 +85,11 @@ export function posed(src, { seq = 0, frame = 0, pose, body = 0, skin = 0 } = {}
   // the bones' matrices: given, or of a frame of the animation (a whole one, or between two), or at rest
   let matrices = pose;
   if (!matrices) {
-    const animated = number >= 0 && !list[number].group;
+    const animated = number >= 0 && (!list[number].group || Boolean(groups?.[list[number].group]));
     if (!animated) matrices = restPose(src);
     else if (Number.isInteger(frame))
-      matrices = poseAt(src, number, Math.max(0, Math.min(frame, list[number].frames - 1)));
-    else matrices = poseBetween(src, number, frame, list[number].loops);
+      matrices = poseAt(src, number, Math.max(0, Math.min(frame, list[number].frames - 1)), 0, groups);
+    else matrices = poseBetween(src, number, frame, list[number].loops, groups);
   }
 
   const families = skinFamilies(src);
@@ -253,7 +254,7 @@ function cutNear(polygon, near) {
  *   width, height, background [r, g, b], light (false: the texture as it is), cull (false: both sides of
  *   every triangle; "solid": both sides of every triangle but a masked one's, whose holes show its far side
  *   on purpose: a net)
- *   seq, frame, pose, body, skin   as in posed
+ *   seq, frame, pose, body, skin, groups   as in posed
  *   parts       only these bodyparts are drawn (their numbers), and the picture is framed by them alone: the
  *               weapon of a first-person file without the arms that hold it
  * A triangle seen from behind is not drawn, as in the game: a hole in the picture is a triangle the wrong way
@@ -594,7 +595,8 @@ export function sheet(src, opts = {}) {
  * of that name.
  * Every frame is drawn by one camera at one scale, so a thing seen to move in the strip moves in the
  * animation. For a walk: { view: "side", ground: true }, the feet against the floor's line. (An animation
- * that travels has its travel taken out of its frames, as `movement`: it walks on the spot here.)
+ * that travels has its travel taken out of its frames, as `movement`: it walks on the spot here.) An animation
+ * kept in another file (<name>01.mdl) is read from `groups` (sequenceFilesOf); without them it throws.
  */
 export function strip(src, opts = {}) {
   const number = sequenceAt(src, opts.seq ?? 0);
@@ -605,6 +607,10 @@ export function strip(src, opts = {}) {
       "the model has no animations, and strip draws one frame by frame: render or sheet draws it as it rests",
     );
   if (!sequence) throw new Error(`no animation ${opts.seq}`);
+  if (sequence.group && !opts.groups?.[sequence.group])
+    throw new Error(
+      `the animation ${sequence.name} is kept in another file: give groups, the files beside the model (sequenceFilesOf)`,
+    );
   const from = opts.from ?? 0;
   const to = opts.to ?? sequence.frames - 1;
   const count = Math.max(1, Math.min(opts.count ?? 12, to - from + 1));

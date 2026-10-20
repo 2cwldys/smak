@@ -257,6 +257,34 @@ test("reproportion: a walk's planted foot does not slide, the travel lengthened 
   sure(slipping > 0.15, `with the stride left as it was a planted foot slides: ${slipping} a frame`);
 });
 
+test("footSlide: a walk's planted foot held or sliding, its travel applied, and the floor under every frame", () => {
+  const was = smak.footSlide(SRC, "walk");
+  sure(was.seq === "walk" && was.frames === 25 && was.planted >= 20, `planted steps: ${was.planted}`);
+  sure(was.most < 0.05, `the original's planted foot holds: ${was.most} at most`);
+  near(was.ground[0], 0, 0.01, "the lowest point is on the floor");
+  sure(was.lows.length === 25 && was.ground[1] < 0.5, `the floor through the walk: ${was.ground}`);
+  const now = smak.footSlide(OUT, "walk");
+  sure(now.most < was.most + 0.05, `after: ${now.most}, before: ${was.most}`);
+  const slipping = smak.footSlide(smak.reproportion(SRC, FACTORS, { stride: 1 }).mdl, "walk");
+  sure(slipping.mean > 0.15, `the stride left as it was: the planted foot slides ${slipping.mean} a frame`);
+  // the feet by name; a walk kept in another file read from it
+  const named = smak.footSlide(SRC, "walk", { feet: ["Bip01 L Foot", numberOf("Bip01 R Foot")] });
+  sure(JSON.stringify(named) === JSON.stringify(was), "the feet named");
+  const main = Buffer.from(SRC);
+  main.writeInt32LE(1, main.readInt32LE(168) + 176 + 156);
+  const side = Buffer.from(SRC);
+  side.write("IDSQ", 0, "latin1");
+  const read = smak.footSlide(main, "walk", { groups: [undefined, side] });
+  sure(JSON.stringify(read) === JSON.stringify(was), "the same from the side file");
+  let said = "";
+  try {
+    smak.footSlide(SRC, "walk", { feet: /Tail/ });
+  } catch (e) {
+    said = e.message;
+  }
+  sure(/no points on the feet/.test(said), `no feet: ${said}`);
+});
+
 /** A point under the middle of a foot's sole, in the foot bone's own space. */
 function soleOf(foot) {
   const rest = smak.restPose(SRC)[foot];

@@ -10,8 +10,8 @@ export const GIF_FRAMES = 60;
 
 /**
  * The GIF of one animation: `{ bytes, name, frames, fps, width, height }`. `opts` are `render`'s (view, yaw, pitch,
- * body, skin, ground, width, height...) and `seq` (a name or number), `fps` (the animation's own unless told),
- * `most` (the most frames, GIF_FRAMES).
+ * body, skin, ground, width, height, groups for an animation kept in another file...) and `seq` (a name or
+ * number), `fps` (the animation's own unless told), `most` (the most frames, GIF_FRAMES).
  */
 export function animationGif(src, opts = {}) {
   const all = sequences(src);

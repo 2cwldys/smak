@@ -47,6 +47,7 @@ It makes a model from nothing and exercises every part of the kit. If every test
 | Replace or add textures; recolour by palette; export and import PNG / BMP | Edit animations kept in separate `name01.mdl` files |
 | Replace or add animations, and the events (sounds) on their frames | Show the engine's real lighting: its pictures are a plain stand-in |
 | Add bones to a model | Run or test anything inside the game |
+| Pose the animations kept in `name01.mdl` files wherever a model is posed: its pictures, `motionOverlaps`, `findPiston`, `footSlide` (`groups: sequenceFilesOf(file, src)`; the command line reads them beside the model) | Write them: they are read, and `reproportion` carries them through the bones untouched |
 | Make a skeleton's bones longer or shorter (`reproportion`): every turn of every animation kept, those in `name01.mdl` files too, the feet on the ground and a walk's stride as long as the legs | Stretch a body's points with its bones: each stays in its bone's space, so a skinned thigh made longer parts from its knee |
 | Check a model against GoldSrc's and Xash's limits | |
 | Draw a model from any side, or as the player sees a weapon, into a PNG | |
@@ -194,7 +195,8 @@ it when they are done. It is for them to look and compare; your own checking is 
 `strip`, whose pictures you can read.
 
 `render`, `sheet` and `strip` take `--seq <name|number|rest>`, `--frame`, `--body`, `--skin`, `--width`,
-`--height`, `--no-light` (the texture as it is) and `--no-cull` (both sides of every triangle). `--view side`,
+`--height`, `--no-light` (the texture as it is) and `--no-cull` (both sides of every triangle); an animation kept
+in `<name>01.mdl` is read from beside the model (with `gif` too). `--view side`,
 `front` and `top` look from there with no perspective (`side` is the left side: the front is to the picture's
 left), and with `side` or `front`, `--ground` draws the floor (z = 0) as a line across the picture. `--yaw`
 and `--pitch` with one of them turn the camera on from there: `--view front --yaw 205` looks from 205,
@@ -801,7 +803,10 @@ const hits = motionOverlaps(mdl, pieces, undefined, { space: "rest" });        /
   `share`, a piece of the middle a `mirror` plane), `withUV` puts the places on the corners; paint the picture by
   place (`paint`), or bake a detailed copy onto it in Blender with `bakeMaps` where the machine has Blender.
 - `findPiston` and `motionOverlaps` pose every animation the file keeps unless told; those kept in other files
-  are listed in `skipped`: tell the person, or give the file's own `<name>01.mdl` animations another way.
+  are posed when you give `groups: sequenceFilesOf(file, src)`, and listed in `skipped` when you do not: give
+  them, or tell the person what was not measured.
+- **The feet**: `footSlide(mdl, "walk", { groups })` says how far a walk's planted foot slides with its travel
+  applied, and the lowest point of every frame: hold the figure against the model it is built on.
 
 ### A helmet, or any worn piece: placed where the game's own sits, checked against what is under it
 
@@ -1171,7 +1176,7 @@ or `smak wad-make my_stone.png "{my_bars.png" -o mine.wad`, each texture named a
 | A moved entity is not where it was put, in the game | The game loaded another file of that name. Ask where the mod looks first. |
 | `not a studio model, version 10` | A Source model, a sprite, or a `name01.mdl` / `namet.mdl` side file. Open the main file. |
 | Meshes have `texture: null`; grey model | The textures are in `<name>t.mdl`. The command line reads them itself; in a script call `withTextures(src, readFileSync("namet.mdl"))` first. |
-| `an animation kept in another file` | The model has `name01.mdl` sequence files. Read them by giving the files: `readSequence(mdl, name, 0, sequenceFilesOf(file, mdl))` (`poseAt` and `frameValues` take them too). They cannot be changed here; `reproportion` carries them through the bones, their files untouched. |
+| `an animation kept in another file` | The model has `name01.mdl` sequence files. Read them by giving the files: `readSequence(mdl, name, 0, sequenceFilesOf(file, mdl))`; `poseAt`, `frameValues`, `posed`, `render`, `strip`, `motionOverlaps`, `findPiston` and `footSlide` take them as `groups`. They cannot be changed here; `reproportion` carries them through the bones, their files untouched. |
 | An empty picture | A blank submodel. Use the right `--body`. |
 | `the file is cut short or broken` | Something in it points past its end. Copy it again from the mod. |
 | `the bodypart X has no submodel` | The engine needs one at least: give it one with no meshes. |

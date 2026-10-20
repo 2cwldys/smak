@@ -268,6 +268,8 @@ function readModel(file, command) {
   }
   return src;
 }
+/** The files of animations kept beside a model (<name>01.mdl ...), when it has any: undefined when it has none. */
+const groupsOf = (file, src) => (file && smak.sequenceGroups(src).length > 1 ? smak.sequenceFilesOf(file, src) : undefined);
 /** What render, sheet and strip are asked for, from the flags. */
 function viewOptions(src, flags) {
   return {
@@ -508,10 +510,10 @@ function check({ src, flags }) {
 
 // ── pictures of the model ──────────────────────────────────────────────────
 /** render, sheet and strip: one function, the picture drawn by the kit's function of the command's name. */
-function draw({ command, src, flags }) {
+function draw({ command, src, flags, file }) {
   // the arguments first: a picture is not drawn to find that it has nowhere to go
   const to = need(command, flags.o, "-o out.png");
-  const options = defined(viewOptions(src, flags));
+  const options = defined({ ...viewOptions(src, flags), groups: groupsOf(file, src) });
   // the ground is a line only in a level view: said before anything is drawn
   const level = smak.NAMED_VIEWS[options.view]
     ? smak.NAMED_VIEWS[options.view].pitch + (options.pitch ?? 0) === 0
@@ -542,7 +544,7 @@ function draw({ command, src, flags }) {
 /** One animation, or every one (--seq all, -o a folder), as looping GIFs, each frame labelled. */
 function gifs({ command, src, flags, file }) {
   const to = need(command, flags.o, "-o out.gif (or a folder, with --seq all)");
-  const options = defined(viewOptions(src, flags));
+  const options = defined({ ...viewOptions(src, flags), groups: groupsOf(file, src) });
   const stem = basename(file).replace(/\.mdl$/i, "");
   if (String(flags.seq) === "all") {
     for (const g of smak.animationGifs(src, { ...options, seq: undefined })) {

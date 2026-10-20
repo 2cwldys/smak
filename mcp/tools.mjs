@@ -576,7 +576,9 @@ function render(folders, args) {
     PICTURE_MOST,
     Math.max(1, Math.round(args.size ?? (kind === "view" || kind === "uv" ? SIZE_ONE : SIZE_SEVERAL))),
   );
-  const pose = { seq: seqOf(src, args.seq), frame: args.frame ?? 0, body: args.body ?? 0 };
+  // an animation kept in <name>01.mdl beside the model is read from it
+  const groups = smak.sequenceGroups(src).length > 1 ? smak.sequenceFilesOf(file, src) : undefined;
+  const pose = { seq: seqOf(src, args.seq), frame: args.frame ?? 0, body: args.body ?? 0, groups };
   if (kind !== "uv" && !smak.posed(src, pose).tris.length)
     throw new Error(`body ${pose.body} shows no triangles. Its body numbers:\n${bodyNumbers(src)}`);
   const picture = KINDS[kind](src, { ...args, pose }, size);

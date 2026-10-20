@@ -68,7 +68,7 @@ const areas = [
   "58-map-viewer", // a map as a 3D scene, props held against the world (stuck, floating, facing a wall), the map viewer served
   "59-map-country", // cliffs that lean along an outdoor map's rock, the land round it as a model, ground that rises and falls, patches, paths, things strewn, ruins, houses, fences
   "60-reduce", // fewer triangles: the quadric reducer keeps a shape closed, its border, its volume and its charts
-  "61-decompile", // a compiled map made back into a .map (Half-Life's frenzy where installed), recompiled, and measured against its original
+  "61-decompile", // a compiled map made back into a .map (Half-Life's frenzy where installed), recompiled, and measured against its original
   "62-sprites", // sprites made of layers of effects by rule: glows, flares, fire, beams, billows, blobs; measured against a reference; a .spr written as it is read
   "63-sounds", // sounds made of layers: a file written as it is read, measured, checked as the engine needs it, held against the game's own; a music track levelled by loudness
   "64-sound-shape", // noise shaped to a curve, a limiter, grains at a period, a sound's picture read back
@@ -95,7 +95,8 @@ const areas = [
   "85-motion-overlaps", // pieces on bones driven into each other: a pair swung together caught, a pair apart not
   "86-unwrap", // pieces unfolded into nets on one picture: no texel twice, true density, mirrored halves on one
   "87-blender", // Blender found or not, its float pictures read, and a cube baked where it is installed
-  "88-reproportion", // bones made longer and shorter: every turn kept, the feet on the ground, a walk that does not slide, rigid pieces whole
+  "88-reproportion", // bones made longer and shorter: every turn kept, the feet on the ground, a walk that does not slide, rigid pieces whole; the feet's slide measured
+  "89-animations-elsewhere", // animations kept in <name>01.mdl files posed by the pictures, the linkages and the overlaps
   "19-example-and-kit-faults", // the examples' wrong arguments and refused models; the kits' fittings and rings
 ];
 

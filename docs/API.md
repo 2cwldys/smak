@@ -42,7 +42,7 @@ Words used below: `which` is a texture's or an animation's number or its name. `
 | --- | --- |
 | `restPose(b)` | Every bone's matrix with the bones at rest. |
 | `poseAt(b, seq, frame, blend = 0, groups)` | The same at one frame of an animation (`seq` is a number). Throws as `frameValues` does when a bone's values end before that frame, or the animation is in a file not given. |
-| `poseBetween(b, seq, at, loop = true)` | At a moment between two frames (`at` may be fractional). |
+| `poseBetween(b, seq, at, loop = true, groups)` | At a moment between two frames (`at` may be fractional). An animation kept in another file is read from `groups`, as `poseAt` reads it. |
 | `poseOf(b, values)` | For a frame given as numbers (`[bone][6]`), not yet in the file. |
 | `boneMatrices(list, values?)` | The same for a list of bones `[{ parent, pos, rot }]` that is not in a file. |
 | `mul34(a, b)`, `apply34(m, p)`, `inverse34(m)` | Matrix times matrix, matrix times point, inverse of a rigid matrix. |
@@ -135,6 +135,16 @@ angles of every bone in every frame are what they were, to the bit.
   the file back as it was, byte for byte.
 - Not done: a position turned by a bone controller (none of Half-Life's monsters has one); blends are posed by
   their first for the ground.
+
+`footSlide(src, seq, { feet, body = 0, parts, groups, contact = 0.5 })` → `{ seq, frames, movement, planted, mean,
+most, lows, ground }`: how a walk's feet meet the floor, to hold a figure against the model it is built on, or a
+skeleton before and after. Each frame, where each foot touches (the middle of its points within `contact` of its
+lowest), the animation's travel added as the game moves the model; the lower foot bears the weight, and `mean`
+and `most` are how far its touch moves across the floor from one frame to the next while the same foot is down
+(`planted` such steps). `lows`: the lowest point of the feet each frame; `ground` the least and most of those.
+`feet`: a pattern on bone names (Biped's Foot and Toe, in English or Italian) or a list of names or numbers, each
+the left's or the right's by its name (L or SX, R or DX); `body` and `parts` (bodyparts' numbers) which points
+count: leave out a weapon held low.
 
 `setBoneValues(src, [{ pos, rot, scale }])` (by bone number, an entry undefined for a bone left alone) writes
 bones' rest values and scales in place, nothing else touched: what `reproportion` is made of.
@@ -568,7 +578,7 @@ it is measured. Two files on one skeleton give the same space for a bone of the 
 | `fitBetween(from, to, { uniform, points, boxes })` | The fit `p * k + t`, each axis its own, that takes one piece to another: `{ k, t, scale, worst, by, at(p), back(p) }`. From two lists of the same points in the same order when they are that (`by: "points"`, `worst` the farthest a point is left), else from their boxes (`by: "boxes"`). A game's woman's helmet from the man's: about 0.84 and a shift. |
 | `clearance(inner, shell, { centre, sides })` | Is this inside that: `{ inside, outside, open, tightest: { gap, at, on }, worst: { out, at, on }, fits }`. Counts of the inner points that the shell covers, that poke through it, and that it does not reach (below a helmet's rim); the inside point nearest the wall and its gap in units; the outside point farthest out. |
 | `bodyCounts(src, bodypart = 0)` | `[{ body, name, tris, verts, norms, textures }]` for every body, and `.median`: a new body's weight against the file's own. |
-| `motionOverlaps(src, pieces, seqs, { step = 2, tol = 0.25, still, space = "bone" })` | Rigid convex pieces driven into each other by the animations: `{ built, sequences: [{ name, frames, pairs: [{ a, b, deep, frame, near }] }], worst, skipped }`. See below. |
+| `motionOverlaps(src, pieces, seqs, { step = 2, tol = 0.25, still, space = "bone", groups })` | Rigid convex pieces driven into each other by the animations: `{ built, sequences: [{ name, frames, pairs: [{ a, b, deep, frame, near }] }], worst, skipped }`. See below. |
 
 `clearance` looks from the middle of the inner points through each of them: a point is **inside** when the line
 leaves the shell beyond it, **outside** when it has left the shell before reaching it, **open** when it never
@@ -584,7 +594,8 @@ the corners of one go inside the other, past how deep they are as built (the res
 meet are measured. `built`: the pairs already in each other as built; `near`: the bones are next to each other
 (the same parent, or one the other's parent or grandparent), where a joint's own parts sit in each other by
 design, against pairs on bones apart, which are faults. Only corners are tested: two blocks crossing edge to edge
-with no corner inside are not seen. Animations kept in other files are named in `skipped`.
+with no corner inside are not seen. Animations kept in other files are posed from `groups` (`sequenceFilesOf`,
+and `still` may be one of them); without their file they are named in `skipped`.
 
 ```js
 const helm = bodyIn(helmets, 2, "Bip01 Head"), where = boxIn(helmets, 2, "Bip01 Head");          // the game's own, to sit a new one by
@@ -644,13 +655,13 @@ All return `{ width, height, rgba }`; write with `png(img.width, img.height, img
 | --- | --- |
 | `render(src, options)` | One view. |
 | `sheet(src, options)` | Six views: front, left side, back, right side, top, three quarter. `size` (384) is each one's side. |
-| `strip(src, { seq, count = 12, cols = 4, from, to, ... })` | An animation (the first unless told), `count` frames from first to last, each numbered, all by one camera at one scale. Throws when the model has no animation, or none of that name. A walk: `{ view: "side", ground: true }`. |
+| `strip(src, { seq, count = 12, cols = 4, from, to, groups, ... })` | An animation (the first unless told), `count` frames from first to last, each numbered, all by one camera at one scale. Throws when the model has no animation, or none of that name, or it is kept in another file and `groups` (`sequenceFilesOf`) does not hold it. A walk: `{ view: "side", ground: true }`. |
 | `uvMap(src, which, { scale })` | A texture enlarged with the triangles that wear it drawn over it. Also returns `scale`, `meshes`, `triangles`. |
 | `tile(images, cols, names)` | Pictures of one size side by side, named. For before and after. |
 | `lineup([[name, model], ...], { yaws = [20, 200], pitch, zoom, width, height, cols, target, seq, frame })` | Several models to one scale, each from the same sides. |
 | `together([...])` (`src/place.mjs`) | Not a picture: several models on one skeleton as one model, for any of these to draw (a helmet on a head with an armour). |
 | `label(img, text, x, y)` | Writes on a picture. |
-| `posed(src, options)` | No picture: the triangles in model space as shown, `{ info, tris, pose }`. A triangle: `{ tex, where, tri, c: [{ p, n, u, v, bone } ×3] }` (`where`: its mesh; `tri`: its number in it; `u`, `v` in pixels; `bone` a number). |
+| `posed(src, options)` | No picture: the triangles in model space as shown, `{ info, tris, pose }`. A triangle: `{ tex, where, tri, c: [{ p, n, u, v, bone } ×3] }` (`where`: its mesh; `tri`: its number in it; `u`, `v` in pixels; `bone` a number). `groups` (`sequenceFilesOf`) poses an animation kept in another file; without it such an animation is shown at rest. |
 | `framing(src, [options])` | `{ mid, far }` over several poses, for `within`. |
 
 Options of `render` (and the others pass them on):
@@ -788,7 +799,7 @@ Two halves of a part rigid on two bones, which the animations must not pull apar
 cylinder on one bone and its rod on the other. Neither half can turn about its anchor, so the rod stays in the
 cylinder only where the anchors keep their bearing to each other (a hinge's own axis is such a place).
 
-`findPiston(src, { boneA, boneB, candidatesA, candidatesB, seqs, step = 2, r = 0.4, clearance = 0.5 })` →
+`findPiston(src, { boneA, boneB, candidatesA, candidatesB, seqs, step = 2, r = 0.4, clearance = 0.5, groups })` →
 `{ found, cylinder, rod, report, skipped }`
 
 | Option | Meaning |
@@ -797,6 +808,7 @@ cylinder only where the anchors keep their bearing to each other (a hinge's own 
 | `candidatesA`, `candidatesB` | Points where each end may be anchored, in model space with the bones at rest. Every pair is tried. |
 | `seqs` | The animations it must work through, by name or number: all the file keeps unless told. Every `step`th frame is posed. |
 | `r`, `clearance` | The cylinder's radius (the rod's is half); how far short of the rod's eye the cylinder stops at the joint's narrowest. |
+| `groups` | The files of animations kept beside the model (`sequenceFilesOf`): their animations are posed too. |
 
 The pair kept is the one whose rod strays least off the cylinder's axis (a longer one a little preferred); each half
 is aimed at the other's mean bearing in its own bone and sized so that the rod is in the cylinder at the joint's
@@ -804,10 +816,11 @@ widest and short of its floor at its narrowest. `cylinder` and `rod` are lists o
 (for `putRigid` with `space: "rest"`). `report`: `{ anchorA, anchorB, axisA, axisB, dmin, dmax, cylinder, rod,
 stray, angleA, angleB, bore, frames, sequences }` (`stray` in units, the angles the most each half's bearing turns
 in its bone, in degrees). `found` is false and the rest null when no pair leaves a cylinder of 1.5 and a rod of 1.
-**Animations kept in other files** (`group` not 0) are not posed: they are left out and listed in `skipped`
-(`[{ name, why }]`), with names the model has not.
+**Animations kept in other files** (`group` not 0) are posed from `groups`; one whose file is not given is left
+out and listed in `skipped` (`[{ name, why }]`), with names the model has not.
 
-`posesFor(src, { seqs, step = 2 })` → `{ poses, used, skipped }`: the poses it tries, what `motionOverlaps` poses too.
+`posesFor(src, { seqs, step = 2, groups })` → `{ poses, used, skipped }`: the poses it tries, what `motionOverlaps`
+poses too.
 
 ## Pieces laid out on a picture (`src/unwrap.mjs`)
 
