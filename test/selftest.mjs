@@ -99,6 +99,7 @@ const areas = [
   "89-animations-elsewhere", // animations kept in <name>01.mdl files posed by the pictures, the linkages and the overlaps
   "90-cull", // rigid pieces lighter: a piece shut inside another dropped, a face pressed on another taken out, shapes reduced within a tolerance
   "91-figures", // the figure judges: a figure's facts, its style, texture and shape measured and judged against corpora made here; a library surveyed
+  "92-figure-profiles", // each game's manner for the figure judges: MSC, TS and Half-Life's profiles by name, file and object
   "19-example-and-kit-faults", // the examples' wrong arguments and refused models; the kits' fittings and rings
 ];
 

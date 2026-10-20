@@ -75,6 +75,55 @@ export const CITIES = {
 };
 
 /**
+ * The figure judges' part of the profile (src/figures/; `smak figure-survey`, `figure-judge`, `figure-texture`,
+ * `figure-shape` with `--mod specialists`): The Specialists' players (models/player/<name>/<name>.mdl) as a
+ * manner. The corpus itself is never here: it is measured on the person's machine from the installed game, into
+ * a library of theirs (`smak figure-survey <Half-Life> --mod specialists`). What is here is how far TS's figures
+ * stand from each other game's on each measure (the distance of the medians over the middle half, averaged over
+ * the other corpora): the weights each judge goes by, the measures that tell this manner most weighing most.
+ */
+
+// prettier-ignore
+export const FIGURE_STYLE = {
+  name: "ts",
+  title: "The Specialists' players",
+  corpus: { name: "ts", folders: ["ts"] },
+  judges: ["style", "texture", "shape"],
+  // scored: shape, texture and colour; proportions and the parts' figures told, not scored (they tell
+  // characters apart, not manners)
+  groups: ["shape", "texture", "colour"],
+  least: 0.25,
+  from: "297 figures of valve, valve_hd, cstrike, cstrike_hd, ts, msc and msr, measured 2026-10-19 (the figures research)",
+  weights: {
+    style: {
+      tris: 0.44, edge: 0.96, edgeSpread: 1.09, pieces: 0.72, rigid: 0.3, open: 0.48, hard: 1.54, boxy: 0.35,
+      sym: 1.63, heads: 0.97, shoulders: 0.09, bulk: 0.76, armLen: 1.2, legLen: 0.97, hand: 1.45, texels: 0.4,
+      texelSpread: 0.4, textures: 0.46, texSize: 0.89, used: 0.75, reuse: 0.96, mirrored: 0.62, stretch: 1.01,
+      chrome: 0.02, colours: 1.37, value: 1.38, contrast: 1.35, sat: 0.65, accent: 0.47, dark: 1.64, hues: 0,
+      grain: 1.32, detail: 0.45, flat: 0.24, d_head: 0.37, t_head: 0.36, v_head: 0.36, d_torso: 0.52,
+      t_torso: 0.58, v_torso: 0.46, d_arm: 0.15, t_arm: 0.46, v_arm: 0.3, d_hand: 0.29, t_hand: 0.45,
+      v_hand: 0.29, d_leg: 0.29, t_leg: 0.34, v_leg: 0.35, d_foot: 0.22, t_foot: 1.26, v_foot: 0.97,
+    },
+    texture: {
+      repeat: 1.89, repeatAny: 1.65, marks: 1.53, lightMarks: 1.4, flat: 1.57, ramp: 0.62, speckle: 0.58,
+      grain: 1.32, cluster: 1.73, quiet: 1.74, diagonal: 0.91, chartRect: 0.63, charts: 1.18, chartDiag: 1.09,
+      value: 1.39, contrast: 1.33, dark: 1.65, colours: 1.37, sat: 0.65, aoFollow: 0.32, aoFollowAll: 0.27,
+    },
+    shape: {
+      holes: 0.3, fineHoles: 0.57, holeCount: 1.01, concave: 1.6, rough: 1.18, notchS: 0.31, notchM: 0.85,
+      notchL: 0.74, edges: 0.99, cells: 0.73, cellGini: 0.16, asym: 1.97, pieceGini: 0.99, sizeRange: 0.44,
+      small: 0.53, layers: 0.53, deep: 1.05, mirror: 2.39, alike: 0.51, boxes: 0.76,
+    },
+  },
+  // how well each judge told this corpus' own figures from the others' (AUC: 1 perfect, 0.5 a coin)
+  validated: {"style":"0.92 to 0.98","texture":"0.71 (against cstrike) to 0.98","shape":"0.89 to 1.00"},
+  notes: [
+    "a strong corpus (23 figures): own figures told from every other game's",
+    "what tells it most: near-black, symmetry, hard edges, hand size, value, few colours, contrast; texture: repetition, quiet areas, flat fills, darks; shape: mirror, asymmetry of the silhouette, a concave outline",
+  ],
+};
+
+/**
  * The profile, from the installed game:
  *   game      the Half-Life folder (the one that holds ts/ and valve/)
  *   folders   the game's folders themselves, the mod's first: `[<Half-Life>/ts, <Half-Life>/valve]`
@@ -123,5 +172,8 @@ export default function specialists({ game, folders, kind = "arena", cache } = {
       music: [],
       figures: against.figures,
     },
+
+    // the figure judges' (FIGURE_STYLE, above)
+    figureStyle: FIGURE_STYLE,
   };
 }
