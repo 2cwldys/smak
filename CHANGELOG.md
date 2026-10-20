@@ -20,6 +20,12 @@ mending for, says so under **Mind**.
   the file had would show another submodel, it is refused and says which, unless told to renumber or to keep the
   other bodyparts' bases. **`modelName`** and **`setModelName`**: the name in the header read and written (a
   player made from The Specialists' merc said `D:\half-life\TS\models\player\merc\merc.mdl` inside).
+- **Fewer triangles for rigid pieces** (src/cull.mjs): `cullHidden` takes out the faces never seen, the pieces
+  drawn from many sides in poses of every animation (or those told), front faces only and with a depth test, a
+  face going when it shows less than `keep` of what it could, a piece left with none dropped, the pieces of one
+  share kept alike; `triangleVisibility` and `sphereViews` under it. `reduceWithin` and `reducePieces` bring each
+  piece down through `reduce` as far as keeps its shape within a tolerance (`shapeDeviation`, both ways). From
+  the figures research, where they took a robot for The Specialists from 7,618 triangles to 4,996.
 
 ## 0.22.0 (2026-10-20)
 

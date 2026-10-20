@@ -851,6 +851,42 @@ primary }] }`, `uv` for each triangle of each piece its three corners in texels.
 pieces back with each corner's `uv` 0 to 1, as `putRigid` and `buildMdl` take it. `unfold(tris, { up, alt, fold,
 axis })` is the net of one list of triangles: `[{ faces, flat }]`, `flat` each face's corners in units.
 
+## Fewer triangles for rigid pieces (`src/cull.mjs`)
+
+A figure of rigid pieces (plates over a cage, parts set into each other) is mostly faces never seen: buried in
+another piece, shut inside a cage, pressed against a neighbour. GoldSrc draws them all. Two passes take them away,
+for any model and any pieces, the same pieces giving the same answer every time.
+
+`cullHidden(src, pieces, options)` → `{ pieces, before, after, gone, poses, share }`: the pieces posed on their
+bones in many poses of the animations and drawn from many sides at a fixed size of pixel, front faces only, with a
+depth test; a triangle that shows less than `keep` of what it could (the area of the pixels it wins over the area
+it would cover with nothing in front, summed over every view of every pose) goes, and a piece left with none is
+dropped (`gone`, its name or number). `pieces` as `motionOverlaps` takes them (`[{ bone, tris }]`, in the bone's
+space or `space: "rest"`); every other key of a piece is kept, and its corners are the ones given.
+
+| Option | Default | |
+| --- | --- | --- |
+| `keep` | 0.04 | The share a triangle must show to stay: under it, it is hidden nearly always. |
+| `first`, `firstViews`, `firstPx` | the first idle, 80, 0.15 | The pose seen closest: that animation's first frame (else the first, else the bones at rest), from that many directions at that many units a pixel. |
+| `seqs`, `at`, `views`, `px`, `weight` | every one it can read, `[0.3, 0.7]`, 14, 0.2, 1 | The other poses: each animation at those shares of its frames, from `views` directions (a number spread over the sphere, or unit vectors) at `px`, each pose's areas times `weight`. |
+| `poses` | | Instead of the two above: `[{ seq, frame, views, px, weight }]` (`seq` null for the bones at rest), measured together; the close pose and the others are otherwise measured apart and their areas summed. |
+| `together` | `(piece) => piece.share` | Pieces of one key and as many triangles (a left plate and its right, on one set of texels) keep a triangle any of them shows. |
+| `groups`, `space` | | The files of animations kept beside the model (`sequenceFilesOf`); `"rest"` for pieces in model space at rest. |
+
+Its cost is the poses times their views times the triangles: 6,000 triangles over a hundred poses take some
+seconds. `triangleVisibility(src, pieces, { poses, views = 14, px = 0.2, groups, space })` → `{ seen, could, sign
+}` is the measure under it, each piece's triangles' areas won and possible in square units (`sign`: the winding
+taken as the front, by most of the triangles; a triangle too small to win a pixel counts one, once in a measure,
+the first time its middle is seen); `sphereViews(n)` the `n` directions spread over the sphere.
+
+`reduceWithin(tris, { tol = 0.12, shares = [0.35 ... 0.85], creaseAngle = 60 })`: one piece's triangles brought
+down by `reduce` to each share in turn, the fewest first, and the first whose shape is within `tol` of the
+original taken (no corner or middle of a triangle of either shape further than `tol` from the other:
+`shapeDeviation(a, b)`); the triangles as given when no share is (the same array). The corners come back as `{ p }`:
+a reduced piece is laid out again. `reducePieces(pieces, options)` → `{ pieces, before, after, reduced }` does
+every piece, `reduced` the numbers of those made lighter. A texel at 3 a unit is 0.33: a `tol` under half of it
+does not show.
+
 ## Blender, where there is one (`src/blender.mjs`)
 
 The one part of the kit that runs another program, and nothing else needs it. Blender is found by the program

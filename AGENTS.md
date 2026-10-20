@@ -52,6 +52,7 @@ It makes a model from nothing and exercises every part of the kit. If every test
 | Check a model against GoldSrc's and Xash's limits | |
 | Draw a model from any side, or as the player sees a weapon, into a PNG | |
 | Paint a model by where a point is on its body, across all its textures | Give the two sides of a body different marks where they share the same pixels of a texture, until one side has pixels of its own (`ownPixels`: a copy in a texture of its own) |
+| Take out of rigid pieces the faces never seen in the animations (`cullHidden`), and give each piece as few triangles as keep its shape within a tolerance (`reducePieces`) | Tell what the game's own lighting shows: the faces are judged by whether they are seen, from many sides of many poses, not how they are lit |
 | Take a bodypart out, the body numbers counted again (`removeBodypart`), and give the file its own name inside (`setModelName`) | Take one out where a body number the game asks for would then show another body: it is refused, unless told to renumber or to keep the bases |
 | Add a body again as a new body in a texture of its own, and paint a garment on chosen islands of it | |
 | Tell what an old picture is, pixel by pixel (mail, plate, a strap), as layers that every pass of paint reads, with the distance to their edges and their regions' places on the body | Tell what a picture shows without a rule from you: a layer is your function of colour, texture and place |
@@ -803,6 +804,11 @@ const hits = motionOverlaps(mdl, pieces, undefined, { space: "rest" });        /
   replaces (a player's own, emptied with `clearModel`) can then go: `removeBodypart(mdl, 0)` counts the numbers
   again and refuses where one the game asks for would show another body; name the file inside with
   `setModelName(mdl, "robot.mdl")`, or it keeps the original's.
+- **The weight**: a figure of plates is mostly faces no one sees. Before the paint, `reducePieces(pieces, { tol:
+  0.12 })` (each piece as few triangles as keep it within 0.12, under half a texel at 3 a unit), then
+  `cullHidden(src, pieces, { groups })` (the faces never seen over the poses of the animations taken out, pieces
+  left with none dropped): The Specialists' robot went from 7,618 triangles to 4,996. Give the pieces of a left and
+  its right one `share`, so that they keep the same faces and still wear one set of texels.
 - **The paint**: `unwrap` lays each piece out as its own net at one texel density (give a left and its right one
   `share`, a piece of the middle a `mirror` plane), `withUV` puts the places on the corners; paint the picture by
   place (`paint`), or bake a detailed copy onto it in Blender with `bakeMaps` where the machine has Blender.
