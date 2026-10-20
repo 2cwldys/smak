@@ -95,6 +95,7 @@ const areas = [
   "85-motion-overlaps", // pieces on bones driven into each other: a pair swung together caught, a pair apart not
   "86-unwrap", // pieces unfolded into nets on one picture: no texel twice, true density, mirrored halves on one
   "87-blender", // Blender found or not, its float pictures read, and a cube baked where it is installed
+  "88-reproportion", // bones made longer and shorter: every turn kept, the feet on the ground, a walk that does not slide, rigid pieces whole
   "19-example-and-kit-faults", // the examples' wrong arguments and refused models; the kits' fittings and rings
 ];
 

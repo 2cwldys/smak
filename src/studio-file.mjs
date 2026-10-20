@@ -2,10 +2,11 @@
 // the one way every command, the MCP server, the viewer, the editor and the specs read a model.
 //
 //   readStudio(file, { read, exists })   -> { src, textures }: the model, and the textures file it took, or null
+//   sequenceFilesOf(file, src)           -> the files of animations beside it (<name>01.mdl ...), by group
 //   modelsIn(folder, { deep })           -> the models of a folder, but for the side files of another beside them
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { texturesInside, withTextures } from "./mdl.mjs";
+import { texturesInside, withTextures, sequenceGroups } from "./mdl.mjs";
 
 /** `name`.mdl's textures file, `name`t.mdl. */
 export const texturesFileOf = (file) => file.replace(/\.mdl$/i, "t.mdl");
@@ -20,6 +21,22 @@ export function readStudio(file, { read = readFileSync, exists = existsSync } = 
   const textures = texturesFileOf(file);
   if (texturesInside(src) || textures === file || !exists(textures)) return { src, textures: null };
   return { src: withTextures(src, read(textures)), textures };
+}
+
+/** `name`.mdl's file of animations for sequence group `group` (1, 2 ...): `name`01.mdl, `name`02.mdl. */
+export const sequenceFileOf = (file, group) => file.replace(/\.mdl$/i, `${String(group).padStart(2, "0")}.mdl`);
+
+/**
+ * The files of animations a model keeps beside it, one for each of its sequence groups after the first, as
+ * frameValues, poseAt and reproportion take them (`groups`): [undefined, <name>01.mdl's bytes, ...]. A file that
+ * is not there is left undefined, and what reads an animation of it says so.
+ */
+export function sequenceFilesOf(file, src, { read = readFileSync, exists = existsSync } = {}) {
+  return sequenceGroups(src).map((_, group) => {
+    if (!group) return undefined;
+    const path = sequenceFileOf(file, group);
+    return exists(path) ? read(path) : undefined;
+  });
 }
 
 /**

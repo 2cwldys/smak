@@ -25,8 +25,11 @@ Words used below: `which` is a texture's or an animation's number or its name. `
 | `textureOf(b, which)` | `{ name, flags, width, height, pixels, palette }`, copied out. |
 | `sequences(b)` | `[{ name, fps, frames, loops, flags, activity, actweight, movement, motiontype, speed, bbmin, bbmax, blends, group }]`. `activity`: what a monster's code asks for it as (`ACTIVITY[n]` is its name, for those known), `actweight` how often it is picked among its activity's. `movement` `[x, y, z]`: how far the model travels in one play of it (the frames stay in place); `speed`: that in units a second, `distance * fps / (frames - 1)`; `motiontype`: the `MOTION` bits (`LX` 64, `LY` 128, `LZ` 256 for the axes of the travel). `bbmin`, `bbmax`: the box about the model through the animation, which the engine culls by. `group` is not 0 for an animation kept in another file. (`move` and `motion` are `movement` and `motiontype` under their older names.) |
 | `sequenceAt(b, which)` | The animation's number, or -1. |
-| `readSequence(b, which, blend = 0)` | What `sequences` tells, plus `index` and `frames[frame][bone] = [x, y, z, rx, ry, rz]`. |
-| `frameValues(b, seq, frame, blend = 0)` | One frame of that. Throws, naming the bone, when the file's values for a bone end before that frame (a broken file). |
+| `readSequence(b, which, blend = 0, groups)` | What `sequences` tells, plus `index` and `frames[frame][bone] = [x, y, z, rx, ry, rz]`. |
+| `frameValues(b, seq, frame, blend = 0, groups)` | One frame of that. Throws, naming the bone, when the file's values for a bone end before that frame (a broken file). An animation kept in another file (`group` not 0) is read from `groups[group]`, that file's bytes (`sequenceFilesOf`); without it, it throws "an animation kept in another file". |
+| `sequenceGroups(b)` | `[{ label, name }]`: the first (`default`) the model's own file, each after it a file of animations, `name` as the model says it (`models\hgrunt01.mdl`). The engine loads them by that name, so a copy of the model under a new name still plays the original's. |
+| `sequenceFilesOf(file, b)` | The files of animations beside `file`, one for each group: `[undefined, <name>01.mdl's bytes, ...]`, undefined where one is not there (`src/studio-file.mjs`; `sequenceFileOf(file, n)` is the path). |
+| `modelBoxes(b)` | The header's `{ eyes, min, max, bbmin, bbmax }`. |
 | `events(b, which)` | `[{ frame, event, type, options }]` of one animation. |
 | `attachments(b)` | `[{ name, bone, pos }]`: `bone` a number, `pos` in that bone's space. |
 | `hitboxes(b)` | `[{ bone, group, min, max }]`: `bone` a number, the box in that bone's space, `group` what was hit (`HITGROUP`: generic 0, head 1, chest 2, stomach 3, leftArm 4, rightArm 5, leftLeg 6, rightLeg 7; a mod may have more). |
@@ -38,7 +41,7 @@ Words used below: `which` is a texture's or an animation's number or its name. `
 | Function | Gives |
 | --- | --- |
 | `restPose(b)` | Every bone's matrix with the bones at rest. |
-| `poseAt(b, seq, frame, blend = 0)` | The same at one frame of an animation (`seq` is a number). Throws as `frameValues` does when a bone's values end before that frame. |
+| `poseAt(b, seq, frame, blend = 0, groups)` | The same at one frame of an animation (`seq` is a number). Throws as `frameValues` does when a bone's values end before that frame, or the animation is in a file not given. |
 | `poseBetween(b, seq, at, loop = true)` | At a moment between two frames (`at` may be fractional). |
 | `poseOf(b, values)` | For a frame given as numbers (`[bone][6]`), not yet in the file. |
 | `boneMatrices(list, values?)` | The same for a list of bones `[{ parent, pos, rot }]` that is not in a file. |
@@ -90,6 +93,56 @@ kit), 32 additive (a glow added over what is behind), 64 masked (palette index 2
 
 A bone whose new motion goes beyond what the file's 16-bit scale for it can hold gets a wider scale, and every
 animation of the file is written again by it. Animations kept in other files (`group` not 0) make that fail.
+
+## A skeleton's proportions (`src/reproportion.mjs`)
+
+`reproportion(src, factors, { mirror = true, ground, stride, body = 0, groups, fit = true })` →
+`{ mdl, factors, mirrored, stride, lift, ground, boxes }`
+
+Bones made longer or shorter, every animation kept: a tall, thin robot on a soldier's skeleton.
+
+```js
+const groups = sequenceFilesOf(file, src);          // hgrunt01.mdl ...: read for the boxes, never changed
+const { mdl } = reproportion(src, { "Bip01 L Thigh": 1.2, "Bip01 L Calf": 1.2, "Bip01 L Clavicle": 0.8,
+  "Bip01 Spine": [1, 1, 1.05] }, { groups });
+```
+
+| Option | Meaning |
+| --- | --- |
+| `factors` | `{ bone: factor }`. **A factor is the bone's length**: it multiplies the place of every bone that hangs from it, in the bone's own axes; the bone itself stays where its parent has it (`"Bip01 L Thigh": 1.2` puts the knee 1.2 times as far down). A number for all three axes, `[x, y, z]` for each (a Biped bone's x runs down its length). A bone by its name, or a Biped bone in any of its names (`boneIn`: `"Bip01 L Thigh"` is hgrunt's `"Bip01 L Leg"`, `"Bip01 L Calf"` its `"Bip01 L Leg1"`, `"Bip01 L Clavicle"` its `"Bip01 L Arm"`). |
+| `mirror` | The other side's bone (`otherSideOf`) gets the same factor unless it is given its own. |
+| `stride` | What the roots' x and y and every animation's travel (`movement`) are multiplied by. Unless told, measured: how much longer the leg is from the highest bone above the foot whose length changed (the hip) to the foot, in the reference pose. |
+| `ground` | The reference pose: `{ seq, frame }`, `{ seq: null }` for the bones at rest; unless told, the first idle (activity 1), frame 0. Its lowest point is the ground. `false`: the roots' height is left as it was (the feet sink). |
+| `fit` | The roots' height becomes `slope * z + lift`, fitted by least squares over every frame of every animation that can be read whose lowest point stands on the ground (within 1 unit): standing, walking, crouching and lying keep their lowest point where it was. `false`, or too few frames standing: the slope is the stride's and the lift puts the reference pose's foot back. |
+| `body` | The body number whose points the ground is measured on. |
+| `groups` | The files of animations (`sequenceFilesOf`): their animations' boxes are measured through them, and the ground fitted over them too. |
+
+How it works: a frame's value is the bone's rest plus a stored step times the bone's scale, so the rest
+position and the position scale of a bone multiplied together multiply that position in every frame of every
+animation, those in `<name>01.mdl` files too, with no animation written again and no step rounded. The three
+angles of every bone in every frame are what they were, to the bit.
+
+- **Points stay in their bone's space**: they move with their bone and keep their shape (rigid pieces are not
+  stretched; a skinned body whose thigh grows opens a gap at the knee).
+- **Hit boxes and attachments** on a bone that grows are multiplied by its factor (a thigh's box reaches the new
+  knee). The eye goes with the bone nearest it in the reference pose.
+- **Boxes**: each animation's measured again through its frames, as studiomdl does, where they can be read
+  (`boxes.measured`); the others' (`boxes.carried`, names), and the header's, carried axis by axis from the
+  reference pose's box before onto after. A header box of zeros stays zeros.
+- Returns `factors` (`{ bone: [x, y, z] }` of those not 1, by the model's names), `mirrored` (the bones given
+  their other side's), `stride`, `lift`, `ground` (`{ seq, frame, bone, low, frames, slope }`: the reference, the
+  bone its lowest point is on, how many frames the line was fitted over), `boxes`. Every factor 1 and no stride:
+  the file back as it was, byte for byte.
+- Not done: a position turned by a bone controller (none of Half-Life's monsters has one); blends are posed by
+  their first for the ground.
+
+`setBoneValues(src, [{ pos, rot, scale }])` (by bone number, an entry undefined for a bone left alone) writes
+bones' rest values and scales in place, nothing else touched: what `reproportion` is made of.
+`setModelBoxes(src, { eyes, min, max, bbmin, bbmax })` writes the header's eye and boxes that are given.
+
+`smak reproportion <mdl> "Bip01 L Thigh=1.2" "Bip01 Spine=1,1,1.05" -o out.mdl [--no-mirror] [--stride n]
+[--reference <seq>[:frame] | rest] [--no-ground] [--body n]` does it on the command line, reading the files of
+animations beside the model.
 
 ## A monster's parts
 

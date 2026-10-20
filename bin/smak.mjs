@@ -128,6 +128,7 @@ const VALUE_FLAGS = [
   "fps",
   "frames",
   "source",
+  "stride",
 ];
 // the flags of the map commands that may be given more than once: each time adds to a list
 const LISTED_FLAGS = [
@@ -692,6 +693,50 @@ function sequenceFromFrames({ command, src, flags }) {
   console.log(
     `${to}: ${made.name} added as animation ${smak.sequences(out).length - 1}: ${made.frames} frames of ${smak.readSequence(src, from).name} (${frames}) at ${made.fps} fps${made.loops ? ", looping" : ""}`,
   );
+}
+
+// ── proportions ────────────────────────────────────────────────────────────
+/**
+ * reproportion: bones made longer or shorter ("Bip01 L Thigh=1.2", "Bip01 Spine=1,1,1.05"), every animation
+ * kept, the feet on the ground and the strides as long as the legs; the files of animations beside the model
+ * (<name>01.mdl) are read for their boxes and left as they are.
+ */
+function reproportioned({ command, file, src, rest, flags }) {
+  const to = need(command, flags.o, "-o out.mdl");
+  if (!rest.length) fail(`${command}: give at least one bone=factor ("Bip01 L Thigh=1.2", "Bip01 Spine=1,1,1.05")`);
+  const factors = {};
+  for (const word of rest) {
+    const said = /^(.+?)=([-+0-9.eE]+(?:,[-+0-9.eE]+,[-+0-9.eE]+)?)$/.exec(word);
+    if (!said) fail(`${command}: bone=factor or bone=x,y,z, not ${word}`);
+    const numbers = said[2].split(",").map(Number);
+    factors[said[1]] = numbers.length === 1 ? numbers[0] : numbers;
+  }
+  let ground;
+  if (flags.ground === false) ground = false;
+  else if (typeof flags.reference === "string") {
+    const [seq, frame] = flags.reference.split(":");
+    ground = seq === "rest" ? { seq: null } : { seq: nameOrNumber(seq), frame: frame === undefined ? 0 : Number(frame) };
+  }
+  const groups = smak.sequenceFilesOf(file, src);
+  const made = smak.reproportion(src, factors, {
+    mirror: flags.mirror !== false,
+    ground,
+    stride: numberOf(flags, "stride"),
+    body: numberOf(flags, "body") ?? 0,
+    groups,
+  });
+  save(to, made.mdl);
+  const three = (f) => (f.every((v) => v === f[0]) ? `${f[0]}` : f.join(","));
+  for (const [name, f] of Object.entries(made.factors))
+    console.log(`  ${name.padEnd(24)} x${three(f)}${made.mirrored.includes(name) ? "   (its other side's)" : ""}`);
+  console.log(`  stride x${made.stride.toFixed(4)}: the roots' x and y and every animation's travel`);
+  if (made.ground)
+    console.log(
+      `  ground: the roots' height x${made.ground.slope.toFixed(4)} ${made.lift < 0 ? "-" : "+"} ${Math.abs(made.lift).toFixed(3)}, fitted over ${made.ground.frames} frames standing (${made.ground.seq ?? "rest"} frame ${made.ground.frame}: lowest ${made.ground.low} on ${made.ground.bone})`,
+    );
+  const missing = groups.flatMap((g, i) => (i && !g ? [smak.sequenceFileOf(file, i)] : []));
+  if (missing.length) console.log(`  not found beside it (their animations' boxes carried, not measured): ${missing.join(", ")}`);
+  console.log(`${to}: ${made.boxes.measured} animations' boxes measured, ${made.boxes.carried.length} carried`);
 }
 
 // ── re-skin by rules ───────────────────────────────────────────────────────
@@ -3189,6 +3234,16 @@ const COMMANDS = {
     help: `  sequence-add <mdl> seq.json -o out.mdl    as a new animation after the others (seq.json: { name, fps, loops, frames })
   sequence-add <mdl> --from <name|n> --frames 80-57 --name kneel_down -o out.mdl [--loop] [--fps 25] [--events]
                                             a new animation of frames of one it has, in that order ("80-57": backwards; "57,58,57")`,
+  },
+  reproportion: {
+    run: reproportioned,
+    help: `  reproportion <mdl> "Bip01 L Thigh=1.2" "Bip01 Spine=1,1,1.05" ... -o out.mdl [--no-mirror] [--stride n]
+                              [--reference <seq>[:frame] | rest] [--no-ground] [--body n]
+                                            bones made longer or shorter: a factor is a bone's length (where the bones hanging
+                                            from it stand), x,y,z in its own axes; the other side follows unless --no-mirror.
+                                            Every animation keeps its turns, those in <name>01.mdl too (read for their boxes, not
+                                            changed); the roots and every travel follow the legs (--stride), the feet stay on
+                                            the ground (fitted over every frame that stands; --reference: the pose of its level)`,
   },
   reskin: {
     run: reskin,

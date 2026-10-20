@@ -3,6 +3,25 @@
 The newest first. A version that changes what a model's file looks like, or that a model made before needs
 mending for, says so under **Mind**.
 
+## Not released yet
+
+- **`reproportion`** (src/reproportion.mjs, `smak reproportion`): a skeleton's bones made longer or shorter, a tall
+  thin robot on the soldier's. A factor is a bone's length, where the bones hanging from it stand, a number or
+  `[x, y, z]` in its own axes; the other side follows unless told; Biped bones by any of their names. A bone's
+  rest position and its position scale multiplied together carry every frame of every animation, those in
+  `<name>01.mdl` files too, which are not written: every turn is kept to the bit. The roots' x and y and every
+  travel grow with the legs (the stride, measured hip to foot), so a walk's planted foot does not slide; their
+  height is a line fitted over every frame that stands, so the feet stay on the floor standing, walking and
+  crouching. Hit boxes and attachments grow with their bones, the eye goes with the nearest, and every
+  animation's box is measured again. Points stay in their bones: rigid pieces keep their shape. Factors of 1
+  give the file back byte for byte. On Half-Life's soldier, legs 1.2 and shoulders 0.8: the lowest point of
+  idle, crouch and combat idle within 0.2 of where it was, all 82 animations' boxes measured.
+- **Animations kept in other files are read**: `frameValues`, `readSequence` and `poseAt` take `groups`, the bytes
+  of `<name>01.mdl` and the rest by their group's number, which `sequenceFilesOf(file, src)` reads beside a model;
+  `sequenceGroups` lists the groups. Without them they say, as before, that the animation is kept in another file.
+- **`setBoneValues`** (bones' rest values and scales, nothing else touched), **`modelBoxes`** and **`setModelBoxes`**
+  (the header's eye and four boxes).
+
 ## 0.21.0 (2026-10-20)
 
 From the figures research (a robot of rigid hard-surface pieces on Half-Life's soldier, its parts made in plain

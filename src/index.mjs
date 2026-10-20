@@ -24,6 +24,7 @@ export * from "./contract.mjs";
 export * as workshop from "./workshop.mjs";
 export * as solids from "./solids.mjs";
 export * from "./linkage.mjs";
+export * from "./reproportion.mjs";
 export * from "./unwrap.mjs";
 export * from "./blender.mjs";
 // the workshop's noise and colour helpers by name too, for painting by place (`paint` is in place.mjs)

@@ -47,6 +47,7 @@ It makes a model from nothing and exercises every part of the kit. If every test
 | Replace or add textures; recolour by palette; export and import PNG / BMP | Edit animations kept in separate `name01.mdl` files |
 | Replace or add animations, and the events (sounds) on their frames | Show the engine's real lighting: its pictures are a plain stand-in |
 | Add bones to a model | Run or test anything inside the game |
+| Make a skeleton's bones longer or shorter (`reproportion`): every turn of every animation kept, those in `name01.mdl` files too, the feet on the ground and a walk's stride as long as the legs | Stretch a body's points with its bones: each stays in its bone's space, so a skinned thigh made longer parts from its knee |
 | Check a model against GoldSrc's and Xash's limits | |
 | Draw a model from any side, or as the player sees a weapon, into a PNG | |
 | Paint a model by where a point is on its body, across all its textures | Give the two sides of a body different marks where they share the same pixels of a texture, until one side has pixels of its own (`ownPixels`: a copy in a texture of its own) |
@@ -102,6 +103,8 @@ node bin/smak.mjs sequence <mdl> <anim> -o a.json  /  sequence-set  /  sequence-
 node bin/smak.mjs sequence-add <mdl> --from sitstand --frames 80-57 --name kneel_down -o out.mdl [--loop] [--fps 25]
                                                    a new animation of frames of one it has ("80-57": backwards; "57,58,57")
 node bin/smak.mjs reskin <mdl> rules.mjs -o out.mdl [--body n] [--pictures dir]   a game's model re-skinned by rules
+node bin/smak.mjs reproportion <mdl> "Bip01 L Thigh=1.2" "Bip01 L Clavicle=0.8" -o out.mdl   bones longer or shorter, every
+                                                   animation kept, the feet on the ground (docs/API.md, "A skeleton's proportions")
 node bin/smak.mjs inline <mdl> -o out.mdl          put the textures of <name>t.mdl inside the model
 node bin/smak.mjs obj <file.obj> -o out.mdl [--scale n] [--up y|z] [--turn deg] [--ground] [--centre] [--name x.mdl]
                                                    a model from a Wavefront .obj, its .mtl and pictures found beside it
@@ -783,6 +786,12 @@ const { mdl, report } = putRigid(src, { pieces: withUV(pieces, layout), texture,
 const hits = motionOverlaps(mdl, pieces, undefined, { space: "rest" });        // pairs the animations drive together
 ```
 
+- **Proportions first.** A soldier's skeleton is a soldier's: for a tall, thin robot make its legs longer and its
+  shoulders narrower before any piece is laid on it, `reproportion(src, { "Bip01 L Thigh": 1.2, "Bip01 L Calf":
+  1.2, "Bip01 L Clavicle": 0.8 }, { groups: sequenceFilesOf(file, src) })`. A factor is a bone's length (where the
+  bones under it stand); the other side follows; the turns of every animation stay, the roots are raised so the
+  feet stand where they stood and every walk's travel grows with the legs. The model's own body is not stretched
+  (its points stay in their bones): look at it from the front and the side, then build on the new skeleton.
 - **One piece, one bone, one convex solid** where you can: `motionOverlaps` measures convex pieces (a part of
   several solids is several pieces). Pairs on bones next to each other (`near`) are a joint's own parts; pairs
   on bones apart are faults to move or shrink.
@@ -1162,7 +1171,7 @@ or `smak wad-make my_stone.png "{my_bars.png" -o mine.wad`, each texture named a
 | A moved entity is not where it was put, in the game | The game loaded another file of that name. Ask where the mod looks first. |
 | `not a studio model, version 10` | A Source model, a sprite, or a `name01.mdl` / `namet.mdl` side file. Open the main file. |
 | Meshes have `texture: null`; grey model | The textures are in `<name>t.mdl`. The command line reads them itself; in a script call `withTextures(src, readFileSync("namet.mdl"))` first. |
-| `an animation kept in another file` | The model has `name01.mdl` sequence files. Those animations cannot be read or changed. |
+| `an animation kept in another file` | The model has `name01.mdl` sequence files. Read them by giving the files: `readSequence(mdl, name, 0, sequenceFilesOf(file, mdl))` (`poseAt` and `frameValues` take them too). They cannot be changed here; `reproportion` carries them through the bones, their files untouched. |
 | An empty picture | A blank submodel. Use the right `--body`. |
 | `the file is cut short or broken` | Something in it points past its end. Copy it again from the mod. |
 | `the bodypart X has no submodel` | The engine needs one at least: give it one with no meshes. |
