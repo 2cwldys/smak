@@ -42,3 +42,5 @@ export * from "./import-model.mjs";
 export * from "./import-files.mjs";
 export * from "./import-rig.mjs";
 export * from "./jpeg.mjs";
+// the figure judges: style, texture and shape against a game's own figures (src/figures/)
+export * as figures from "./figures/index.mjs";
