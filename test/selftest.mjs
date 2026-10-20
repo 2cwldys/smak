@@ -88,7 +88,7 @@ const areas = [
   "78-floorplan", // a map's space from a floor plan of height plans, and a texture lifted off its view
   "79-video", // a video of models and maps from a shot list: camera paths, a turntable, a GIF written here
   "80-map-overlay", // a map's edges laid over a picture of it, and the camera found that lays them best
-  "81-rigid", // a bodypart added that keeps every body number, rigid pieces laid into as many as the limits need
+  "81-rigid", // a bodypart added that keeps every body number, one taken out, the header named, rigid pieces laid into as many as the limits need
   "82-solids", // convex solids in plain JavaScript: closed, facing out, convex, their points counted
   "83-kitbash", // the kitbash kit's 45 parts: closed, within their reach, the same for one seed
   "84-linkage", // a piston across a hinge: the anchors on its axis found, animations kept elsewhere named

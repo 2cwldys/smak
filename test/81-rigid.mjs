@@ -1,5 +1,6 @@
 // Rigid pieces in bodyparts of their own: a bodypart added after the others keeps every body number the model
-// had (`addBodypart`), and pieces each on one bone are laid into as many new bodyparts as the engine's 2048
+// had (`addBodypart`), one taken out counts them again or says what would change (`removeBodypart`), the
+// header's name is written (`setModelName`), and pieces each on one bone are laid into as many new bodyparts as the engine's 2048
 // points and normals a submodel need (`putRigid`), every one checked, read back and moved by the animations
 // without stretching.
 //
@@ -71,6 +72,64 @@ test("addBodypart: a bodypart after the others, every body number showing what i
   sure(smak.bodyOf(two, 6)[2] === 1 && smak.bodyOf(two, 6)[0] === 0, `body 6: ${smak.bodyOf(two, 6)}`);
   sure(smak.bodyOf(two, 5)[2] === 0, "body 5 shows the first of the new bodypart");
   sure(!smak.check(two).errors.length, smak.check(two).errors.join("; "));
+});
+
+test("removeBodypart: a bodypart taken out, the numbers counted again where nothing changes, refused where it would", () => {
+  const was = shownBy(hinge);
+  const refused = (run, pattern) => {
+    try {
+      run();
+    } catch (e) {
+      return pattern.test(e.message) || `it said: ${e.message}`;
+    }
+    return "it did not refuse";
+  };
+  // the last: every number shows the same body as before
+  const last = smak.removeBodypart(hinge, "end");
+  const info = smak.readMdl(last.mdl);
+  sure(info.bodyparts.length === 1 && info.bodyparts[0].name === "body", "one bodypart left");
+  sure(last.removed.name === "end" && last.removed.models.map((m) => `${m.name}:${m.tris}`).join() === "none:0,c:12,d:12", JSON.stringify(last.removed)); // prettier-ignore
+  sure(!last.changed.length && last.bases.join() === "1", JSON.stringify(last));
+  was.forEach((shown, body) => sure(smak.bodyOf(last.mdl, body)[0] === shown[0], `body ${body}`));
+  sure(last.bodies.map((b) => b.now).join() === "0,1,0,1,0,1", JSON.stringify(last.bodies));
+  sure(!smak.check(last.mdl).errors.length, smak.check(last.mdl).errors.join("; "));
+  sure(last.mdl.length === hinge.length, "the file keeps its size: the table written where it was");
+  // the first, of two bodies, before one of three: the new base would make bodies 1 to 4 show another end, so refused
+  const said = refused(() => smak.removeBodypart(hinge, 0), /changes what 4 body numbers show: body 1 would show c instead of none; body 2 would show d instead of c/); // prettier-ignore
+  sure(said === true, `refused: ${said}`);
+  const renumbered = smak.removeBodypart(hinge, 0, { renumber: true });
+  sure(renumbered.changed.join() === "1,2,3,4" && renumbered.bases.join() === "1", JSON.stringify(renumbered.changed));
+  renumbered.bodies.forEach(({ was: body, now }) =>
+    sure(smak.bodyOf(renumbered.mdl, now)[0] === was[body][1], `body ${body} is now ${now}`),
+  );
+  const kept = smak.removeBodypart(hinge, "body", { keep: true });
+  sure(!kept.changed.length && kept.bases.join() === "2", JSON.stringify(kept.bases));
+  was.forEach((shown, body) => sure(smak.bodyOf(kept.mdl, body)[0] === shown[1], `kept, body ${body}`));
+  // the counterpart of addBodypart: the file shows what it showed
+  const back = smak.removeBodypart(smak.addBodypart(hinge, "gear"), "gear").mdl;
+  sure(JSON.stringify(shownBy(back)) === JSON.stringify(was), "added and taken out");
+  const tris = (mdl) => JSON.stringify(smak.posed(mdl, { seq: "bend", frame: 4, body: 5 }).tris.map((t) => t.c.map((c) => c.p)));
+  sure(tris(back) === tris(hinge), "drawn as it was");
+  sure(refused(() => smak.removeBodypart(hinge, "tail"), /no bodypart "tail": it has 0 body, 1 end/) === true, "no such bodypart"); // prettier-ignore
+  sure(refused(() => smak.removeBodypart(last.mdl, 0), /only bodypart/) === true, "the only one");
+});
+
+test("setModelName: the header's name written, and read back by modelName; nothing else changed", () => {
+  sure(smak.modelName(hinge) === "hinge.mdl", smak.modelName(hinge));
+  const named = smak.setModelName(hinge, "player/robot/robot.mdl");
+  sure(smak.modelName(named) === "player/robot/robot.mdl", smak.modelName(named));
+  const shorter = smak.setModelName(named, "r.mdl");
+  sure(smak.modelName(shorter) === "r.mdl" && shorter.subarray(8, 72).every((b, i) => i < 5 || b === 0), "the old name's letters cleared"); // prettier-ignore
+  sure(named.subarray(72).equals(hinge.subarray(72)) && named.length === hinge.length, "only the name");
+  for (const wrong of ["", "x".repeat(64), "robotĀ.mdl"]) {
+    let said = "";
+    try {
+      smak.setModelName(hinge, wrong);
+    } catch (e) {
+      said = e.message;
+    }
+    sure(/1 to 63 Latin-1 letters/.test(said), `${JSON.stringify(wrong)}: ${said}`);
+  }
 });
 
 // 640 boxes of 8 points each, on both bones: past one submodel's 2048 points twice over (their normals, six a bone,

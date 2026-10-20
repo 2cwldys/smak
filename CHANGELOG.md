@@ -15,6 +15,11 @@ mending for, says so under **Mind**.
   applied, and the lowest point of the feet each frame; the feet are found by their Biped names in English or
   Italian, and where a foot touches is the middle of its lowest points, so a flat sole is not read as its heel
   one frame and its toe the next. The figures research measured a robot's walk against the model under it so.
+- **`removeBodypart`**, the counterpart of `addBodypart`: a bodypart taken out and the body numbers counted again
+  over those that remain, with the map from every old number to the new one that shows the same; where a number
+  the file had would show another submodel, it is refused and says which, unless told to renumber or to keep the
+  other bodyparts' bases. **`modelName`** and **`setModelName`**: the name in the header read and written (a
+  player made from The Specialists' merc said `D:\half-life\TS\models\player\merc\merc.mdl` inside).
 
 ## 0.22.0 (2026-10-20)
 

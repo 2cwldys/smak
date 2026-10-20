@@ -11,12 +11,12 @@
 //               frameValues sequenceGroups events attachments hitboxes boneControllers drawnCorners modelBoxes
 //   posing      restPose poseAt poseBetween poseOf boneMatrices
 //               (matrices: 3 rows of 4, bone space -> model space)
-//   meshes      replaceMesh addMesh addModel addBodypart emptyMesh clearModel filterMesh
+//   meshes      replaceMesh addMesh addModel addBodypart removeBodypart emptyMesh clearModel filterMesh
 //   pictures    retexture replaceTexture withTextures
 //   animations  replaceSequence addSequence setEvents addBones
 //   a monster's setHitboxes autoHitboxes setAttachments setBoneControllers setModelBoxes
 //   bones       setBoneValues (their rest and scale; reproportion.mjs changes a skeleton's lengths by it)
-//   whole       writeMdl
+//   whole       writeMdl modelName setModelName
 
 import { engineLayout } from "./layout.mjs";
 
@@ -763,6 +763,109 @@ export function addBodypart(src, name, models = [name]) {
   file.head.writeInt32LE(file.add(table), HDR.bodypartindex);
   file.head.writeInt32LE(count + 1, HDR.numbodyparts);
   return engineLayout(file.whole());
+}
+
+/**
+ * Returns { mdl, removed, bases, bodies, changed }: a copy of the file with one bodypart taken out (`which`: its
+ * number or its name), the counterpart of addBodypart. The bodyparts after it move up one, and every one left is
+ * given the base a compiler writes (`basesByRule`: the product of the counts before it), so the body numbers are
+ * counted again over the bodyparts that remain.
+ * A body number the game asks for is read by the engine as floor(body / base) % count for each bodypart. Where
+ * the new bases would make a number the file had show another submodel of a bodypart that remains (the bodypart
+ * taken out had several submodels, and one after it has several too), it throws and says which numbers, unless
+ * told: `renumber: true` takes the new numbers (`bodies` says, for every old number, the new one that shows what
+ * it showed), `keep: true` keeps the bases the others had instead, so that every number shows what it showed of
+ * them (two numbers may then show the same).
+ *   removed  { name, models: [{ name, tris }] }: what was taken out
+ *   bases    each remaining bodypart's base
+ *   bodies   [{ was, now }]: every body number the file had, and the one that shows the same submodels now
+ *   changed  the body numbers that show something else of the bodyparts that remain ([] unless renumbered)
+ * It throws when the model has no such bodypart, or only that one (the engine needs one at least).
+ */
+export function removeBodypart(src, which, { renumber = false, keep = false } = {}) {
+  const info = readMdl(src);
+  const parts = info.bodyparts;
+  const k = typeof which === "number" ? which : parts.findIndex((bp) => bp.name === which);
+  if (!parts[k])
+    throw new Error(
+      `removeBodypart: no bodypart ${JSON.stringify(which)}: it has ${parts.map((bp, i) => `${i} ${bp.name}`).join(", ")}`,
+    );
+  if (parts.length === 1)
+    throw new Error(`removeBodypart: ${parts[k].name} is the model's only bodypart, and the engine needs one`);
+  const left = parts.map((_, i) => i).filter((i) => i !== k);
+  let product = 1;
+  const byRule = left.map((i) => {
+    const own = product;
+    product *= parts[i].models.length;
+    return own;
+  });
+  const bases = keep ? left.map((i) => parts[i].base) : byRule;
+  // every body number the file had: what it showed of each bodypart that remains, before and after
+  const count = Math.max(1, ...parts.map((bp) => bp.base * bp.models.length));
+  const shownBy = (body, base, n) => (n ? Math.floor(body / base) % n : 0);
+  const bodies = [];
+  const changed = [];
+  for (let body = 0; body < count; body++) {
+    const was = left.map((i) => shownBy(body, parts[i].base, parts[i].models.length));
+    const now = left.map((i, j) => shownBy(body, bases[j], parts[i].models.length));
+    bodies.push({ was: body, now: was.reduce((sum, m, j) => sum + m * bases[j], 0) });
+    if (was.some((m, j) => m !== now[j])) changed.push(body);
+  }
+  if (changed.length && !renumber) {
+    const said = changed
+      .slice(0, 6)
+      .map((body) => {
+        const swaps = left.flatMap((i, j) => {
+          const models = parts[i].models;
+          const was = models[shownBy(body, parts[i].base, models.length)].name;
+          const now = models[shownBy(body, bases[j], models.length)].name;
+          return was === now ? [] : [`${now} instead of ${was}`];
+        });
+        return `body ${body} would show ${swaps.join(", ")}`;
+      })
+      .join("; ");
+    throw new Error(
+      `removeBodypart: taking ${parts[k].name} out changes what ${changed.length} body numbers show: ${said}${changed.length > 6 ? " ..." : ""}. Give { renumber: true } for the new numbers (\`bodies\` maps the old to the new), or { keep: true } to keep the other bodyparts' bases`,
+    );
+  }
+  // the table written again where it was, one entry shorter (the last entry's room left as zeros): the file
+  // keeps its size
+  const out = Buffer.from(src);
+  const oldTable = int32(src, HDR.bodypartindex);
+  const table = Buffer.alloc(parts.length * BODYPART.sizeof);
+  left.forEach((i, j) => {
+    src.copy(table, j * BODYPART.sizeof, oldTable + i * BODYPART.sizeof, oldTable + (i + 1) * BODYPART.sizeof);
+    table.writeInt32LE(bases[j], j * BODYPART.sizeof + BODYPART.base);
+  });
+  table.copy(out, oldTable);
+  out.writeInt32LE(left.length, HDR.numbodyparts);
+  return {
+    mdl: engineLayout(out),
+    removed: {
+      name: parts[k].name,
+      models: parts[k].models.map((m) => ({ name: m.name, tris: m.meshes.reduce((n, mesh) => n + mesh.numtris, 0) })),
+    },
+    bases,
+    bodies,
+    changed,
+  };
+}
+
+/** The name in the model's header (studiomdl writes the file's name there: `models/player/x/x.mdl`). */
+export const modelName = (mdl) => textAt(mdl, HDR.name, LONG_NAME);
+
+/**
+ * Returns a copy of the file with another name in its header: a model made from another keeps that one's name
+ * until told (a player made from the merc still says merc.mdl inside). At most 63 letters, of Latin-1.
+ */
+export function setModelName(src, name) {
+  const latin1 = typeof name === "string" && [...name].every((ch) => ch.charCodeAt(0) >= 1 && ch.charCodeAt(0) <= 255);
+  if (!latin1 || !name.length || name.length > LONG_NAME - 1)
+    throw new Error(`setModelName: a name of 1 to ${LONG_NAME - 1} Latin-1 letters, not ${JSON.stringify(name)}`);
+  const out = Buffer.from(src);
+  out.fill(0, HDR.name, HDR.name + LONG_NAME);
+  writeName(out, HDR.name, name, LONG_NAME);
+  return out;
 }
 
 /**

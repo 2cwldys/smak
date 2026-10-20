@@ -52,6 +52,7 @@ It makes a model from nothing and exercises every part of the kit. If every test
 | Check a model against GoldSrc's and Xash's limits | |
 | Draw a model from any side, or as the player sees a weapon, into a PNG | |
 | Paint a model by where a point is on its body, across all its textures | Give the two sides of a body different marks where they share the same pixels of a texture, until one side has pixels of its own (`ownPixels`: a copy in a texture of its own) |
+| Take a bodypart out, the body numbers counted again (`removeBodypart`), and give the file its own name inside (`setModelName`) | Take one out where a body number the game asks for would then show another body: it is refused, unless told to renumber or to keep the bases |
 | Add a body again as a new body in a texture of its own, and paint a garment on chosen islands of it | |
 | Tell what an old picture is, pixel by pixel (mail, plate, a strap), as layers that every pass of paint reads, with the distance to their edges and their regions' places on the body | Tell what a picture shows without a rule from you: a layer is your function of colour, texture and place |
 | Find a model's loose pieces and take them off; move a part between models on one skeleton | Put a body under armour that has none: taking such a piece off leaves a gap |
@@ -798,7 +799,10 @@ const hits = motionOverlaps(mdl, pieces, undefined, { space: "rest" });        /
   several solids is several pieces). Pairs on bones next to each other (`near`) are a joint's own parts; pairs
   on bones apart are faults to move or shrink.
 - **`putRigid` keeps the model's own bodies**: its bodyparts come after them, one submodel each, as many as the
-  2048 points a submodel need. Every animation and body number the game uses still works.
+  2048 points a submodel need. Every animation and body number the game uses still works. A body the figure
+  replaces (a player's own, emptied with `clearModel`) can then go: `removeBodypart(mdl, 0)` counts the numbers
+  again and refuses where one the game asks for would show another body; name the file inside with
+  `setModelName(mdl, "robot.mdl")`, or it keeps the original's.
 - **The paint**: `unwrap` lays each piece out as its own net at one texel density (give a left and its right one
   `share`, a piece of the middle a `mirror` plane), `withUV` puts the places on the corners; paint the picture by
   place (`paint`), or bake a detailed copy onto it in Blender with `bakeMaps` where the machine has Blender.

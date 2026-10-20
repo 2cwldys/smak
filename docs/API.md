@@ -57,6 +57,7 @@ A point of a mesh in model space, in some pose: `apply34(pose[corner.bone], corn
 | `addMesh(src, { bodypart, model })` | One more mesh in a submodel, empty; `replaceMesh` fills it. For a part that needs a texture of its own. |
 | `addModel(src, bodypart, name)` | One more submodel in a bodypart, with one empty mesh. Its number is the old count. |
 | `addBodypart(src, name, models = [name])` | One more bodypart after the others, a submodel (with one empty mesh) for each name in `models`. Its base is the product of the counts before it, so every body number the file had shows what it showed and the new bodypart's first submodel. The engine draws a submodel of every bodypart: one of a single submodel is always shown. |
+| `removeBodypart(src, which, { renumber, keep })` | A bodypart taken out (`which`: its number or name), the counterpart of `addBodypart`: those after it move up one, and every one left gets the base a compiler writes, so the body numbers are counted again. → `{ mdl, removed: { name, models: [{ name, tris }] }, bases, bodies: [{ was, now }], changed }`: `bodies` maps every body number the file had to the one that shows the same submodels now. Where the new bases would make a number the file had show another submodel of a bodypart that stays (the one taken out had several, and one after it has several too), it throws naming them, unless `renumber: true` (take the new numbers; `changed` lists the old ones that now show something else) or `keep: true` (keep the other bodyparts' bases: every number shows what it showed of them). Throws for a bodypart it has not, or its only one. |
 | `emptyMesh(src, where)` | Leaves a mesh without triangles. |
 | `filterMesh(src, where, keep)` | Keeps the triangles for which `keep([bone, bone, bone])` is true. |
 | `addBones(src, [{ name, parent, pos, rot }])` | More bones after the ones it has, at rest in every animation. Old bones keep their numbers. |
@@ -213,6 +214,10 @@ writes a file from tables that are already in the format's own terms (points in 
 mesh). Prefer `buildMdl`, which takes triangles and passes the rest on.
 A bodypart needs one submodel at least (the engine divides a body number by how many it has): one with none is
 refused. A submodel with no meshes is what shows nothing.
+
+`modelName(b)` reads the name in the header (studiomdl writes the file's path there:
+`D:\half-life\TS\models\player\merc\merc.mdl`); `setModelName(src, name)` writes another, 1 to 63 Latin-1
+letters, nothing else changed: a model made from another says that one's name inside until told.
 
 `buildMdl({ name, bones, bodyparts, sequences, smooth = 40, ownNormals = false, hitboxes, attachments, controllers, eyes, min, max, bbmin, bbmax })`
 (`src/build.mjs`):
