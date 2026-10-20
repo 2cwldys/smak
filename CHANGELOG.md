@@ -3,7 +3,7 @@
 The newest first. A version that changes what a model's file looks like, or that a model made before needs
 mending for, says so under **Mind**.
 
-## Not released yet
+## 0.23.0 (2026-10-20)
 
 - **Animations kept in other files are posed everywhere a model is posed**: `posed`, `render`, `strip`
   (and `sheet`, `animationGif`), `poseBetween`, `posesFor`, `findPiston` and `motionOverlaps` (its `still` pose

@@ -4,7 +4,7 @@ Tools for making and changing GoldSrc models (`.mdl`: Half-Life and its mods), b
 coding agent such as Claude Code. You say what you want; the agent writes small scripts with this kit, draws the
 result into pictures to check its own work, and hands you a `.mdl` to try in the game.
 
-Version 0.22.0. An early release, made for an agent to work. For the person it has two pages in the browser: a
+Version 0.23.0. An early release, made for an agent to work. For the person it has two pages in the browser: a
 **viewer** that shows any two models side by side, turning and playing their animations together, and an
 **editor** for touching up a model by hand (its animations, events and textures; not its shape), on a project
 file the agent can work on too (`editor/README.md`).
@@ -139,8 +139,10 @@ body 0: `info` shows the body numbers, and `--body N` picks one.
 
 ## What is new
 
-0.22.0 brings `reproportion`: a skeleton's bones made longer or shorter (a tall, thin robot on the soldier's),
-every animation kept, those in `<name>01.mdl` files too, the feet on the ground and the stride grown with the legs.
+0.23.0 finishes the tools for figures of rigid pieces: animations kept in `<name>01.mdl` files posed everywhere
+(pictures, pistons, overlaps) and `footSlide`; `removeBodypart` and the header's name; `cullHidden` and `reducePieces`,
+the faces never seen taken out and each piece brought down within a shape tolerance; `unwrap` laying nets; and
+`reproportion` keeping a hit box's thickness.
 
 Every version's changes, the newest first: [CHANGELOG.md](CHANGELOG.md).
 
