@@ -2,8 +2,21 @@
 // man's piece against the woman's, a body's weight against the others of its file. A worn piece (a helmet, a
 // pauldron, a pack) is made in one bone's space, so that is where it is measured: +x, +y and +z there are the
 // bone's own, which `bodyIn` hands over as they are (in a biped's head bone +x is usually up and +y forwards:
-// look before trusting).
-import { readMdl, apply34, inverse34 } from "./mdl.mjs";
+// look before trusting). And pieces that hang on bones driven into each other by the animations
+// (`motionOverlaps`).
+import {
+  readMdl,
+  apply34,
+  inverse34,
+  mul34,
+  boneParents,
+  restPose,
+  poseAt,
+  sequenceAt,
+  sequences,
+} from "./mdl.mjs";
+import { posesFor } from "./linkage.mjs";
+import { planesOf } from "./solids.mjs";
 import { posed } from "./render.mjs";
 import { sub, dot, cross, unit, box } from "./vec.mjs";
 import { FRONT } from "./mesh.mjs";
@@ -338,4 +351,125 @@ export function bodyCounts(src, bodypart = 0) {
     .sort((a, b) => a - b);
   list.median = counts.length ? counts[Math.floor(counts.length / 2)] : 0;
   return list;
+}
+
+/** Two pieces whose middles are farther apart than this share of their two reaches together cannot touch. */
+const OVERLAP_TOLERANCE = 0.25;
+
+/**
+ * Rigid convex pieces on bones driven into each other by the animations: for each pair on two bones, how much
+ * deeper a corner of one goes inside the other than it does as built (the rest pose, or `still`), frame by frame.
+ * Only pairs whose spheres (each piece's middle and its farthest corner) meet in a frame are measured.
+ *   pieces   [{ bone, tris, name? }], each convex (as `solids` makes them): `bone` a name or a number, `tris`
+ *            [[{ p } x3]] or triangles of points, in the bone's space (or in model space at rest, `space: "rest"`)
+ *   seqs     the animations, by name or number (every one the file keeps when not given); those kept in other
+ *            files are left out and named in `skipped`
+ *   options  { step = 2 (every how many frames), tol = 0.25 (the depth past which a pair is told), still: { seq,
+ *            frame } (the pose the pieces are built in; the rest pose unless told), space = "bone" }
+ * Returns { built, sequences: [{ name, frames, pairs }], worst, skipped }: `built` the pairs already more than
+ * `tol` inside each other as built ({ a, b, deep }); each sequence's `pairs` [{ a, b, deep, frame, near }],
+ * deepest first, `deep` how much deeper than built, `near` true for bones next to each other (the same parent,
+ * or one the other's parent or grandparent: a joint's own parts sit in each other by design); `worst` the
+ * deepest of all ({ a, b, deep, frame, sequence }, or null). `a` and `b` are the pieces' names (their numbers
+ * when they have none).
+ */
+export function motionOverlaps(
+  src,
+  pieces,
+  seqs,
+  { step = 2, tol = OVERLAP_TOLERANCE, still = null, space = "bone" } = {},
+) {
+  const names = readMdl(src).bones;
+  const parents = boneParents(src);
+  const into = space === "rest" ? restPose(src).map(inverse34) : null;
+  const ps = pieces.map((piece, k) => {
+    const bone = typeof piece.bone === "number" ? piece.bone : names.indexOf(piece.bone);
+    if (names[bone] === undefined)
+      throw new Error(`motionOverlaps: no bone ${piece.bone}: it has ${names.join(", ")}`);
+    const tris = cornersOf(piece.tris).map((t) => (into ? t.map((p) => apply34(into[bone], p)) : t));
+    const pts = [...new Map(tris.flat().map((p) => [p.join(), p])).values()];
+    const c = [0, 1, 2].map((a) => pts.reduce((s, p) => s + p[a], 0) / pts.length);
+    const r = Math.max(...pts.map((p) => Math.hypot(p[0] - c[0], p[1] - c[1], p[2] - c[2])));
+    return { name: piece.name ?? k, bone, pts, c, r, planes: planesOf(tris) };
+  });
+  const nearBones = (a, b) =>
+    a === b ||
+    parents[a] === b ||
+    parents[b] === a ||
+    parents[a] === parents[b] ||
+    parents[parents[a]] === b ||
+    parents[parents[b]] === a;
+  // how deep a point is inside a convex piece: 0 outside it
+  const depthIn = (q, p) => {
+    let d = Infinity;
+    for (const pl of q.planes) {
+      const s = pl.d - dot(pl.n, p);
+      if (s <= 0) return 0;
+      d = Math.min(d, s);
+    }
+    return d;
+  };
+  const depthOf = (pose, inv, a, b) => {
+    const T = mul34(inv[b.bone], pose[a.bone]);
+    let deep = 0;
+    for (const p of a.pts) deep = Math.max(deep, depthIn(b, apply34(T, p)));
+    return deep;
+  };
+  const meet = (pose) => {
+    const C = ps.map((p) => apply34(pose[p.bone], p.c));
+    return (i, j) => Math.hypot(...sub(C[i], C[j])) < ps[i].r + ps[j].r;
+  };
+  const standing = still ? poseAt(src, sequenceAt(src, still.seq ?? 0), still.frame ?? 0) : restPose(src);
+  const builtDepth = new Map();
+  {
+    const inv = standing.map(inverse34);
+    const touching = meet(standing);
+    for (let i = 0; i < ps.length; i++)
+      for (let j = 0; j < ps.length; j++)
+        if (ps[i].bone !== ps[j].bone && touching(i, j))
+          builtDepth.set(i * ps.length + j, depthOf(standing, inv, ps[i], ps[j]));
+  }
+  // the pairs in each other as built, each once (the deeper of its two ways), their names in order
+  const builtPairs = new Map();
+  for (const [key, deep] of builtDepth) {
+    if (deep <= tol) continue;
+    const [a, b] = [ps[Math.floor(key / ps.length)].name, ps[key % ps.length].name].sort();
+    const was = builtPairs.get(JSON.stringify([a, b]));
+    if (!was || deep > was.deep) builtPairs.set(JSON.stringify([a, b]), { a, b, deep: +deep.toFixed(3) });
+  }
+  const built = [...builtPairs.values()].sort((x, y) => y.deep - x.deep);
+  const skipped = [];
+  const sequencesOut = [];
+  let worst = null;
+  for (const which of seqs ?? sequences(src).map((_, n) => n)) {
+    const { poses, used, skipped: left } = posesFor(src, { seqs: [which], step });
+    skipped.push(...left);
+    if (!used.length) continue;
+    const pairs = new Map();
+    poses.forEach((pose, f) => {
+      const inv = pose.map(inverse34);
+      const touching = meet(pose);
+      for (let i = 0; i < ps.length; i++)
+        for (let j = 0; j < ps.length; j++) {
+          if (ps[i].bone === ps[j].bone || !touching(i, j)) continue;
+          const deep = depthOf(pose, inv, ps[i], ps[j]) - (builtDepth.get(i * ps.length + j) ?? 0);
+          if (deep <= tol) continue;
+          const [a, b] = [ps[i].name, ps[j].name].sort();
+          const key = JSON.stringify([a, b]);
+          const was = pairs.get(key);
+          if (!was || deep > was.deep)
+            pairs.set(key, {
+              a,
+              b,
+              deep: +deep.toFixed(3),
+              frame: f * step,
+              near: nearBones(ps[i].bone, ps[j].bone),
+            });
+        }
+    });
+    const list = [...pairs.values()].sort((x, y) => y.deep - x.deep);
+    sequencesOut.push({ name: used[0], frames: poses.length, pairs: list });
+    if (list.length && (!worst || list[0].deep > worst.deep)) worst = { ...list[0], sequence: used[0] };
+  }
+  return { built, sequences: sequencesOut, worst, skipped };
 }

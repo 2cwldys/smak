@@ -515,12 +515,23 @@ it is measured. Two files on one skeleton give the same space for a bone of the 
 | `fitBetween(from, to, { uniform, points, boxes })` | The fit `p * k + t`, each axis its own, that takes one piece to another: `{ k, t, scale, worst, by, at(p), back(p) }`. From two lists of the same points in the same order when they are that (`by: "points"`, `worst` the farthest a point is left), else from their boxes (`by: "boxes"`). A game's woman's helmet from the man's: about 0.84 and a shift. |
 | `clearance(inner, shell, { centre, sides })` | Is this inside that: `{ inside, outside, open, tightest: { gap, at, on }, worst: { out, at, on }, fits }`. Counts of the inner points that the shell covers, that poke through it, and that it does not reach (below a helmet's rim); the inside point nearest the wall and its gap in units; the outside point farthest out. |
 | `bodyCounts(src, bodypart = 0)` | `[{ body, name, tris, verts, norms, textures }]` for every body, and `.median`: a new body's weight against the file's own. |
+| `motionOverlaps(src, pieces, seqs, { step = 2, tol = 0.25, still, space = "bone" })` | Rigid convex pieces driven into each other by the animations: `{ built, sequences: [{ name, frames, pairs: [{ a, b, deep, frame, near }] }], worst, skipped }`. See below. |
 
 `clearance` looks from the middle of the inner points through each of them: a point is **inside** when the line
 leaves the shell beyond it, **outside** when it has left the shell before reaching it, **open** when it never
 leaves it. The line leaves through a face it meets from behind, so a lining, or a cone that closes a helmet's
 inside, is not counted: the gap is to the wall. `inner` is points or triangles; `shell` triangles from `bodyIn`
 or from the workshop, in the same space. It is right for a shell that its wearer's middle sees all of.
+
+`motionOverlaps` is for pieces each on one bone, each convex (as `solids` makes them), given as `[{ bone, tris,
+name? }]` with `tris` in the bone's space (or in model space at rest, `space: "rest"`). For each pair on two bones,
+frame by frame (every `step`th of each animation of `seqs`, all the file keeps unless told), it measures how deep
+the corners of one go inside the other, past how deep they are as built (the rest pose, or `still: { seq, frame
+}`), and tells the pairs deeper than `tol`. Only pairs whose spheres (a piece's middle and its farthest corner)
+meet are measured. `built`: the pairs already in each other as built; `near`: the bones are next to each other
+(the same parent, or one the other's parent or grandparent), where a joint's own parts sit in each other by
+design, against pairs on bones apart, which are faults. Only corners are tested: two blocks crossing edge to edge
+with no corner inside are not seen. Animations kept in other files are named in `skipped`.
 
 ```js
 const helm = bodyIn(helmets, 2, "Bip01 Head"), where = boxIn(helmets, 2, "Bip01 Head");          // the game's own, to sit a new one by

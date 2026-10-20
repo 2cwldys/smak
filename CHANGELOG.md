@@ -23,6 +23,10 @@ JavaScript), the tools that are not about that one robot:
   the other, anchored where the rod strays least from the cylinder through the animations, and sized to stay in
   it. On Half-Life's soldier it finds what the research's own found, and says what that one passed over in
   silence: two of the animations it was given are kept in another file and were never posed (`skipped`).
+- **`motionOverlaps`** (src/wear.mjs): rigid convex pieces on bones that the animations drive into each other,
+  how much deeper than they stand as built, frame by frame, each pair told as on bones next to each other (a
+  joint's own parts) or apart (a fault); only pairs whose spheres meet are measured. 436 of the robot's pieces
+  through the soldier's walk and run in under a second.
 
 - **`buildMdl({ skins })`**: skin families after the first, each the textures it changes by the name of the one
   each stands for (of the same size); a script or an entity shows family n with skin n. A bought character in
