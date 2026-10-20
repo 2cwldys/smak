@@ -3,7 +3,7 @@
 The newest first. A version that changes what a model's file looks like, or that a model made before needs
 mending for, says so under **Mind**.
 
-## Not released yet
+## 0.21.0 (2026-10-20)
 
 From the figures research (a robot of rigid hard-surface pieces on Half-Life's soldier, its parts made in plain
 JavaScript), the tools that are not about that one robot:

@@ -4,7 +4,7 @@ Tools for making and changing GoldSrc models (`.mdl`: Half-Life and its mods), b
 coding agent such as Claude Code. You say what you want; the agent writes small scripts with this kit, draws the
 result into pictures to check its own work, and hands you a `.mdl` to try in the game.
 
-Version 0.20.0. An early release, made for an agent to work. For the person it has two pages in the browser: a
+Version 0.21.0. An early release, made for an agent to work. For the person it has two pages in the browser: a
 **viewer** that shows any two models side by side, turning and playing their animations together, and an
 **editor** for touching up a model by hand (its animations, events and textures; not its shape), on a project
 file the agent can work on too (`editor/README.md`).
@@ -139,10 +139,10 @@ body 0: `info` shows the body numbers, and `--body N` picks one.
 
 ## What is new
 
-0.20.0 makes maps that read as the game's own: ground with relief, cliffs and a skyline, worn paths, grass,
-flowers and trees strewn as the game strews them, a forest's edge, ambient sounds, detail textures, the
-sizes of the game's doors, steps and roofs, half-timbered houses and fences, and interiors (`dressRoom`:
-rooms dressed for their use, with galleries, torches and places kept for what happens there).
+0.21.0 takes in the spec builder of Steven Linn's fork (`smak build`: models, maps, textures, sounds, music,
+sprites and videos from a JSON spec; a mod's own profile in a map spec) and brings tools for figures of rigid
+hard-surface pieces: `addBodypart` and `putRigid`, convex `solids`, a kitbash kit of 45 parts, `findPiston`,
+`motionOverlaps`, `unwrap`, and a bake through Blender where the machine has it.
 
 Every version's changes, the newest first: [CHANGELOG.md](CHANGELOG.md).
 
