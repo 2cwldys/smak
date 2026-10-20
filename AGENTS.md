@@ -49,6 +49,8 @@ It makes a model from nothing and exercises every part of the kit. If every test
 | Add bones to a model | Run or test anything inside the game |
 | Pose the animations kept in `name01.mdl` files wherever a model is posed: its pictures, `motionOverlaps`, `findPiston`, `footSlide` (`groups: sequenceFilesOf(file, src)`; the command line reads them beside the model) | Write them: they are read, and `reproportion` carries them through the bones untouched |
 | Make a skeleton's bones longer or shorter (`reproportion`): every turn of every animation kept, those in `name01.mdl` files too, the feet on the ground and a walk's stride as long as the legs | Stretch a body's points with its bones: each stays in its bone's space, so a skinned thigh made longer parts from its knee |
+| Say whether a figure belongs to a game's manner and where not: its style (52 measures), its texture as painting and its shape (silhouettes and mesh), each held against the game's own figures, with the part, band or texture at fault and what to do (`smak figure-judge`, `figure-texture`, `figure-shape`); the game's manner is its profile's (`figureStyle`: MSC, TS, Half-Life) | Ship a game's figures or their measures: the corpus is surveyed from the installed game into a library of the person's (`smak figure-survey`). Say whether the owner will like it: the judges tell manners between games, and a game from its remake only weakly; the looks are the owner's to judge |
+| Hold a figure against a reference in the manner wanted: a picture of an atlas at its pixels a texel, masks cut from a screenshot, or a set of models; the model drawn in the reference's own pose and views (`masksLikeReference`) | Find the pose that matches a reference's picture: the pose is given (the bones' matrices, from a module of the person's) |
 | Check a model against GoldSrc's and Xash's limits | |
 | Draw a model from any side, or as the player sees a weapon, into a PNG | |
 | Paint a model by where a point is on its body, across all its textures | Give the two sides of a body different marks where they share the same pixels of a texture, until one side has pixels of its own (`ownPixels`: a copy in a texture of its own) |
@@ -108,6 +110,12 @@ node bin/smak.mjs sequence-add <mdl> --from sitstand --frames 80-57 --name kneel
 node bin/smak.mjs reskin <mdl> rules.mjs -o out.mdl [--body n] [--pictures dir]   a game's model re-skinned by rules
 node bin/smak.mjs reproportion <mdl> "Bip01 L Thigh=1.2" "Bip01 L Clavicle=0.8" -o out.mdl   bones longer or shorter, every
                                                    animation kept, the feet on the ground (docs/API.md, "A skeleton's proportions")
+node bin/smak.mjs figure-survey <Half-Life folder> --mod <msc|ts|halflife> [--library f.json]   the game's own figures
+                                                   measured into a library of yours (~/.smak/figures.json): the figure judges' corpus
+node bin/smak.mjs figure-judge <mdl> --mod <profile> [--all] [--json]   the style judge: a score 0 to 100, what is out, what to do
+node bin/smak.mjs figure-texture <mdl|atlas.png> --mod <profile> [--reference atlas.png --reference-scale 4] [--sheet s.png]
+node bin/smak.mjs figure-shape <mdl|pic.png --mask m.png> --mod <profile> [--reference front=mask.png ...] [--pose pose.mjs]
+node bin/smak.mjs figure-validate <library.json> [--judge style|texture|shape]   does a judge tell the corpora apart (AUC)
 node bin/smak.mjs inline <mdl> -o out.mdl          put the textures of <name>t.mdl inside the model
 node bin/smak.mjs obj <file.obj> -o out.mdl [--scale n] [--up y|z] [--turn deg] [--ground] [--centre] [--name x.mdl]
                                                    a model from a Wavefront .obj, its .mtl and pictures found beside it
@@ -818,6 +826,31 @@ const hits = motionOverlaps(mdl, pieces, undefined, { space: "rest" });        /
   them, or tell the person what was not measured.
 - **The feet**: `footSlide(mdl, "walk", { groups })` says how far a walk's planted foot slides with its travel
   applied, and the lowest point of every frame: hold the figure against the model it is built on.
+
+### Does a figure fit the game? The figure judges
+
+Three judges hold a figure against the game's own figures (`docs/API.md`, "The figure judges"): **style** (52
+measures of the model: shape, texture as laid, colour, proportions and parts told but not scored), **texture** (the
+painting: repetition, flat fills, ramps, speckle, slant, charts, occlusion, value), **shape** (silhouettes from
+four sides and the mesh: holes, notches, inner edges, symmetry, pieces, layers, mirror, likeness, boxes).
+
+1. **The corpus first, once, on the person's machine**: `smak figure-survey <Half-Life folder> --mod ts` (or msc,
+   halflife; `--as <name>` for a game with no profile). It measures the installed game's figures into their library
+   (`~/.smak/figures.json`, or `--library`); a few minutes for the shape judge, which draws each figure. Never copy
+   the library into the kit or a shared repository: it is measures of the game's files. Survey two or three games:
+   the yardstick each judge tells distances in is the library's, all its figures together.
+2. **Judge**: `smak figure-judge robot.mdl --mod ts`, `figure-texture robot.mdl --mod ts`, `figure-shape robot.mdl
+   --mod ts`. Read the findings farthest first: each says the measure, the corpus' middle half, where on the body
+   and what to do. The profile's weights make the measures that tell THAT game's manner count most.
+3. **A reference in the manner wanted**, when the game in development has few figures: a picture of its atlas
+   (`--reference atlas.png`, its pixels a texel found or `--reference-scale 4`), masks of its figure cut from a
+   screenshot (`--reference front=mask.png --reference back=...`), or a folder of its models. Hold the model in the
+   reference's own pose (`--pose pose.mjs`: a module exporting `pose(src)` and the views' cameras), or holes and
+   asymmetry measure the pose, not the build.
+4. **Tell the person what the judge cannot**: a corpus of many hands (MSC's) lets almost anything in; a small one
+   (the HD pack's seven) scores coarsely; a judge that tells two games apart may not tell a game from its remake.
+   The owner's eye is the last word: draw the figure beside the corpus' nearest (the style judge's `nearest`) with
+   `render` and `tile`, and show them.
 
 ### A helmet, or any worn piece: placed where the game's own sits, checked against what is under it
 

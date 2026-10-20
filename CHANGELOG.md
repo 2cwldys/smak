@@ -3,6 +3,32 @@
 The newest first. A version that changes what a model's file looks like, or that a model made before needs
 mending for, says so under **Mind**.
 
+## Not released yet
+
+- **The figure judges** (`src/figures/`, exported as `figures`), from the figures research: does a figure (a
+  humanoid model) belong to a game's manner, and where not. Three judges of measures that work for any GoldSrc game,
+  each holding a figure against a corpus of the game's own figures and saying what is off in words, with the part,
+  band or texture at fault and what to do:
+  - **style**: 52 measures of the model (`styleMeasures`: shape, proportions, texture as laid, colour, per part), a
+    score 0 to 100 against the corpus (`judgeStyle`), and the calibration it was validated by (`validateStyle`:
+    each corpus' own figures against foreign ones as AUC, the same characters in two manners, a confusion matrix);
+  - **texture**: the texture as painting (`textureMeasures`, 21 measures: repetition, flat fills, ramps, speckle,
+    slant, charts, an occlusion it follows, value, colours), from a model or from a picture of an atlas read back
+    at its pixels a texel (`textureOfPicture`: a screenshot of a UV editor at 4 pixels a texel reads 4.00), against
+    the corpus and a reference (`judgeTexture`);
+  - **shape**: silhouettes from four sides and the mesh (`shapeOfModel`, 20 measures: holes, notches, inner edges,
+    symmetry, pieces, layers, mirror, likeness, boxes), against the corpus and a reference's masks (`judgeShape`);
+    `masksLikeReference` draws a model in a reference's own pose and views, framed as its figure stands.
+- **The corpus is never in the kit**: `surveyFigures` (`smak figure-survey`) measures the installed game's figures
+  into a library of the person's (`~/.smak/figures.json`, or SMAK_FIGURES), each game a corpus beside the others.
+- **Each game's manner is its profile's** `figureStyle` (exported as `FIGURE_STYLE`), apart from a map's
+  `character.figures`: the corpus, which judges apply, the groups the style judge scores (shape, texture and
+  colour: proportions tell characters apart, not manners), and each judge's weights, how far that game's figures
+  stand from the other games' on each measure. `profiles/mastersword.mjs` (MSC), `profiles/specialists.mjs` (The
+  Specialists' players) and the new **`profiles/halflife.mjs`** (Half-Life, and its HD pack with `kind: "hd"`; for
+  maps, `GOLDSRC` with the game's folders). `figureStyleOf` finds one by name, file or object.
+- `smak figure-survey`, `figure-judge`, `figure-texture`, `figure-shape` and `figure-validate`.
+
 ## 0.23.0 (2026-10-20)
 
 - **Animations kept in other files are posed everywhere a model is posed**: `posed`, `render`, `strip`

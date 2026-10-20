@@ -895,6 +895,126 @@ a reduced piece is laid out again. `reducePieces(pieces, options)` → `{ pieces
 every piece, `reduced` the numbers of those made lighter. A texel at 3 a unit is 0.33: a `tol` under half of it
 does not show.
 
+## The figure judges (`src/figures/`, exported as `figures`)
+
+Does a figure (a humanoid model: a man, a robot, an orc) belong to a game's manner, and where not? Three judges,
+each of measures that work for any GoldSrc game, hold it against a **corpus of the game's own figures**. The kit
+ships no corpus and no game's measures: `surveyFigures` (`smak figure-survey`) measures the figures of the game as
+it is installed into a **library** of the person's (a JSON file outside the kit). What each game's manner is, is
+its **profile's** `figureStyle` (profiles export it as `FIGURE_STYLE`): which measures tell it apart and how much
+each weighs, the groups the style judge scores, which judges apply.
+
+```js
+import { figures as F } from "./smak/src/index.mjs";
+const library = F.readLibrary();                                   // ~/.smak/figures.json, or SMAK_FIGURES
+F.surveyFigures("C:/Games/Half-Life/ts/models", { corpus: "ts", library }); F.writeLibrary(library);
+const style = await F.figureStyleOf("ts");                         // The Specialists' manner (profiles/specialists.mjs)
+const f = F.figureFacts("robot.mdl");                              // { skip } when it is no standing figure
+const { measures, by } = F.styleMeasures(f);
+const { weights } = F.styleSetup(library.style, { weights: style.weights.style, groups: style.groups });
+const verdict = F.judgeStyle(measures, F.prepareStyle(F.styleCorpus(library.style, ["ts"]), weights), { hash: f.hash, textures: by.textures, parts: by.parts }); // prettier-ignore
+console.log(F.styleTold("robot.mdl", verdict, ["ts"]));
+```
+
+**A figure's facts.** `figureFacts(src | file, { withPixels = true })` → `{ hash, by, pose, height, bones, joints,
+tris, textures }`, or `{ skip }` with why: the body's bones found by their Biped names (any language `boneIn` knows)
+or by plain words (`skeletonOf(names, parents)`: head, hands, feet, then up each limb), the figure as its idle's
+first frame stands (`standingSeq(src)`), its triangles in the body's frame (x to its left, y to its front, z up from
+its lowest point) with each one's bone, part (`PARTS`: head, torso, arm, hand, leg, foot, other), texture and
+texels; bodyparts named for what is carried (gun, weapon, sword, shield ...) left out. A snark on a Biped's bones
+does not stand (its head under 55% of its height, its feet over 40%, its legs under 20%). `loadFigure(file)` reads
+a file with its `<name>t.mdl`.
+
+**The library.** `surveyFigures(modelsFolder, { corpus, judges = JUDGES, library, log })` measures every figure of
+a folder for the three judges into `library` under the corpus' name (what it held of that corpus is replaced);
+`<name>t.mdl` and `<name>01.mdl` files, and models that are no standing figure, go in `library.style.skipped` with
+why. `readLibrary(file)`, `writeLibrary(library, file)`, `emptyLibrary()`, `libraryFile()` (SMAK_FIGURES, else
+`~/.smak/figures.json`), `libraryCorpora(library)`, `modelsFolderOf(given, folder)` (`<given>/<folder>/models`,
+`<given>/models` or the folder itself). Each judge reads its section, `library.style`, `.texture` or `.shape`:
+`{ models: { "corpus:file": { game, file, hash, measures, ... } } }`. The library's functions, `loadFigure` and `surveyFigures`
+read and write files themselves, unlike the rest of the kit.
+
+**Profiles.** `figureStyleOf(asked, { kind })` (async) → the figure style, whole: a name of `FIGURE_PROFILES`
+(`msc`/`mastersword`, `ts`/`specialists`, `halflife`/`hl`/`valve`, `valve_hd`, or `halflife` with `kind: "hd"`),
+a profile's `.mjs` (its `FIGURE_STYLE`, `FIGURE_STYLE_<KIND>`, or its default's `figureStyle`), a profile object
+(`maps.loadMod`'s, or a profile function's) or a style itself; none is `PLAIN_STYLE` (no weights: the library's
+corpora tell what separates them). A style: `{ name, title, corpus: { name, folders }, judges, groups, least,
+weights: { style, texture, shape }, validated, notes }`. `weightsFor(style, judge)` its weights for a judge, or
+`"library"`. The profile's `figureStyle` stands apart from its `character.figures` (a map's).
+
+| Profile | Corpus | What tells its manner most (style; texture; shape) |
+| --- | --- | --- |
+| `profiles/mastersword.mjs` | msc | texture reuse, symmetry, pieces, triangles; charts, slanted edges; layers, mirror. A weak corpus (many hands, Half-Life's own among them) |
+| `profiles/specialists.mjs` | ts | near-black, symmetry, hard edges, hand size, value; repetition, quiet areas, flat fills; mirror, asymmetry, a concave outline |
+| `profiles/halflife.mjs` | valve (`kind: "hd"`: valve_hd) | triangles, texel density, grain, arm length; charts, repetition; mirror, layers. The HD pack: hard edges, texture size, triangles; rectangular charts; mirror, holes (7 figures: coarse) |
+
+The weights are how far that game's figures stand from each other game's on each measure (the distance of the
+medians over the middle half, averaged over the other corpora), measured on 297 figures of seven corpora; the
+corpus a figure is held against is the person's own survey.
+
+### The style judge (`style.mjs`, `judge-style.mjs`)
+
+`styleMeasures(facts)` → `{ measures, by: { parts, textures } }`: 52 measures, each told by `STYLE_SAID[key]` =
+`[what it is, unit, log scale, what to do when low, when high, group]`. **shape**: tris, edge, edgeSpread, pieces,
+rigid (surface in pieces on one bone), open, hard (edges over 45°), boxy, sym; **proportion**: heads, shoulders,
+bulk, armLen, legLen, hand; **texture**: texels (texels across one height), texelSpread, textures, texSize, used,
+reuse, mirrored, stretch, chrome; **colour**: colours, value, contrast, sat, accent, dark, hues, grain, detail,
+flat; **part**: the texel density, share of the triangles and brightness of head, torso, arm, hand, leg, foot.
+
+| Function | Does |
+| --- | --- |
+| `styleSetup(data, { weights = "library", groups, least = 0.25 })` | `{ weights, sep }`: a profile's weights (`{ key: separation }`), `"library"` (every two of the library's corpora) or `"even"`; each times its group's share, under `least` dropped, groups not in `groups` told and not scored (`__told`); with the floors of the middle half (`__floor`, all the library's figures). |
+| `styleSeparation(data, games, { of })` | How far apart the corpora stand on each measure; `of`: one corpus from the others only (what a profile's weights are). |
+| `styleCorpus(data, games)`, `prepareStyle(corpus, weights)` | A corpus made ready: its scale, and each of its figures' distance to its nearest others (copies by hash and twins, the same mesh, left out). |
+| `judgeStyle(measures, prepared, { leave, hash, textures, parts, top = 5 })` | `{ score, place, fit, distance, findings, nearest, left }`: `score` 0 to 100 (as near as the nearer half of the corpus' own is 100, as far as the farthest 0), `fit` the measures one at a time, `findings` beyond the middle half farthest first with the part or texture at fault and what to do. |
+| `styleTold(name, verdict, games, { most = 12 })` | The verdict in words. `styleLeaveOneOut(prepared)`, `rangeOf(scores)`. |
+| `validateStyle(data, { weights, sep, weightsFor, games, remakes, alike })` | `{ text, report }`: every figure on every corpus; each corpus' own figures against foreign ones as AUC (1 perfect, 0.5 a coin), by distance and by `fit`; the same characters in two manners (`remakes`); who stands best where (`alike`: corpora counted as one). `weightsFor(game)`: each corpus with its own weights. |
+
+What the research found (2026-10-19): proportions and the parts' figures tell characters apart, not manners (the
+HD pack remakes Half-Life's characters at its proportions), so the profiles score shape, texture and colour and
+only tell the rest (`*` in the words).
+
+### The texture judge (`texture.mjs`, `texture-model.mjs`, `judge-texture.mjs`)
+
+A texture as painting, from a model (its UVs give the mask and the charts) or from a picture of an atlas.
+`TEX_SAID`: **motif** repeat, repeatAny (mirrored or turned too), marks, lightMarks; **light** flat (3x3 of one
+colour), ramp, speckle, grain; **hierarchy** cluster, quiet; **form** diagonal, chartRect, charts (per 10,000
+texels), chartDiag, aoFollow, aoFollowAll (darker where the surface is hidden: a cheap occlusion of the model);
+**value** value, contrast, dark, colours, sat.
+
+| Function | Does |
+| --- | --- |
+| `textureOfModel(src \| file \| facts)` | `{ measures, atlases }`: the figure's textures (chrome left out) as atlases, measured with the occlusion (`modelTextureMeasures(facts)`, `atlasesOf`, `occlusionOf`). |
+| `textureOfPicture(img, { box, scale, ground, tolerance })` | A picture of an atlas: the painting told from its ground (the commonest colour of the box's border unless given), brought back to one pixel a texel (`scale`, or found from the period of its hard steps, `periodOf`: a screenshot of an editor's UV view at 4 pixels a texel reads 4.00). `{ measures, atlases, scale }`. `atlasOfPicture`, `atlasOfTexture(tex, tris)`, `textureMeasures(atlases)` under it. |
+| `referenceOfMeasures(list)` | A reference of several figures (the game's own, or of the manner wanted): each measure's median. |
+| `judgeTexture(measures, data, games, ref, { leave, refName, yard })` | `{ fit, findings, toward, refDistance, refPlace, refCorpusMedian }`: the corpus measure by measure, then the reference (`{ measures }` or the measures), each measure apart in yardsticks (the library's middle halves over all its figures, `textureYardstick`), the distance over every measure both have, and the share of the corpus' figures nearer the reference. `textureTold(name, verdict, games, refName)` in words. |
+| `validateTexture(data, { refs, weights, games, alike })`, `textureSheet(items, data)`, `textureSeparation(data, { games, of })` | The validation (AUC, who stands best where, the references against each corpus); a picture of atlases side by side with every measure as a bar over the library's spread. |
+
+### The shape judge (`shape.mjs`, `silhouettes.mjs`, `judge-shape.mjs`)
+
+Silhouettes (from a model drawn from four sides, or masks) and the mesh. `SHAPE_SAID[key]` adds `from`: "picture"
+or "mesh". **Negative space** holes, fineHoles (in holes under 1% of the silhouette: seen through a frame), holeCount;
+**contour** concave, rough, notchS, notchM, notchL; **inside** edges, cells, cellGini; **symmetry** asym; **mesh**
+pieceGini, sizeRange, small, layers, deep, mirror (surface whose mirror is not on the model), alike (pieces with a
+near twin), boxes. Holes and notches are also told by band of the height (`BANDS`: head, torso, legs).
+
+| Function | Does |
+| --- | --- |
+| `shapeOfModel(src \| file, { masks, summaryViews, keep, groups })` | `{ measures, bands, views, where, pictures }`: its idle drawn from `VIEWS` (front 0°, threeq 45°, side 90°, back 150°) with both sides of every face, the picture measures averaged over `SUMMARY_VIEWS` (front, threeq, back), and the mesh's (`meshMeasures(facts)`). With `masks`, those silhouettes instead. |
+| `masksLikeReference(src, { pose, views, background, scale })` | A model drawn as a reference's figure is seen: in `pose` (a pose made to match the reference's), each view `{ mask, yaw, pitch, dist, fov, target }` from the reference's camera in perspective, framed so its top, bottom and middle across stand where the reference mask's figure does. → masks for `shapeOfModel(src, { masks })`: like with like. |
+| `shapeOfReference(masks)`, `shapeOfMasks(masks)`, `masksOnViewport(img, views)` | A reference from masks by view (`{ view: { mask, img } }`, `img` the picture under it for the inside's edges), summarised over its own views; masks cut from a screenshot of an editor's viewport (`maskOnViewport`: its grey ground, grid, axis lines and gizmos taken out). |
+| `silhouetteMeasures(mask, img)`, `modelSilhouettes(src, { views })`, `summary(views, names)` | One silhouette brought to 400 pixels tall and measured; a model's views; their summary. |
+| `judgeShape(x, data, games, ref, refName, { leave, yard })` | As the texture judge's, with the band or part at fault (`shapeWhere`); the reference's distance over the silhouette measures (`PICTURE_KEYS`). `shapeTold`, `validateShape(data, { refs, ours, reference, weights, games, alike })`, `shapeSheet(items)`. |
+
+What the research found: holes as a share are a trustworthy measure of a
+screenshot's mask, `holeCount` is not (it moves with the mask's settings); holes and asymmetry depend on the pose
+and the view, so hold a model against a reference in the reference's pose (`masksLikeReference`).
+
+**Shared**: `quart`, `medianOf`, `standing`, `separation(data, said, scaled, { games, of })`, `yardstick`,
+`aucOf(high, low)`, `judgeAgainst`, `prepareNear`, `nearTo` (`stats.mjs`, `compare.mjs`); `figureMask` and
+`pictureMeasures(img, mask)` (`pictures.mjs`): a figure in a render or a screenshot measured as pixels (colours,
+hard steps, blocks across its height).
+
 ## Blender, where there is one (`src/blender.mjs`)
 
 The one part of the kit that runs another program, and nothing else needs it. Blender is found by the program

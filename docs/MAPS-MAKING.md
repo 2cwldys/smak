@@ -310,6 +310,11 @@ key: "scriptfile", among: (name) => items.has(name), what: "an item's name" }`. 
 module whose default is a function that reads the game and returns the profile, as `profiles/mastersword.mjs`
 does.
 
+A profile may also carry the game's manner for the **figure judges** (`figureStyle`, apart from a map's
+`character.figures`): which measures tell its figures from other games', and how much each weighs (`docs/API.md`,
+"The figure judges"). The kit's three profiles export theirs as `FIGURE_STYLE`; `profiles/halflife.mjs` is
+Half-Life's, the maps' `GOLDSRC` with the game's folders and that.
+
 **What a profile cannot know.** It checks a map against what was written down, counted or read in the code. It
 does not run the game: a key that exists and is given a wrong meaning passes, and so does a script that is
 there and does the wrong thing. Say so when you report.
