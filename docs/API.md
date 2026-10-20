@@ -780,6 +780,21 @@ primary }] }`, `uv` for each triangle of each piece its three corners in texels.
 pieces back with each corner's `uv` 0 to 1, as `putRigid` and `buildMdl` take it. `unfold(tris, { up, alt, fold,
 axis })` is the net of one list of triangles: `[{ faces, flat }]`, `flat` each face's corners in units.
 
+## Blender, where there is one (`src/blender.mjs`)
+
+The one part of the kit that runs another program, and nothing else needs it. Blender is found by the program
+given, then the `SMAK_BLENDER` environment variable, then where it is usually installed (on Windows the newest
+`C:/Program Files/Blender Foundation/Blender */blender.exe`; `/Applications/Blender.app` on a Mac; `/usr/bin`,
+`/snap/bin` on Linux), then the PATH.
+
+| Function | Does |
+| --- | --- |
+| `findBlender({ blender })` | Its program's path, or null. `blenderPlaces(options)` lists where it looks, in order. |
+| `runBlender(script, args, { blender, timeout })` | `blender -b --factory-startup --python script -- ...args`, headless. → `{ lines, log }`: `lines` what the script printed after `[smak] `. Throws when Blender, or the script (a Python traceback), fails. |
+| `runBlenderJob(script, input, outDir, options)` | `input` written as `outDir/input.json`, and the script run with `-- input.json outDir`. |
+| `readFloatMap(file)` | A picture a script wrote as raw float32 RGBA with `file.json` (`{ width, height }`) beside it: `{ width, height, data }`, rows from the top. |
+| `bakeMaps(pairs, { width, height, outDir, maps, ao = 1, cage = 0.1, distance = 0.5, samples = 16, margin = 2, occluders, blender })` | A detailed copy baked onto a plain one, selected to active (`src/blender-bake.py`, Cycles on the CPU). `pairs`: `[{ low: { tris, uv }, high: { tris, colours } }]`, `uv` each low triangle's corners in pixels, `colours` one `[r, g, b]` a high triangle. `maps`: `"albedo"` (the high colours), `"ao"` (their occlusion, `ao` units out, with the `occluders`), `"normal"` (their normals in that space, 0 to 1). → `{ albedo, ao, normal, lines }`, each as `readFloatMap` gives it. |
+
 ## The workshop (`src/workshop.mjs`, exported as `workshop`)
 
 | | |

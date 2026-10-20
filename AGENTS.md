@@ -18,7 +18,8 @@ built by `smak build` (docs/SOUNDS.md and docs/SPRITES.md the sounds and sprites
 
 ## What it needs
 
-- **Node 18 or later.** Nothing else: no `npm install`, no browser, no compiler, no Blender, no studiomdl.
+- **Node 18 or later.** Nothing else: no `npm install`, no browser, no compiler, no Blender, no studiomdl. (One
+  bake, `bakeMaps`, runs Blender where the machine has it; nothing else does.)
 - **The mod's own model files**, for any work that changes an existing model. They are not in this kit. Ask the
   person where the mod is installed (for example `…/Half-Life/ts/models/`).
 - A way for you to look at a PNG. You must look at what you make; see "The loop".
@@ -757,6 +758,41 @@ const six = sheet(mdl, { body, seq: 0 }); writeFileSync("flask.png", png(six.wid
   same picture: the woman's helmet beside the man's).
 - A whole new **file** is `buildMdl` ("A whole new model"); a new shape in the place of a **weapon** the game
   holds is `swapMesh` ("A new shape in place of an old one"), which also fits it to the old one's grip.
+
+### A figure of rigid hard-surface pieces on a game's skeleton
+
+A robot, a suit of plates, a machine: many pieces, each wholly on one bone, so that nothing stretches when the
+game's own animations play. Build the pieces in model space at rest from `solids` and the kitbash kit, put them
+into new bodyparts with `putRigid`, and let the animations tell you what collides.
+
+```js
+// src: the game's model; knee, ankle, thigh, calf: its bones' numbers; candidatesA, candidatesB: points about the knee
+import { solids as S, putRigid, findPiston, motionOverlaps, unwrap, withUV, restPose, check } from "./smak/src/index.mjs";
+import { kitbash } from "./smak/kits/kitbash.mjs";
+
+const at = (bone) => restPose(src)[bone].map((row) => row[3]);                 // a joint, in model space at rest
+const shin = S.beam(at(knee), at(ankle), 2.4, 2.2, [1, 0, 0], { bevel: 0.3 });  // a solid between two joints
+const bolts = kitbash("boltRow", S.place(S.at(shin.place, 0, 1.1, 0), [0, 1, 0], [0, 0, 1]), 1.2, 7);
+const piston = findPiston(src, { boneA: thigh, boneB: calf, candidatesA, candidatesB });   // across the knee
+const pieces = [
+  { bone: calf, tris: [shin, ...bolts].flatMap(S.trisOf) },
+  ...(piston.found ? [{ bone: thigh, tris: piston.cylinder.flatMap(S.trisOf) }, { bone: calf, tris: piston.rod.flatMap(S.trisOf) }] : []),
+];
+const layout = unwrap(pieces, { density: 3, width: 256 });                     // nets on one picture, 3 texels a unit
+const { mdl, report } = putRigid(src, { pieces: withUV(pieces, layout), texture, space: "rest" });
+const hits = motionOverlaps(mdl, pieces, undefined, { space: "rest" });        // pairs the animations drive together
+```
+
+- **One piece, one bone, one convex solid** where you can: `motionOverlaps` measures convex pieces (a part of
+  several solids is several pieces). Pairs on bones next to each other (`near`) are a joint's own parts; pairs
+  on bones apart are faults to move or shrink.
+- **`putRigid` keeps the model's own bodies**: its bodyparts come after them, one submodel each, as many as the
+  2048 points a submodel need. Every animation and body number the game uses still works.
+- **The paint**: `unwrap` lays each piece out as its own net at one texel density (give a left and its right one
+  `share`, a piece of the middle a `mirror` plane), `withUV` puts the places on the corners; paint the picture by
+  place (`paint`), or bake a detailed copy onto it in Blender with `bakeMaps` where the machine has Blender.
+- `findPiston` and `motionOverlaps` pose every animation the file keeps unless told; those kept in other files
+  are listed in `skipped`: tell the person, or give the file's own `<name>01.mdl` animations another way.
 
 ### A helmet, or any worn piece: placed where the game's own sits, checked against what is under it
 

@@ -31,6 +31,14 @@ JavaScript), the tools that are not about that one robot:
   one texel density, packed by their shapes rather than their boxes, every corner on a whole texel; a left and
   its right on one set of texels (`share`), a piece of the middle by its one half (`mirror`); `withUV` puts the
   places on the corners for `putRigid`.
+- **Blender, where the machine has it** (src/blender.mjs, the kit's one outside program, and only for this):
+  `findBlender` (the program given, `SMAK_BLENDER`, the usual places, the PATH), `runBlender` and
+  `runBlenderJob` (a script headless on a JSON file), `readFloatMap` (the float pictures it writes), and
+  `bakeMaps`: a detailed copy's colours, occlusion and normals baked onto a plain one's picture, selected to
+  active. Its test bakes a cube and runs only where Blender is found.
+
+Of the research, the mech grammar, the hard suit, the paint's composing and the markings stay in it: they are
+one robot's, not the kit's.
 
 - **`buildMdl({ skins })`**: skin families after the first, each the textures it changes by the name of the one
   each stands for (of the same size); a script or an entity shows family n with skin n. A bought character in
