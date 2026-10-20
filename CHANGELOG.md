@@ -3,7 +3,7 @@
 The newest first. A version that changes what a model's file looks like, or that a model made before needs
 mending for, says so under **Mind**.
 
-## Not released yet
+## 0.22.0 (2026-10-20)
 
 - **`reproportion`** (src/reproportion.mjs, `smak reproportion`): a skeleton's bones made longer or shorter, a tall
   thin robot on the soldier's. A factor is a bone's length, where the bones hanging from it stand, a number or
