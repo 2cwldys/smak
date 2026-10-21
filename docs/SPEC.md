@@ -972,6 +972,45 @@ mod's profile") makes the map one of that mod's, with its folders given by `--ga
 `smak build tavern.json --game <Half-Life>/msc --game <Half-Life>/valve`. Its own .wad (the textures the spec
 paints) goes into the mod's folder beside the map.
 
+A profile's thing (`things: { name: { model, r, wall, lift, deep, turn, on } }`) is placed by its footprint: `r`
+half its length along the wall, `wall` how far its origin stands off the wall, `deep` how far it reaches into the
+room (`r` unless told), `lift` its origin over its foot; `turn` the yaw that faces the model into the room (one made
+facing -y, as a couch of The Specialists is, turns 90); `on` a piece of the kit's it stands on (`bench`, `desk`),
+put with it, the model on its top. A use's kinds may name the kit's pieces beside the mod's things (a warehouse of
+the game's boxes and the kit's crates). No piece is put within a player's box and a step of a place to start.
+
+### The Specialists' map
+
+`"mod": "profiles/specialists.mjs"` with `--game <Half-Life>/ts --game <Half-Life>/valve`. Its `spec` (SPEC in the
+profile, which says where each word was read from) gives:
+
+- textures of the game's two shipped .wad files, `specialists.wad` and `halflife.wad` (the game's 29 maps keep most
+  of theirs inside themselves, which a new map cannot name), each the one those maps wear most for its part: floors
+  `wood4a`, walls `crete33`, ceilings `fifties_ceil01`, doors `door006`, trim `basetrim02`, outside brick `wall1`,
+  roofs `masphalt4`; and words for a room's `surfaces`: `ts_tile`, `ts_brick`, `ts_concrete`, `ts_plaster`,
+  `ts_parquet`, `ts_planks`, `ts_asphalt`, `ts_street`, `ts_metal`, `ts_hazard`, `ts_glass`. The kit's dressing
+  pieces wear the game's too (crates `cardbox1`, barrels `metal_rusty5ccc`, desks `trrm_wood2`, consoles
+  `drkmtlt_bord11`);
+- props as `ts_model`, the class the game's maps place theirs with (627 in 14 maps);
+- rooms furnished by `use` with models the game's maps name (a model the game lacks stops a map loading):
+  `office` (computers on desks, office chairs, plants, paintings), `lobby` (couches against the walls, a coffee
+  table, plants, an armchair, pictures), `cafe` (a table, booths, chairs), `warehouse` (the game's boxes and the
+  kit's crates, shelves, barrels), `garage` (a dumpster, boxes, barrels, rubbish), `server` (consoles, cabinets),
+  `stairwell` (a plant), and for rooms open to the sky `alley` (a dumpster, rubbish, a street lamp), `plaza`
+  (benches, lamps, plants, a statue in the middle) and `rooftop` (machines, pipes, barrels). The game has no models
+  for a bathroom or a stove; its crates are brushes (`func_breakable`), which a use does not make.
+
+```json
+{ "spec": "smak.map/1", "name": "ts_offices", "mod": "../smak/profiles/specialists.mjs",
+  "rooms": [{ "id": "lobby", "size": [448, 320, 160], "use": "lobby", "surfaces": { "floor": "ts_parquet" } },
+            { "id": "office", "size": [384, 320, 128], "place": { "east_of": "lobby" }, "use": "office" },
+            { "id": "alley", "size": [384, 384, 256], "place": { "north_of": "office" }, "sky": true, "use": "alley",
+              "surfaces": { "floor": "ts_street", "walls": "ts_brick" } }],
+  "links": [{ "between": ["lobby", "office"], "kind": "door" }, { "between": ["office", "alley"], "kind": "door" }],
+  "entities": [{ "class": "info_player_deathmatch", "room": "lobby", "at": "against west", "facing": "east" },
+               { "class": "info_player_deathmatch", "room": "alley", "at": "corner ne", "facing": "west" }] }
+```
+
 ### A building in another map
 
 A map spec's building is put in a map made another way (an outdoor map of `carvePlan`, a sketch, a village of

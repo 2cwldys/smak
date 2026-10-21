@@ -1785,10 +1785,23 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
   // what the spec put there, as the spec's own furniture is
   const dressedProps = [];
   if ((spec.rooms ?? []).some((room) => room?.use)) {
+    // a place to start is kept clear too, a player's box and a step round it: a deathmatch map's dozen starts
+    // stood in its couches
+    const startsTaken = (spec.entities ?? []).flatMap((thing) => {
+      const room = rooms.get(thing?.room);
+      if (!room || !(/^info_player_/.test(thing.class ?? "") || profile?.starts.includes(thing.class))) return [];
+      if (thing.at && typeof thing.at === "object" && !Array.isArray(thing.at)) return [];
+      try {
+        const [x, y] = pointIn(room, thing.at);
+        return [{ min: [x - 24, y - 24], max: [x + 24, y + 24] }];
+      } catch {
+        return [];
+      }
+    });
     const dressed = dressRooms({
       rooms: [...rooms.values()].filter((room) => !room.sliver).map((room) => ({ id: room.id, min: room.min, max: room.max, spec: room.spec })),
       ways,
-      taken: furniturePieces.map((p) => ({ min: [p.min[0], p.min[1]], max: [p.max[0], p.max[1]] })),
+      taken: [...furniturePieces.map((p) => ({ min: [p.min[0], p.min[1]], max: [p.max[0], p.max[1]] })), ...startsTaken],
       seed: [...String(spec.name ?? "map")].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7),
       uses: profile?.spec?.uses,
       things: profile?.spec?.things,

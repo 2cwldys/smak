@@ -9,6 +9,7 @@
 //
 //   smak map-check city.bsp --mod smak/profiles/specialists.mjs --game <Half-Life>/ts --game <Half-Life>/valve
 //   smak map-character city.bsp --mod smak/profiles/specialists-roleplay.mjs --game <Half-Life>/ts
+//   smak build arena.json --mod smak/profiles/specialists.mjs --game <Half-Life>/ts --game <Half-Life>/valve   (SPEC)
 //
 // WHERE EACH FACT IS FROM. "The maps" are the 29 the game ships in ts/maps (version 3.0), read with this kit;
 // "the cities" are three role-play maps of the Havoc9 community, played on The Specialists
@@ -124,6 +125,117 @@ export const FIGURE_STYLE = {
 };
 
 /**
+ * What a map spec of The Specialists is built with where the spec says nothing (src/spec/map.mjs, `smak build
+ * --mod`; docs/SPEC.md, "A mod's map"): the game's textures, its props as its maps put them, and rooms furnished
+ * by their `use` with the game's own models. Read off the 29 maps on 2026-10-21:
+ *
+ *   textures  The maps keep most of their textures inside themselves or in .wad files the game does not ship
+ *             (2105 of the 2381 they wear); a map of one's own can name only the shipped ones: ts/specialists.wad
+ *             (116) and valve/halflife.wad. Each word below is the one of those two the maps wear most for that
+ *             part (by the area of floor, wall or ceiling, and the maps that wear it): wood4a the floor (4 maps,
+ *             the most of any shipped texture), crete33 the walls (the most wall), fifties_ceil01 the ceiling
+ *             (3 maps, the most ceiling), door006 a door (2), basetrim02 the trim (2), wall1 brick outside,
+ *             masphalt4 a roof and a yard (2); a room's use wears cardbox1 crates (3), metal_rusty5ccc barrels
+ *             (2), lab1_cab2 lockers, drkmtlt_bord11 consoles, +0drkmtl_scrn screens, trrm_wood2 desks, lab1_b4
+ *             machines (2 each), lab1_brd10 pipes (4), lab1_trim3 struts (3). More named, for a room's
+ *             `surfaces`: ts_tile, ts_brick, ts_concrete, ts_plaster, ts_parquet, ts_planks, ts_asphalt,
+ *             ts_street, ts_metal, ts_hazard, ts_glass.
+ *   props     a ts_model (627 in 14 maps; cycler_sprite 71 in 2, env_sprite 49 in 1): its `model`, `angles`.
+ *   things    only models the maps name (so the game has them; a model it has not stops a map loading), each
+ *             measured with this kit's reader posed in its first animation: `r` half its length along a wall,
+ *             `wall` its origin off the wall, `deep` how far it reaches into the room, `lift` its origin over its
+ *             foot (the game's potted plants stand on their middle), `turn` the yaw that faces it +x, its back
+ *             to -x, read from where the maps stand it (the nearest wall behind it: a couch's back is +y, 33 of
+ *             43 against a wall so) and from its pictures; a computer stands `on` a desk of the kit's (the maps
+ *             stand theirs on brush desks). The counts: [placed, in maps].
+ *   uses      office, lobby, cafe, warehouse, garage, server, stairwell, and in the open (`sky`) alley, plaza and
+ *             rooftop; the game has no models for a bathroom or a kitchen's stove, and its crates are brushes
+ *             (func_breakable, 1006 in 27 maps): a warehouse's crates are the kit's in cardbox1 beside the
+ *             game's boxes.
+ */
+// prettier-ignore
+export const SPEC = {
+  wads: ["specialists.wad", "halflife.wad"],
+  theme: { floor: "ts_floor", wall: "ts_wall", ceiling: "ts_ceiling", door: "ts_door", trim: "ts_trim", furniture: "ts_furniture", outside: "ts_outside", roof: "ts_roof" },
+  textures: {
+    ts_floor: { texture: "wood4a" },
+    ts_wall: { texture: "crete33" },
+    ts_ceiling: { texture: "fifties_ceil01" },
+    ts_door: { texture: "door006" },
+    ts_trim: { texture: "basetrim02" },
+    ts_furniture: { texture: "wood21" },
+    ts_outside: { texture: "wall1" },
+    ts_roof: { texture: "masphalt4" },
+    // what a room's use dresses it with (src/spec/dress.mjs's words)
+    crate: { texture: "cardbox1" },
+    barrel: { texture: "metal_rusty5ccc" },
+    locker: { texture: "lab1_cab2" },
+    console: { texture: "drkmtlt_bord11" },
+    screen: { texture: "+0drkmtl_scrn" },
+    desk: { texture: "trrm_wood2" },
+    machine: { texture: "lab1_b4" },
+    pipe: { texture: "lab1_brd10" },
+    strut: { texture: "lab1_trim3" },
+    // for a room's surfaces
+    ts_tile: { texture: "tilez1" },
+    ts_brick: { texture: "wall1" },
+    ts_concrete: { texture: "bigcrete2" },
+    ts_plaster: { texture: "plaster1" },
+    ts_parquet: { texture: "floor004" },
+    ts_planks: { texture: "wood4a" },
+    ts_asphalt: { texture: "masphalt4" },
+    ts_street: { texture: "masphalt5" },
+    ts_metal: { texture: "metal_rusty5eee" },
+    ts_hazard: { texture: "stripes2" },
+    ts_glass: { texture: "glass_dark" },
+  },
+  prop: { class: "ts_model" },
+  things: {
+    couch: { model: "models/schmung/sg_couch.mdl", r: 72, wall: 27, deep: 19, turn: 90 },                   // [43, 6]
+    sofa: { model: "models/3dm_sofa.mdl", r: 60, wall: 24, deep: 24, turn: 90 },                            // [14, 2]
+    armchair: { model: "models/schmung/sg_chair.mdl", r: 34, wall: 27, deep: 19, turn: 90 },                // [21, 4]
+    officeChair: { model: "models/3dm_chair.mdl", r: 22, wall: 19, deep: 19 },                              // [27, 1]
+    chair: { model: "models/schmung/sg_bkchair.mdl", r: 19, wall: 15, deep: 13, turn: 180 },                // [8, 1]
+    coffeeTable: { model: "models/sg_3dmtab.mdl", r: 54, turn: 90 },                                        // [6, 1]
+    table: { model: "models/schmung/sg_table2.mdl", r: 37 },                                                // [1, 1]
+    workstation: { model: "models/3dm_pc4.mdl", r: 16, wall: 35, deep: 0, turn: 180, on: "bench" },        // [6, 2]
+    workstation2: { model: "models/3dm_pc3.mdl", r: 20, wall: 35, deep: 0, turn: 180, on: "bench" },       // [1, 1]
+    booth: { model: "models/teahouse/lmd_singlebooth.mdl", r: 36, wall: 4, deep: 25, turn: 180 },          // [12, 1]
+    plant: { model: "models/xen/plants/xen_plant6b.mdl", r: 25, lift: 70 },                                // [45, 3]
+    plant2: { model: "models/xen/plants/xen_plant2b.mdl", r: 33, lift: 47 },                               // [25, 3]
+    plant8: { model: "models/xen/plants/xen_plant8b.mdl", r: 27, lift: 68 },                               // [24, 3]
+    tallPlant: { model: "models/ts_theatre/xt_plant2.mdl", r: 49, lift: 14 },                              // [6, 2]
+    statue: { model: "models/sg_cstatue.mdl", r: 21, wall: 7, deep: 14, lift: 1 },                         // [2, 2]
+    painting1: { model: "models/schmung/sg_paintinga1.mdl", r: 53, wall: 2, deep: 3, lift: 64 },           // [2, 1]
+    painting2: { model: "models/schmung/sg_paintinga2.mdl", r: 53, wall: 2, deep: 3, lift: 64 },           // [2, 1]
+    painting3: { model: "models/schmung/sg_paintinga3.mdl", r: 53, wall: 2, deep: 3, lift: 64 },           // [3, 1]
+    painting4: { model: "models/schmung/sg_paintinga4.mdl", r: 53, wall: 2, deep: 3, lift: 64 },           // [2, 1]
+    photo: { model: "models/schmung/sg_photb.mdl", r: 42, wall: 2, deep: 4, lift: 64 },                    // [2, 1]
+    box: { model: "models/hammertime/cg_box01.mdl", r: 22, wall: 22 },                                     // [2, 1]
+    box2: { model: "models/hammertime/cg_box02.mdl", r: 22, wall: 22 },                                    // [1, 1]
+    boxStack: { model: "models/hammertime/cg_box03.mdl", r: 47, wall: 23, deep: 23 },                      // [5, 1]
+    dumpster: { model: "models/xen/xen_trashcanb.mdl", r: 52, wall: 16, deep: 25 },                        // [4, 1]
+    trash: { model: "models/rdm_unmulch1.mdl", r: 40, wall: 28 },                                          // [2, 2]
+    bench: { model: "models/schmung/bench3.mdl", r: 55, wall: 21, deep: 17, turn: 90 },                    // [3, 1]
+    streetlamp: { model: "models/schmung/sg_streetlamp.mdl", r: 10, wall: 10, deep: 62 },                  // [8, 1]: its arm overhead
+  },
+  // each [what, the things or the kit's pieces it is one of, where, how many to a 256 x 256 of floor (the first at
+  // least one)], as src/spec/dress.mjs's uses are written
+  uses: {
+    office: [["desk", ["workstation", "workstation2"], "wall", 1], ["chair", ["officeChair"], "wall", 0.5], ["plant", ["plant", "plant2"], "corner", 0.5], ["picture", ["painting1", "painting3"], "wall", 0.4]],
+    lobby: [["couch", ["couch", "sofa"], "wall", 0.7], ["table", ["coffeeTable"], "middle", 0.5], ["plant", ["plant", "plant8", "tallPlant"], "corner", 1], ["armchair", ["armchair"], "wall", 0.4], ["picture", ["painting2", "painting4", "photo"], "wall", 0.5]],
+    cafe: [["table", ["table"], "middle", 0.5], ["booth", ["booth"], "wall", 0.8], ["chair", ["chair"], "wall", 0.5], ["plant", ["plant2"], "corner", 0.4]],
+    warehouse: [["boxes", ["boxStack", "box", "box2", "crate_stack", "crate_large"], "corner", 1.6], ["shelf", ["shelf"], "wall", 0.5], ["barrel", ["barrels", "barrel"], "corner", 0.6]],
+    garage: [["dumpster", ["dumpster"], "wall", 0.3], ["boxes", ["boxStack", "box"], "corner", 0.6], ["barrel", ["barrels"], "corner", 0.4], ["trash", ["trash"], "corner", 0.3]],
+    server: [["console", ["console_wide", "console"], "wall", 0.8], ["cabinet", ["cabinet", "locker"], "corner", 0.4], ["chair", ["officeChair"], "wall", 0.2]],
+    stairwell: [["plant", ["plant", "plant8"], "corner", 0.3]],
+    alley: [["dumpster", ["dumpster"], "wall", 0.4], ["trash", ["trash"], "corner", 0.6], ["lamp", ["streetlamp"], "wall", 0.3], ["boxes", ["box", "box2"], "corner", 0.5]],
+    plaza: [["bench", ["bench"], "wall", 0.4], ["lamp", ["streetlamp"], "wall", 0.3], ["plant", ["tallPlant"], "corner", 0.4], ["statue", ["statue"], "middle", 0.3]],
+    rooftop: [["machine", ["machine", "tank"], "wall", 0.3], ["pipes", ["pipes_up"], "wall", 0.2], ["barrel", ["barrels"], "corner", 0.3], ["boxes", ["box"], "corner", 0.2]],
+  },
+};
+
+/**
  * The profile, from the installed game:
  *   game      the Half-Life folder (the one that holds ts/ and valve/)
  *   folders   the game's folders themselves, the mod's first: `[<Half-Life>/ts, <Half-Life>/valve]`
@@ -172,6 +284,9 @@ export default function specialists({ game, folders, kind = "arena", cache } = {
       music: [],
       figures: against.figures,
     },
+
+    // what a map spec of the game is built with where it says nothing (SPEC, above)
+    spec: SPEC,
 
     // the figure judges' (FIGURE_STYLE, above)
     figureStyle: FIGURE_STYLE,

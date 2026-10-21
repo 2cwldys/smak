@@ -3,6 +3,22 @@
 The newest first. A version that changes what a model's file looks like, or that a model made before needs
 mending for, says so under **Mind**.
 
+## Not released yet
+
+- **The Specialists' map spec** (`profiles/specialists.mjs`, `SPEC`): a map spec with `"mod"` The Specialists is
+  built in the game's manner. Its textures are the shipped .wad files' (specialists.wad and halflife.wad; the
+  game's 29 maps keep most of theirs inside themselves), each the one those maps wear most for its part: wood4a
+  floors, crete33 walls, fifties_ceil01 ceilings, door006, wall1 brick outside, and more words for a room's
+  surfaces (ts_tile, ts_parquet, ts_asphalt, ts_metal...). A prop is a `ts_model`, as the maps place theirs. Rooms
+  are furnished by their `use`, with models the maps name, measured and turned as the maps stand them: `office`
+  (computers on desks, office chairs, plants, paintings), `lobby`, `cafe`, `warehouse`, `garage`, `server`,
+  `stairwell`, and in the open `alley`, `plaza` and `rooftop`. Where the game is installed, the tests find every
+  texture in its .wad files and every model under its very name, of the size the profile gives it.
+- A mod's thing for a room's use (`spec.things`) may say `deep` (how far it reaches into the room, when that is not
+  its `r`: a couch is long and shallow), `turn` (the yaw that faces a model made facing elsewhere into the room)
+  and `on` (a piece of the kit's it stands on, put with it: a computer on a desk).
+- A room's dressing keeps clear of the places to start: a start stood in a couch.
+
 ## 0.24.0 (2026-10-20)
 
 - **The figure judges** (`src/figures/`, exported as `figures`), from the figures research: does a figure (a
