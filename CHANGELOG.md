@@ -3,7 +3,7 @@
 The newest first. A version that changes what a model's file looks like, or that a model made before needs
 mending for, says so under **Mind**.
 
-## Not released yet
+## 0.24.0 (2026-10-20)
 
 - **The figure judges** (`src/figures/`, exported as `figures`), from the figures research: does a figure (a
   humanoid model) belong to a game's manner, and where not. Three judges of measures that work for any GoldSrc game,
