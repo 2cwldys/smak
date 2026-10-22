@@ -113,6 +113,7 @@ const areas = [
   "102-marble", // marble: veins over clouded stone, as tiles, let be bright
   "101-ts-map-dressing", // rooms dressed as thickly as the game's: along every wall, crates piled, desks in rows, couches about a table, a room's density
   "96-map-teams", // a map's two teams as ts_matchmode splits them, its spawn file, sight and walks across; profiles by name, the game found, a mod's own dressing, lamp faces
+  "95-rcbot-waypoints", // RCBot's .rcw read and written byte for byte; waypoints from the walk (a ladder, a jump, a crouching passage); smak map-waypoints
   "19-example-and-kit-faults", // the examples' wrong arguments and refused models; the kits' fittings and rings
 ];
 

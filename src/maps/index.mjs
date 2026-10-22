@@ -22,6 +22,8 @@ export * from "./rules.mjs";
 export * from "./scripts.mjs";
 export * from "./space.mjs";
 export * from "./reach.mjs";
+export * from "./rcbot.mjs";
+export * from "./waypoints.mjs";
 export * from "./figures.mjs";
 export * from "./sprites.mjs";
 export * from "./sky.mjs";

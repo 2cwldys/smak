@@ -113,6 +113,16 @@ mending for, says so under **Mind**.
   `"chandelier"` hung from its ceiling. Their glass is the room's fixture, a texture light where the mod has one.
 - **Fog** (a spec's `fog`): over the whole map as the mod draws it, its profile's `spec.fog` (The Specialists'
   `ts_fog`, written as ts_frigid writes it); a game with no fog of its own is warned of.
+- **Waypoints for bots** (`src/maps/waypoints.mjs`, `src/maps/rcbot.mjs`; `smak map-waypoints <map> --mod ts --out
+  <Half-Life>/rcbot`): RCBot's `.rcw` read and written byte for byte as the bot writes it (`readRcw`, `writeRcw`,
+  from its own WaypointLoad and WaypointSave, v1.51b13; 1112 of the bot's files written back unchanged), and
+  waypoints laid from the walk test (`waypointsOf`): one at each start, the foot and top of each ladder, each jump
+  to floor only a jump reaches with its landing, the ends of stairs, each opening, then every 160 units of walk,
+  corners and drops mended until every two neighbours are joined by a line a body walks (both ways) or drops
+  (one way), crouching waypoints in a passage only a crouching body fits, jumps and drops added where the paths
+  do not yet join what the walk does; only those got to from a start and leading back kept; the top of the sky
+  and clips over it left out; RCBot's limit of 1024 waypoints kept. The bot works out its visibility table itself.
+  `reachOf(map, { graph: true })` hands back the walk itself (`graph`, not enumerable) for what is built on it.
 
 ## 0.24.0 (2026-10-20)
 

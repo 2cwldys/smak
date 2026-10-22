@@ -22,7 +22,7 @@ This page covers reading a compiled map, its textures and `.wad` files, changing
 it ("Pictures", which also draws brush source). Writing brush source (`.map`) and compiling it are the other
 half of `src/maps/`, in `docs/MAPS-MAKING.md`. The command line has a command for most of this: `smak map-info`,
 `map-check`, `map-entities`, `map-set`, `map-plan`, `map-view`, `map-views`, `map-compare`, `map-reach`, `map-section`,
-`map-storeys`, `map-openings`, `map-measure`, `map-textures`, `wad`, `wad-make`, `map-compile` and `map-decompile` (`node bin/smak.mjs help`;
+`map-storeys`, `map-openings`, `map-measure`, `map-waypoints`, `map-textures`, `wad`, `wad-make`, `map-compile` and `map-decompile` (`node bin/smak.mjs help`;
 `AGENTS.md` has them with their recipes).
 
 ## What a compiled map is
@@ -784,6 +784,97 @@ parked 900 over where they fell, the squad warp, the freeze.
 give, and those its `libraryfolders.vdf` names) that holds the mod's folder. So `smak map-measure x.bsp --mod ts`
 and `smak map-character x.bsp --mod ts --kind compact` need no `--game`. `--kind` is handed to the profile (The
 Specialists': `arena`, `compact`, `roleplay`).
+## Waypoints for bots (`src/maps/waypoints.mjs`, `src/maps/rcbot.mjs`)
+
+A bot plays a map by its waypoints alone: it walks a straight line from one to the next along their paths, and
+where none is near it stands still. `waypointsOf(map, options)` lays them over the floor the walk test walks,
+for brush source or a compiled map; `writeRcw` writes them as RCBot's file, and `readRcw` reads one.
+`smak map-waypoints h9_te_meridian.bsp --mod ts --out <Half-Life>/rcbot` does both and puts the file where the
+bot looks for it (`--plan p.png`: drawn on the plan).
+
+```js
+const made = maps.waypointsOf(maps.readBsp(readFileSync("h9_te_meridian.bsp")), { spacing: 160 });
+console.log(made.facts, made.warnings);
+writeFileSync("h9_te_meridian.rcw", maps.writeRcw(made.waypoints, { mapName: "h9_te_meridian" }));
+```
+
+**RCBot's file.** RCBot (Paul Murphy's, "Cheeseh", for Half-Life 1 and its mods; The Specialists 3.0 is one)
+reads `<Half-Life>/rcbot/waypoints/<mod folder>/<map>.rcw`, `ts` for The Specialists. Read from its own code,
+`WaypointLoad` and `WaypointSave` in `dlls/waypoint.cpp` and the structures in `dlls/waypoint.h` of
+github.com/APGRoboCop/rcbotold, the same at tag v1.51b13 (what Havoc9's servers run) as at its master of
+2026; checked by reading and writing back, byte for byte, 1112 files the bot wrote (44 of The Specialists'
+maps, the rest other mods'). Little-endian, nothing between the parts:
+
+```
+header     52 bytes   char filetype[8] "RCBot\0" (strcmp: the two bytes after the 0 are anything);
+                      int version 4; int flags (bit 0: the visibility table is to be worked out again);
+                      int count (the bot has room for 1024); char mapname[32] (the map's, exactly, or no load)
+waypoints  16 each    int flags; float origin[3]: a player's origin there, 36 over the floor (18 crouching).
+                      One over 4096 on an axis is taken as deleted
+paths      per point  short count; short to[count]: one way each (both ways is two paths), any number
+```
+
+The flags this kit writes: `CROUCH` (bit 3: the bot crouches on its way to it), `LADDER` (bit 4: the foot and the
+top of a ladder, as the bot's own guide places them), `JUMP` (bit 19: on touching it the bot jumps, legs drawn
+up, towards the next; the path from it goes to where the jump lands). `RCW_FLAGS` names the rest. A new file
+has the visibility bit set: the bot then works the table out as the map loads (a line between every two
+waypoints), writes `rcbot/visibility/<mod>/<map>.rcv` and writes the `.rcw` again with the bit cleared, so no
+`.rcv` is written here. `readRcw(bytes)` gives `{ filetype, version, fileFlags, mapName, waypoints: [{ flags,
+origin, paths }] }`; `writeRcw(waypoints, { mapName, fileFlags, filetype, loose })` the file (`loose`: a path to a
+waypoint the file does not have, which old files hold, written as it is); `waypointFlagNames(flags)` the names.
+
+**How they are laid.** The map is walked as `reachOf` walks it (with jumps), on a grid of 8. Floor that nothing
+is seen to make is left out: the clip hulls take a sky brush as solid, so a map on an island in the sky
+(`ts_dojo`) has the top of its sky walked, or a player clip laid over it, and no player is meant there (a floor
+is seen when the upright line at its place meets the top of something not sky at it or a stair under it; the
+edge of a seen floor counts with it). First the places a
+waypoint has to be: each start; each ladder's foot and top; for each piece of floor of 4096 square units or
+more that only a jump reaches, where the jump is made from (a little way back) and where it lands (a little
+way in); the two ends of each flight of stairs or ramp rising 40 or more; the middle of each opening. Then the
+rest of the floor, the roomiest places first: a waypoint wherever none is within `spacing` units of walk (160).
+Each piece of floor is then given to its nearest waypoint by walk, and two whose pieces touch are joined both
+ways when a body walks the straight line between them, place by place, never more than a step up or down; a
+line that drops is joined one way (`drop`, 250 at the most: a fall of 250 costs about 11 health). Where two do
+not see their way (a corner), a waypoint goes at the place of the walk between them farthest off their line,
+and where the walk got into a piece only by dropping, at the top of that drop and where it lands; the pieces
+are given out again, eight times at the most. Then any two within 1.5 x `spacing` whose line is walked or
+dropped are joined, the nearest first, to `paths` (16) out of one. Floor where only a crouching body fits and
+that is the shorter way between two places a standing one walks (by more than twice, or the only way: a vent,
+a low passage; not the nook under a table or a stair) gets crouching waypoints, 96 apart, joined along the
+crawl. Where the paths still do not join what the walk does, a jump up (45 at most) out of a place a path gets
+into with no way back, and a drop into a place no path gets to, are added, the lowest first, and the pieces given
+out again (six rounds at most). Last, only the waypoints that a path from a start gets to and that lead back to
+one are kept: a bot sent anywhere else would never arrive or never leave (the warnings name those left out,
+`leftOut` lists them). Over `most` (1024) the
+spacing is made wider until they fit, and that is said.
+
+| Option | |
+| --- | --- |
+| `spacing` (160), `cell` (8) | how far apart by walk, and the grid the walk is on |
+| `jump`, `crouch` | false: no jumps, no crouching passages |
+| `paths` (16), `drop` (250), `most` (1024) | paths out of one waypoint; the highest drop a path goes down; the most waypoints |
+| `mod`, `doors`, `open`, `shut`, `walls`, `from`, `bodies`, `exits` | as `reachOf` takes them |
+
+It returns `{ waypoints: [{ origin, flags, paths, ways, kind }], leftOut, facts, warnings, spacing, cell, reach }`:
+`ways` says what each path is (`walk`, `drop`, `ladder`, `jump`), `kind` why the waypoint is there (`start`,
+`ladder`, `jump`, `landing`, `flight`, `opening`, `floor`, `corner`, `ledge`, `drop`, `crouch`).
+
+**What it is worth.** It is the walk test's geometry, not the bot: a line a body fits along is no proof that
+the bot's steering keeps to it near a wall, a jump is the arc of `reachOf` with the engine's numbers, and doors
+are open. Lifts (`func_plat`) and teleports are not waypointed (warnings say so), and what only a lift reaches is
+left out; nor are the bot's other kinds (cover, sniping, health, team). Held against the waypoints people made by
+hand for four of The Specialists' maps (Havoc9's files, 2026-10-21; 8 seconds a map or so, `ts_dojo` 35):
+
+```
+map            hand   these   paths   each hand-made one to the nearest of these (median, 90%, most)
+ts_hammertime   162     354    2148   44, 80, 138
+ts_dojo         154     341    2296   64, 145, 299
+ts_bikini       215     852    5401   53, 85, 135
+ts_lobby        251     365    2263   66, 766, 1316   (its top floors are got to and left by lift only)
+```
+
+They are denser than a person's and reach every place a person's do but those of lifts. Play the map with bots
+and watch where one stands still or runs into a wall (`rcbot waypoint on` shows them).
 
 ## Decompiling (`src/maps/decompile.mjs`, `fidelity.mjs`, `texlights.mjs`)
 
