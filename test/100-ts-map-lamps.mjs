@@ -51,8 +51,12 @@ test("The Specialists' rooms lit by the game's lamps: each lamp two tubes of +0~
     // on the ceiling, 2 thick, the size of its picture (the fake game's are 64 by 64), the picture once on its face
     const room = Object.values(report.rooms).find((r) => min[0] >= r.min[0] && max[0] <= r.max[0] && min[1] >= r.min[1] && max[1] <= r.max[1]);
     sure(room && Math.round(max[2]) === room.max[2] && Math.round(max[2] - min[2]) === 2 && Math.round(max[0] - min[0]) === 64 && Math.round(max[1] - min[1]) === 64, `a tube from ${min.join(" ")} to ${max.join(" ")}`);
+    // on its face the picture once: its texels at the face's corners are its own corners (laid along the room's
+    // longer side, it may be turned a quarter)
     const face = tube.faces.find((f) => f.u[2] === 0 && f.v[2] === 0 && smak.maps.planeOf(f.points).normal[2] < -0.9);
-    sure(face && Math.round(((min[0] + face.u[3]) % 64 + 64) % 64) === 0 && Math.round(((-max[1] + face.v[3]) % 64 + 64) % 64) === 0, `its picture's corner at its corner: ${JSON.stringify(face && [face.u, face.v])}`);
+    const texel = (p) => [0, 1].map((k) => { const a = k ? face.v : face.u; return Math.round((((p[0] * a[0] + p[1] * a[1] + p[2] * a[2]) / face.scale[k] + a[3]) % 64 + 64) % 64); });
+    const corners = [[min[0], min[1]], [max[0], min[1]], [min[0], max[1]], [max[0], max[1]]].map(([x, y]) => texel([x, y, min[2]]).join());
+    sure(face && corners.every((c) => ["0,0", "0,64", "64,0", "64,64"].includes(c)), `its picture's corners at its corners: ${corners.join(" ")}`);
   }
   // the texture lights: the fixture's and the sodium lamp the dock's ceiling wears, each [r, g, b, brightness] as the profile has them
   const texlights = map.entities.find((e) => e.classname === "info_texlights");

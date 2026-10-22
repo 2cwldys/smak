@@ -108,6 +108,12 @@ mending for, says so under **Mind**.
   Valve's lamps of 250 under its texture lights lit a spec's floors at 218 of 255; now a lobby, an office and a
   warehouse come to 83, within the game's own maps' 52 to 102.
 
+- **A room's lamps as it wants them** (`light.fixture`): `"panel"` on the ceiling (unless told), its tubes now laid
+  along the room's longer side (they lay along y in every room); `"sconce"` on its two longer walls in turn;
+  `"chandelier"` hung from its ceiling. Their glass is the room's fixture, a texture light where the mod has one.
+- **Fog** (a spec's `fog`): over the whole map as the mod draws it, its profile's `spec.fog` (The Specialists'
+  `ts_fog`, written as ts_frigid writes it); a game with no fog of its own is warned of.
+
 ## 0.24.0 (2026-10-20)
 
 - **The figure judges** (`src/figures/`, exported as `figures`), from the figures research: does a figure (a

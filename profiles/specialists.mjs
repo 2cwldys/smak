@@ -335,6 +335,9 @@ export const SPEC = {
   // Valve's lamps of 250 under the fixtures their floors were lit at 218 of 255 (the game's compact maps: 62 to 102,
   // its arenas 52 to 90); the fixtures alone, 91; composed, as below, in the band
   lighting: { lamp: 0, composed: { rhythm: 3, dim: 0.3, goal: 1.6, spill: 0, fade: 2, bounce: 2 } },
+  // fog over the whole map (a spec's `fog`): the game's ts_fog, as ts_frigid writes it (its one map with fog: near 2048,
+  // far 9000, color ".8 .8 .8")
+  fog: { class: "ts_fog", near: 2048, far: 9000, color: [0.8, 0.8, 0.8] },
   // what breaks (src/spec/map.mjs BREAKABLE_MATERIALS): the keys each material takes in the game's maps
   breakable: {
     keys: { respawntime: 45 },

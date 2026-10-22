@@ -30,6 +30,7 @@ import { lightReport } from "../maps/light.mjs";
 import { makeSky, skyFiles, SKY_KEYS } from "../maps/sky.mjs";
 import { PRECACHES_MODEL } from "../maps/entities.mjs";
 import { sweepOf, SAFE_DROP, LIGHT_REACH } from "../maps/sweep.mjs";
+import { sconce, chandelier } from "../maps/pieces.mjs";
 import { planOfSource, planOf, drawMap, sectionOf, viewsOf, aimedStands } from "../maps/draw.mjs";
 import { dressingOf } from "../maps/dressing.mjs";
 import { familyOf } from "../maps/families.mjs";
@@ -50,7 +51,9 @@ export const MAP_SPEC = "smak.map/1";
 const MAP_SIZE_WARN = 0.1;
 const MAP_SIZE_ERROR = 0.25;
 
-const TOP = ["spec", "name", "mod", "size", "wall", "grid", "theme", "textures", "rooms", "links", "entities", "props", "furniture", "prefabs", "models", "layout", "sky", "sun", "night", "include", "replace", "sounds", "fgd", "wads", "compile", "detail", "note", "ladders", "fidelity", "music", "floorplan", "frame", "lighting", "focus"];
+const TOP = ["spec", "name", "mod", "size", "wall", "grid", "theme", "textures", "rooms", "links", "entities", "props", "furniture", "prefabs", "models", "layout", "sky", "sun", "night", "include", "replace", "sounds", "fgd", "wads", "compile", "detail", "note", "ladders", "fidelity", "music", "floorplan", "frame", "lighting", "focus", "fog"];
+/** The fixtures a room's lamps are built as (`light.fixture`): on the ceiling, on its walls, hung from it. */
+export const LAMP_FIXTURES = ["panel", "sconce", "chandelier"];
 /** A ladder's depth off its wall, and its width unless told: Valve's frenzy's are 32 wide. */
 const LADDER = { depth: 6, width: 32 };
 const ROOM = ["id", "size", "at", "place", "floor", "sky", "surfaces", "light", "water", "test", "building", "dark", "note", "frame", "use", "density"];
@@ -235,7 +238,8 @@ const DIM_LIGHT = 40;
 /** A floor plan's floor (or an area's) more than this share dark is held dark, whatever its mean (Valve's frenzy 13%,
  * c1a0 10%, c2a3 31%, c1a2 37%). */
 const DARK_SHARE = 0.5;
-function lightWarning(light, at, warnings) {
+function lightWarning(light, at, warnings, errors) {
+  if (light && typeof light === "object" && light.fixture !== undefined && !LAMP_FIXTURES.includes(light.fixture)) errors?.push(`${at}.fixture: what its lamps are built as, ${LAMP_FIXTURES.join(", ")}`);
   const b = light && typeof light === "object" ? light.brightness : undefined;
   if (typeof b === "number" && b < DIM_LIGHT) warnings.push(`${at}.brightness: ${b} is a light entity's brightness, all but dark (a lamp is ${LAMP_BRIGHTNESS}): not a multiple`);
 }
@@ -446,7 +450,7 @@ export function validateMapSpec(spec, { mod } = {}) {
   const ids = new Map();
   spec.rooms.forEach((room, i) => {
     const at = `rooms[${i}]${room?.id ? ` (${room.id})` : ""}`;
-    lightWarning(room?.light, `${at}.light`, warnings);
+    lightWarning(room?.light, `${at}.light`, warnings, errors);
     if (typeof room?.id !== "string" || !/^[A-Za-z]\w*$/.test(room.id)) errors.push(`${at}.id: a name of letters, digits and _`);
     else if (ids.has(room.id)) errors.push(`${at}.id: "${room.id}" is given twice`);
     else ids.set(room.id, i);
@@ -2059,9 +2063,19 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
   // a panel on the ceiling: the kit's glass 32 by 16; or a game's lamp texture at its own size, two side by side as
   // a fixture of two tubes, each its whole picture once on its face (fifties_lgt2 is a tube of 16 by 64: its width
   // along x, its height along y, as a ceiling's picture is laid). Valve's maps are 15 in 100 of their brushes lamps
+  // laid along the room's longer side (a tube's length along it, turned a quarter where the room is longer along x)
   const panelOf = (room, [x, y], name) => {
-    if (!gameFixture) return [box([x - 16, y - 8, room.max[2] - 2], [x + 16, y + 8, room.max[2]], name)];
+    const alongX = room.max[0] - room.min[0] > room.max[1] - room.min[1];
+    if (!gameFixture) return [alongX ? box([x - 16, y - 8, room.max[2] - 2], [x + 16, y + 8, room.max[2]], name) : box([x - 8, y - 16, room.max[2] - 2], [x + 8, y + 16, room.max[2]], name)];
     const [w, h] = sizeOfTexture(name);
+    if (alongX)
+      return [y - w / 2 - 4, y + w / 2 + 4].map((cy) => {
+        const min = [x - h / 2, cy - w / 2, room.max[2] - 2];
+        const max = [x + h / 2, cy + w / 2, room.max[2]];
+        // the bottom face's picture turned a quarter: its columns along -y, its rows along -x (textureAxes), its
+        // corner on the brush's
+        return box(min, max, { top: name, bottom: { name, rotation: 90, offset: [max[1], max[0]] }, sides: name });
+      });
     return [x - w / 2 - 4, x + w / 2 + 4].map((cx) => {
       const min = [cx - w / 2, y - h / 2, room.max[2] - 2];
       const max = [cx + w / 2, y + h / 2, room.max[2]];
@@ -2213,7 +2227,31 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
         if (composed.goalRoom === room.id) brightness *= composed.goal;
         if (composed.fade > 0) keys._fade = composed.fade;
       }
-      if (brightness > 0) entities.push(light([Math.round(cx), Math.round(cy), lampZ], { brightness: Math.round(brightness), color: options.color ?? [255, 240, 220], ...keys }));
+      const glow = { brightness: Math.round(brightness), color: options.color ?? [255, 240, 220], ...keys };
+      const lit = fixturesIn(room);
+      if (options.fixture === "sconce" || options.fixture === "chandelier") {
+        // on the room's two longer walls in turn, along them; or hung from the ceiling, its lowest point a head's
+        // room and more over the floor. Their glass is the fixture's (a light's texture where the room has fixtures)
+        const glass = lit ? fixtureOf(dim) : textureOf("furniture");
+        let piece;
+        if (options.fixture === "sconce") {
+          const alongX = size[0] >= size[1];
+          const k = Math.floor(i / 2);
+          const t = (k + 0.5) / Math.ceil(count / 2);
+          const wall = i % 2;
+          const at = alongX ? [Math.round(room.min[0] + size[0] * t), wall ? room.max[1] : room.min[1]] : [wall ? room.max[0] : room.min[0], Math.round(room.min[1] + size[1] * t)];
+          const facing = alongX ? (wall ? 270 : 90) : wall ? 180 : 0;
+          piece = sconce({ at: [...at, Math.min(room.min[2] + 88, room.max[2] - 56)], facing, glass, metal: textureOf("furniture"), shape: "drum", plate: true });
+        } else {
+          const drop = Math.max(8, room.max[2] - room.min[2] - 168);
+          piece = chandelier({ centre: [Math.round(cx), Math.round(cy)], top: room.max[2], drop, radius: 24, tiers: 2, sides: 8, glass, metal: textureOf("furniture") });
+        }
+        entities.push(brushEntity("func_detail", piece.brushes, {}));
+        if (lit) fixtures++;
+        if (brightness > 0 && !(gameFixture && lit && modLighting.lamp === 0 && options.brightness === undefined)) entities.push(light(piece.light, glow));
+        continue;
+      }
+      if (brightness > 0) entities.push(light([Math.round(cx), Math.round(cy), lampZ], glow));
       hang(room, [Math.round(cx), Math.round(cy), lampZ], { dim });
     }
     // a framed room's fill: a weak light low over its floor, so that a lower floor is not left black
@@ -2231,6 +2269,21 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
     }
   composedCount.dimmed += entityDimmed.count;
   if (composed) report.facts.push(`lighting: composed: ${composedCount.dimmed} lamps dimmed to ${composed.dim} (one in ${composed.rhythm}), ${composedCount.spills} doorways spilling light, each lamp's light falling off ${composed.fade} times sooner${composed.goalRoom ? `, ${composed.goalRoom} lit ${composed.goal} times brighter` : ""}`);
+  // fog over the whole map, as the mod draws it (its profile's `spec.fog`: the class and how its keys are written)
+  if (spec.fog !== undefined && spec.fog !== false) {
+    const kind = profile?.spec?.fog;
+    if (!kind) warnings.push(`fog: ${profile ? profile.name : "Half-Life"} has no fog of its own (a mod's profile names one: spec.fog); none is made`);
+    else {
+      const asked = spec.fog === true ? {} : spec.fog;
+      const { near = kind.near, far = kind.far, color = kind.color } = asked;
+      if (!(near >= 0 && far > near) || !(Array.isArray(color) && color.length === 3 && color.every((v) => v >= 0 && v <= 1))) errors.push("fog: { near, far, color }: the distance it starts at, the one it is whole at (over near), its colour [r, g, b] of 0 to 1");
+      else {
+        const first = [...rooms.values()][0];
+        entities.push(pointEntity(kind.class, [...mid(first).slice(0, 2), first.min[2] + 64], { near, far, color: color.map((v) => Math.round(v * 100) / 100).join(" ") }));
+        report.facts.push(`fog: ${kind.class}, from ${near} to ${far}, colour ${color.join(" ")}`);
+      }
+    }
+  }
   if (sunny) {
     const sky = [...rooms.values()].find((room) => room.spec.sky);
     // at night the moon, and the sky's own light (`_diffuse_light`, which the compiler takes from the sun's
