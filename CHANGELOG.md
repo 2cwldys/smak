@@ -42,6 +42,13 @@ mending for, says so under **Mind**.
   colour its maps' makers lit it (measured on their lamps' faces) at the brightness of the kit's Valve list, with
   words for a spec's own (`ts_lamp_warm`, `ts_lamp_cool`, `ts_sodium`, `ts_screen`). A map of its rooms no longer
   warns that none of its brushes wear a lamp.
+- **Rooms dressed as thickly as the game's.** A room's use stands its pieces all along the walls (every 16, a wall
+  kind spread round the room, a corner kind piled into the corners and along the walls from them), not at the four
+  corners and a few spots: The Specialists' warehouse of 448 x 384 got 4 pieces and gets 8 to 12. A use may stand
+  things in the middle, a walk from the walls and from what stands at them: `rows` (an office's desks), `group`
+  (couches facing each other over a coffee table, a walk round it), `cluster` (a pile of crates). A room's
+  `density` (a number, or sparse, normal, dense, cluttered; a profile's by use) thickens or thins it. The ways
+  through and the places to start stay clear, and every room is still walked.
 
 ## 0.24.0 (2026-10-20)
 

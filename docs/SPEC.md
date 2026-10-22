@@ -771,9 +771,16 @@ light and every entity are still the map's to give.
   corners, shelves, barrels), `lab` (consoles, benches, cabinets), `control` (consoles), `office` (desks, cabinets),
   `industrial` (machines and tanks, barrels, pipes up the walls, crates), `plant` (pipes, tanks, machines) or
   `corridor` (a pipe or a crate). Brush pieces of the kit, each at a wall with its back to it or in a corner, clear
-  of every way through and the floor in front of it, of the focus's landmark and of what the spec put there, none
-  reaching past a third of the room's depth from its wall (the middle stays walked), several of each kind and no one
-  more than twice in a room, turned to face in. They are furniture, `func_detail`, and wear the spec's `crate`,
+  of every way through and the floor in front of it, of the focus's landmark, of the places to start and of what the
+  spec put there, none reaching past a third of the room's depth from its wall (the middle stays walked), several
+  of each kind and no one more than twice in a room (more when a dense room wants more), turned to face in. A kind
+  `wall` spreads along every wall; a kind `corner` fills the corners and then the walls nearest them, close, so
+  crates pile into a corner and along from it. A mod's uses may also stand things in the middle, a walk (48) from
+  the walls and from what stands at them: `rows` (desks of an office side by side in rows facing one way, an
+  `aisle` between), `group` (two seats facing each other over a piece `between` them, a walk round it: couches
+  about a coffee table), `cluster` (a pile of `count` crates to take cover behind) and `middle` (one).
+- `density`: how thickly the room's `use` dresses it: a number (to 4) that each kind's count is multiplied by, or
+  `sparse` (0.5), `normal` (1), `dense` (1.5), `cluttered` (2); a mod's profile may give one by use. They are furniture, `func_detail`, and wear the spec's `crate`,
   `barrel`, `locker`, `console`, `screen`, `desk`, `machine`, `pipe` and `strut` words when it gives them (wood,
   metal, steel, neon, darkwood and iron unless told). What stands at a wall shades the floor under and behind it:
   the dark Valve's floors have that lamps alone do not make. The report lists each room's pieces.
@@ -999,10 +1006,13 @@ profile, which says where each word was read from) gives:
   pieces wear the game's too (crates `cardbox1`, barrels `metal_rusty5ccc`, desks `trrm_wood2`, consoles
   `drkmtlt_bord11`);
 - props as `ts_model`, the class the game's maps place theirs with (627 in 14 maps);
-- rooms furnished by `use` with models the game's maps name (a model the game lacks stops a map loading):
-  `office` (computers on desks, office chairs, plants, paintings), `lobby` (couches against the walls, a coffee
-  table, plants, an armchair, pictures), `cafe` (a table, booths, chairs), `warehouse` (the game's boxes and the
-  kit's crates, shelves, barrels), `garage` (a dumpster, boxes, barrels, rubbish), `server` (consoles, cabinets),
+- rooms furnished by `use` with models the game's maps name (a model the game lacks stops a map loading), as
+  cluttered at their edges as the game's compact maps (ts_trident: 47 props and 34 breakables over 4.4 million
+  square units; a warehouse of 448 x 384 had 4 pieces and has 8 to 12):
+  `office` (computers on desks against the walls and in rows in the middle, office chairs, plants, paintings, a
+  cabinet), `lobby` (couches against the walls, two more facing each other over a coffee table, plants,
+  armchairs, pictures), `cafe` (booths, tables in rows, chairs), `warehouse` (the game's boxes and crates piled
+  into the corners and along the walls, a pile in the middle, shelves, barrels), `garage` (a dumpster, boxes, barrels, rubbish), `server` (consoles, cabinets),
   `stairwell` (a plant), and for rooms open to the sky `alley` (a dumpster, rubbish, a street lamp), `plaza`
   (benches, lamps, plants, a statue in the middle) and `rooftop` (machines, pipes, barrels). The game has no models
   for a bathroom or a stove; its crates are brushes (`func_breakable`): the kit's crates (and crates of 40 and 48

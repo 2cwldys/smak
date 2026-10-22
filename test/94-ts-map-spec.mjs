@@ -73,11 +73,13 @@ test("The Specialists' map spec: the game's textures, ts_model props, rooms furn
   for (const e of props) {
     const thing = models.get(e.model);
     if ([...middles].some((name) => SPEC.things[name] === thing)) continue;
-    // its back to the nearest wall of its room
+    // its back to the nearest wall of its room, when it stands at one
     const at = e.origin.split(" ").map(Number);
     const yaw = Number(e.angles.split(" ")[1]);
     const [, room] = roomOf(at);
     const gaps = { "-1,0": at[0] - room.min[0], "1,0": room.max[0] - at[0], "0,-1": at[1] - room.min[1], "0,1": room.max[1] - at[1] };
+    // one that stands in the middle (desks in rows, couches facing over a table) has no wall behind it
+    if (Math.min(...Object.values(gaps)) > (thing.wall ?? thing.r ?? 16) + 8) continue;
     const back = backOf(yaw, thing.turn).join(",");
     sure(gaps[back] === Math.min(...Object.values(gaps)), `${e.model} at ${e.origin} turned ${yaw}: its back ${back}, the walls ${JSON.stringify(gaps)}`);
   }

@@ -35,7 +35,7 @@ import { dressingOf } from "../maps/dressing.mjs";
 import { familyOf } from "../maps/families.mjs";
 import { spaceOf } from "../maps/space.mjs";
 import { focusSpec, focusSeen } from "./focus.mjs";
-import { breaksOf, dressRooms, useWordsOf, BREAK_WORDS, DRESS_MATERIALS } from "./dress.mjs";
+import { breaksOf, dressRooms, useWordsOf, densityOf, DENSITIES, BREAK_WORDS, DRESS_MATERIALS } from "./dress.mjs";
 import { tile, label, render } from "../render.mjs";
 import { png, unpicture } from "../image.mjs";
 import { materialOf, surfacePicture, MATERIALS, UNWORN } from "./paint.mjs";
@@ -53,7 +53,7 @@ const MAP_SIZE_ERROR = 0.25;
 const TOP = ["spec", "name", "mod", "size", "wall", "grid", "theme", "textures", "rooms", "links", "entities", "props", "furniture", "prefabs", "models", "layout", "sky", "sun", "night", "include", "replace", "sounds", "fgd", "wads", "compile", "detail", "note", "ladders", "fidelity", "music", "floorplan", "frame", "lighting", "focus"];
 /** A ladder's depth off its wall, and its width unless told: Valve's frenzy's are 32 wide. */
 const LADDER = { depth: 6, width: 32 };
-const ROOM = ["id", "size", "at", "place", "floor", "sky", "surfaces", "light", "water", "test", "building", "dark", "note", "frame", "use"];
+const ROOM = ["id", "size", "at", "place", "floor", "sky", "surfaces", "light", "water", "test", "building", "dark", "note", "frame", "use", "density"];
 const LINK = ["between", "kind", "width", "height", "along", "sill", "stairs", "door", "glass", "side", "material", "note"];
 const PLACES = ["east_of", "west_of", "north_of", "south_of", "above", "below", "in"];
 const LINK_KINDS = ["door", "opening", "window", "stairs"];
@@ -757,6 +757,8 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
   };
   for (const [k, room] of (spec.rooms ?? []).entries())
     if (room?.use !== undefined && !useWordsOf(profile?.spec?.uses).includes(room.use)) errors.push(`rooms[${k}].use: what the room is for, dressed by it: ${useWordsOf(profile?.spec?.uses).join(", ")}`);
+  for (const [k, room] of (spec.rooms ?? []).entries())
+    if (room?.density !== undefined && densityOf(room.density) === null) errors.push(`rooms[${k}].density: how thickly its use dresses it, a number over 0 to 4 (1 as the use is written) or ${Object.keys(DENSITIES).join(", ")}`);
   errors.push(...frameFaults(spec.frame, "frame"), ...(spec.rooms ?? []).flatMap((room, k) => frameFaults(room?.frame, `rooms[${k}].frame`)));
   if (spec.lighting !== undefined && typeof spec.lighting !== "boolean") {
     if (!spec.lighting || typeof spec.lighting !== "object") errors.push(`lighting: true, false, or { ${[...COMPOSED_NUMBERS, "goalRoom"].join(", ")} }`);
@@ -1831,6 +1833,7 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
       uses: profile?.spec?.uses,
       things: profile?.spec?.things,
       pieces: profile?.spec?.pieces,
+      density: profile?.spec?.density,
     });
     dressedProps.push(...dressed.props, ...dressed.furniture);
     Object.assign(prefabs, dressed.prefabs);

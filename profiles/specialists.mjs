@@ -300,18 +300,21 @@ export const SPEC = {
     streetlamp: { model: "models/schmung/sg_streetlamp.mdl", r: 10, wall: 10, deep: 62, high: 235 },                  // [8, 1]: its arm overhead
   },
   // each [what, the things or the kit's pieces it is one of, where, how many to a 256 x 256 of floor (the first at
-  // least one)], as src/spec/dress.mjs's uses are written
+  // least one), options], as src/spec/dress.mjs's uses are written: along the walls and piled into the corners, and
+  // in the middle desks and tables in rows, couches facing over a table, crates in piles; as cluttered at the edges
+  // as the game's compact maps (ts_trident: 47 props and 34 breakables over 4.4 million square units, about 1.2 a
+  // 256 x 256 of floor)
   uses: {
-    office: [["desk", ["workstation", "workstation2"], "wall", 1], ["chair", ["officeChair"], "wall", 0.5], ["plant", ["plant", "plant2"], "corner", 0.5], ["picture", ["painting1", "painting3"], "wall", 0.4]],
-    lobby: [["couch", ["couch", "sofa"], "wall", 0.7], ["table", ["coffeeTable"], "middle", 0.5], ["plant", ["plant", "plant8", "tallPlant"], "corner", 1], ["armchair", ["armchair"], "wall", 0.4], ["picture", ["painting2", "painting4", "photo"], "wall", 0.5]],
-    cafe: [["table", ["table"], "middle", 0.5], ["booth", ["booth"], "wall", 0.8], ["chair", ["chair"], "wall", 0.5], ["plant", ["plant2"], "corner", 0.4]],
-    warehouse: [["boxes", ["boxStack", "box", "box2", "crate_stack", "crate_large", "crate40", "crate48"], "corner", 1.6], ["shelf", ["shelf"], "wall", 0.5], ["barrel", ["barrels", "barrel"], "corner", 0.6]],
-    garage: [["dumpster", ["dumpster"], "wall", 0.3], ["boxes", ["boxStack", "box", "crate40"], "corner", 0.6], ["barrel", ["barrels"], "corner", 0.4], ["trash", ["trash"], "corner", 0.3]],
-    server: [["console", ["console_wide", "console"], "wall", 0.8], ["cabinet", ["cabinet", "locker"], "corner", 0.4], ["chair", ["officeChair"], "wall", 0.2]],
+    office: [["desk", ["workstation", "workstation2"], "wall", 0.6], ["desks", ["workstation", "workstation2"], "rows", 1, { aisle: 72, gap: 16 }], ["chair", ["officeChair"], "wall", 0.4], ["plant", ["plant", "plant2"], "corner", 0.6], ["picture", ["painting1", "painting3"], "wall", 0.4], ["cabinet", ["cabinet"], "corner", 0.3]],
+    lobby: [["couch", ["couch", "sofa"], "wall", 0.7], ["lounge", ["couch", "sofa"], "group", 0.4, { between: "coffeeTable" }], ["plant", ["plant", "plant8", "tallPlant"], "corner", 1], ["armchair", ["armchair"], "wall", 0.5], ["picture", ["painting2", "painting4", "photo"], "wall", 0.5]],
+    cafe: [["booth", ["booth"], "wall", 0.8], ["tables", ["table"], "rows", 0.6, { aisle: 64, gap: 56 }], ["chair", ["chair"], "wall", 0.5], ["plant", ["plant2"], "corner", 0.4]],
+    warehouse: [["boxes", ["boxStack", "box", "box2", "crate_stack", "crate_large", "crate40", "crate48"], "corner", 2], ["shelf", ["shelf"], "wall", 0.6], ["pile", ["crate40", "crate48", "crate_large", "box"], "cluster", 0.4, { count: 3 }], ["barrel", ["barrels", "barrel"], "corner", 0.6]],
+    garage: [["dumpster", ["dumpster"], "wall", 0.3], ["boxes", ["boxStack", "box", "crate40"], "corner", 0.8], ["barrel", ["barrels"], "corner", 0.4], ["trash", ["trash"], "corner", 0.3]],
+    server: [["console", ["console_wide", "console"], "wall", 0.8], ["racks", ["cabinet", "locker"], "rows", 0.6, { aisle: 64, gap: 0 }], ["cabinet", ["cabinet", "locker"], "corner", 0.4], ["chair", ["officeChair"], "wall", 0.2]],
     stairwell: [["plant", ["plant", "plant8"], "corner", 0.3]],
-    alley: [["dumpster", ["dumpster"], "wall", 0.4], ["trash", ["trash"], "corner", 0.6], ["lamp", ["streetlamp"], "wall", 0.3], ["boxes", ["box", "box2", "crate40"], "corner", 0.5]],
+    alley: [["dumpster", ["dumpster"], "wall", 0.4], ["trash", ["trash"], "corner", 0.6], ["lamp", ["streetlamp"], "wall", 0.3], ["boxes", ["box", "box2", "crate40"], "corner", 0.7]],
     plaza: [["bench", ["bench"], "wall", 0.4], ["lamp", ["streetlamp"], "wall", 0.3], ["plant", ["tallPlant"], "corner", 0.4], ["statue", ["statue"], "middle", 0.3]],
-    rooftop: [["machine", ["machine", "tank"], "wall", 0.3], ["pipes", ["pipes_up"], "wall", 0.2], ["barrel", ["barrels"], "corner", 0.3], ["boxes", ["box"], "corner", 0.2]],
+    rooftop: [["machine", ["machine", "tank"], "wall", 0.3], ["pipes", ["pipes_up"], "wall", 0.2], ["barrel", ["barrels"], "corner", 0.3], ["boxes", ["box", "crate40"], "corner", 0.3]],
   },
 };
 
