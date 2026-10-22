@@ -168,6 +168,15 @@ node bin/smak.mjs map-spawns <bsp|map> --mod <profile> [-o plan.png]   how each 
                                                    from the death that brings it; exit code 1 on SEEN or FIGHT (docs/MAPS-DESIGN.md)
 node bin/smak.mjs map-character <bsp> [more maps or folders] [--mod <profile>]   its ground, textures, props, sounds and light in numbers,
                                                    held against the mod's own maps: PLAIN figures, and a warning on five or more
+                                                   (--mod ts --kind compact: The Specialists' eight compact arenas; lamp faces beside lights)
+node bin/smak.mjs map-dressing <bsp> [--mod ts] [--against <bsp|bands.json>]   walls, textures, lamps, detail and floor light beside
+                                                   Valve's campaign, or the mod's own bands (--mod: its profile's `dressing`);
+                                                   --learn -o bands.json over a folder of maps makes such bands
+node bin/smak.mjs map-teams <bsp|map> --mod ts [--goal x,y,z|<entity>] [--cfg f.cfg] [--each] [--write-cfg [dir]]
+                                                   two teams as Havoc9's ts_matchmode splits the spawns (or its spawn file's): the
+                                                   nearest across (FAIL under 512, WARN under 1400), spawns in sight of the other
+                                                   side's (FAIL), the walks to a goal and their balance (WARN over 10%, FAIL over
+                                                   25%); --write-cfg: tsm_spawns_<map>.cfg in the plugin's format; exit 1 on a FAIL
 node bin/smak.mjs map-props <bsp|map> [--mod <profile>] [--game ...] [--views dir]   each prop, NPC, monster, chest and start
                                                    held against the world: WARN stuck or buried in solid, a prop floating; NOTE partly
                                                    in a wall, its nose to a wall (turned the wrong way?), standing on another model.
@@ -196,7 +205,8 @@ entity that stands is drawn as the box it moves with: `--body <class|targetname>
 names one. With `--game` the sky is its own picture and each sprite its first frame (`--no-sky`, `--sky r,g,b`,
 `--no-sprites` say otherwise); `--no-model-scale` draws models at their own size. Every one of these commands
 takes `--mod <profile>` as `map-check` does (with `--game`, and `--scripts <folder>` for scripts not in the
-game yet): the mod's folders, the box each of its classes moves with, its ways out for the walk test and, with
+game yet; `--mod ts` or `--mod msc` names one of the kit's profiles, and without `--game` the installed Half-Life
+is found: `SMAK_HALF_LIFE`, or Steam's libraries): the mod's folders, the box each of its classes moves with, its ways out for the walk test and, with
 `--models`, the model the mod gives an entity that names none: a monster is then drawn as the model its
 script picks, with nothing named by hand.
 

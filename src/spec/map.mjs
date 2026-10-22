@@ -2456,7 +2456,7 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
       report.facts.push(...swept.facts.map((line) => `sweep: ${line}`));
       if (swept.islands.length) report.faults.push(`sweep: ${swept.islands.length} pieces of solid touch nothing, floating in the air: ${swept.islands.slice(0, 4).map((i) => `${i.from.join(" ")} to ${i.to.join(" ")}`).join("; ")}: rest each on something, or take it out`);
       // its dressing beside Valve's own, measured: what a maker revising it is told (research/level-dressing.md)
-      const dressed = dressingOf(bsp, { source: map, landmark: landmarkSeen && { name: focused.focus.name, room: focused.focus.room, seen: landmarkSeen.seen, of: landmarkSeen.of } });
+      const dressed = dressingOf(bsp, { source: map, against: profile?.dressing, landmark: landmarkSeen && { name: focused.focus.name, room: focused.focus.room, seen: landmarkSeen.seen, of: landmarkSeen.of } });
       report.facts.push(...dressed.facts);
       warnings.push(...dressed.warnings);
       const seenFloating = swept.floating.filter((f) => f.seen);

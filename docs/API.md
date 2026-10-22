@@ -717,6 +717,10 @@ two documents of their own: `docs/MAPS.md` (a compiled map read and checked, its
 files, its pictures: `drawMap`, `planOf`, `viewsOf`, `compareOf`, `drawSource`, `planOfSource`, `sectionOf`, `storeysOf`,
 `openingViews`, what they draw of the game's files: `figuresOf`, `spritesOf`, `readSpr`, `skyOf`, `readTga`,
 the walk test: `reachOf`, `spaceOf`, `restOf`, `storeyCuts`, a map in numbers: `measure`, `measureTable`, a
+map's two teams as a team plugin plays it: `teamsOf`, `collectSpawns`, `partitionSpawns`, `readSpawnCfg`,
+`spawnCfgText`, `spawnCfgName`, the sight test `sightTest`, a map's dressing against a mod's own bands:
+`dressingOf`, `learnDressing`, the kit's profiles by name and the game found: `mapProfileOf`, `findHalfLife`,
+`steamLibraries`, a
 compiled map decompiled into a `.map` and its recompile measured against it: `decompile(bytes, { name, folders })`
 → `{ map, facts, warnings, wad }`, `textureFidelity(original, recompiled)`, `lightParity(original, recompiled)`,
 Half-Life's texture lights `TEXLIGHTS`, `texlightsFor`, `texlightsRad`, `texlightsEntity`, and a map's entities against its

@@ -609,6 +609,32 @@ How a map is dressed, in numbers, beside Valve's own: the facts a maker revising
 (the fork's research/level-dressing.md: checks by rule agree with people where a picture judge does near chance). `smak
 map-dressing <bsp> [--source <map>] [--against <bsp>]` prints it.
 
+**Against the mod's own maps.** Valve's campaign is no measure of every mod: The Specialists' 29 maps are lit
+brighter and flatter (the floor under 24 a median 10%, Valve's 21%; the light's contrast a median 3.9, Valve's 12.9),
+so a map made in their manner was told to darken and compose its light. A profile's **`dressing`** gives the mod's
+own bands, in `VALVE_DRESSING`'s shape (`{ name, of, measures }`), and `smak map-dressing <bsp> --mod ts` (or
+`dressingOf(bsp, { against: profile.dressing })`, as `smak build` does with a spec's profile) holds a map to them; a
+measure the bands lack (the brush roles, the views') is held to Valve's, and each line says whose.
+`learnDressing(list)` makes such bands from `[{ name, measures }]` (`measureDressing`'s), the 5th and 95th in 100
+with the quartiles; `smak map-dressing <folders or maps> --learn -o bands.json [--as "whose"]` from a folder, for
+`--against bands.json` or a profile. A spec's composed light (`lighting`) still aims at Valve's figures.
+
+The Specialists' own (`profiles/specialists.mjs`, `DRESSING`, measured 2026-10-21 over ts/maps):
+
+```
+Measure            The Specialists' 5th to 95th (median)    Valve's
+scaleOne           18% to 96% (72%)                         26% to 97% (79%)
+shifted            49% to 98% (84%)                         28% to 98% (71%)
+bandedWalls        4% to 47% (21%)                          1% to 41% (13%)
+oneTextureWalls    30% to 78% (44%)                         44% to 93% (68%)
+joinHeight         128 to 352 (176)                         56 to 527 (160)
+lampFaces          0.56 to 289 (3.3)                        0 to 101 (5)
+nonAxial           3% to 45% (9%)                           7% to 60% (22%)
+detail             1.8 to 14.8 (5.2)                        2.3 to 23 (10.7)
+darkFloor          1% to 56% (10%)                          6% to 60% (21%)
+contrast           2.2 to 10.7 (3.9)                        3.6 to 152 (12.9)
+```
+
 | Function | Gives |
 | --- | --- |
 | `dressingOf(bsp, { source, views, against, landmark })` | `{ measures, counts, rows, facts, warnings }`: each measure beside `VALVE_DRESSING`, a line each (`dressing: tall walls of one texture only: 100% (Valve's: 44% to 93%, median 68%)`), and a warning, with which way to go, for one outside Valve's band. `source`: the map's brush source, for its brushes' roles; `views`: pictures of it, for their complexity; `landmark`: `{ name, room, seen, of }`, a map spec's focus, named with how many of the ways into its room see it (a warning when one does not) |
@@ -617,6 +643,7 @@ map-dressing <bsp> [--source <map>] [--against <bsp>]` prints it.
 | `brushRole({ min, max, faces })` | One brush's role as Valve's c1a0 sources are read: `lit` (a lamp's texture, its long side 128 or less), `strip` (two thin sides of 16 and 24 or less, its long side three times the middle), `panel` (its thinnest 16 or less, the next 32 or more), else `block`; `angled` when it has other than six faces |
 | `lampsOf(bsp)`, `isLampTexture(name)` | Whether a texture is a lamp: the game's texture lights, a `~` name, a lamp's word, and every texture a map's `info_texlights` names (a map spec's glowing fixtures) |
 | `pictureComplexity(picture)` | `{ edges, compression }`: the share of pixels whose brightness steps over 24 to a neighbour, and its PNG's bytes over its raw size (Machado et al. 2015: such measures follow people's ratings of complexity) |
+| `learnDressing(list, { name, of })` | The bands of many maps' measures (`[{ name, measures }]`): `{ name, of, maps, measures: { key: { least, q1, median, q3, most } } }`, least and most the 5th and 95th in 100; a map with no value for a measure is left out of its band |
 | `VALVE_DRESSING` | Valve's own: each measure's 5th, 25th, 50th, 75th and 95th in 100 over the campaign's 96 maps, the roles over the SDK's c1a0 and c1a0d sources (widened a quarter each way, two being few). the fork's `research/valve-dressing.mjs` measures it again |
 
 The measures, of the world's faces (tool, sky and liquid faces left out):
@@ -701,6 +728,62 @@ its numbers to the place and the unit; to within a unit the widths come out some
 coarser search reads a 352 hall as 340), which on the old Barrow Road moves 8 in 100 of the floor into the band
 of 352 and over. demontemple measured whole (`every`): 5893 places, width median 256, headroom 192, sight
 median 708; the walk test reaches 1523 of them.
+
+## Two teams (`src/maps/teams.mjs`)
+
+The Specialists is a deathmatch game: its maps have one pool of spawns and no teams. Havoc9's **ts_matchmode**
+plays rounds of two teams on them (team 1 "msr", team 2 "insurgents", sides never swapped), and puts each player at
+a spawn of his team's at the round's start. Where those spawns are is the plugin's, and `teamsOf(map, options)`
+(`smak map-teams <bsp|map> --mod ts`) replays it from its source (ts_matchmode.sma: collect_spawns,
+partition_spawns, srv_spawn, cmd_spawn_save):
+
+- **A spawn file first.** `addons/amxmodx/configs/tsm_spawns_<map>.cfg`, lines `tsm_spawn <team 1|2> <x> <y> <z>
+  [pitch] [yaw]` (`readSpawnCfg`: a team other than 1 or 2 refused, 64 a team, a word that is no number read as 0).
+  When it gives any spawn the map's own are not used; a team it gives none borrows the other's. Its z is the
+  player's origin, 36 over the floor; the facing comes from this file alone.
+- **Else the map's own, split** (`collectSpawns`, `partitionSpawns`): every `info_player_deathmatch` in the order of
+  the map's entities, then every `info_player_start`, 64 in all at the most; the two farthest apart in 3D (the first
+  such pair) are the anchors, and each spawn goes with the nearer, a tie with team 1; distances in single
+  precision, as Pawn's.
+
+What it tells, by the profile's `teams` (`TEAMS` in profiles/specialists.mjs; `TEAM_PLAY` for what one leaves out):
+
+| | FAIL | WARN |
+| --- | --- | --- |
+| The nearest spawns of the two teams (in 3D, where each stands) | under `cross.fail` (512): a fight at the spawn | under `cross.warn` (1400) |
+| A spawn of one team in sight of one of the other's (eyes to eyes or to the body; `sightTest`, `map-spawns`' test: the world and the brush entities that hide, doors closed; the dark not counted) | `sight: "fail"` | `sight: "warn"` |
+| The walks to a goal (`goal`, `--goal x,y,z` or an entity's number, classname or targetname, set on the floor under it): each team's from its nearest spawn, or with `each` (`--each`) the median of each spawn's own walk; the balance in per cent of the shorter | over `balance.fail` (25) | over `balance.warn` (10) |
+| A spawn in something solid, or with no floor under it; a team a spawn file gives none; no walk between the sides | always | |
+| Fewer than five spawns a team (the plugin picks one at random, with no look at who stands there) | | always |
+
+and as facts: how many of each class, the anchors, each team's spread and heights, the walk from team 1's spawns to
+within 64 of team 2's nearest (`contact`: how soon the sides meet, at a run of 320). `cfg` is the spawn file for
+these spawns (`spawnCfgText`; `--write-cfg [folder|file]`, named `spawnCfgName(map)`): the two lines of header
+amx_tsm_spawn_save writes, then `tsm_spawn <team> x y z pitch yaw` to two places, each spawn at its floor (z = floor
++ 36) and turned to the goal, or to the middle of the map; a spawn file's own facing is kept. It goes in the
+server's `addons/amxmodx/configs/`. The game's own maps, split by the plugin, have their teams' nearest spawns 300
+to 700 apart and in sight of each other: none was laid out for two teams.
+
+```
+smak map-teams h9_te_neuropolis.bsp --mod ts --goal 1200,0,40 --write-cfg cfgs/
+smak map-teams h9_te_neuropolis.bsp --mod ts --cfg cfgs/tsm_spawns_h9_te_neuropolis.cfg --each
+```
+
+The walks are the walk test's (`reachOf`, whose `to` now takes points `[x, y, z]` as well as entities): `doors`,
+`jump` and `cell` as it takes them; `walk: false` (`--no-walk`) skips them, the slow part (seconds a walk on a large
+map; `each` walks once a spawn). Not played: the plugin's random choice of a spawn, two players on one, the dead
+parked 900 over where they fell, the squad warp, the freeze.
+
+## A mod's profile by name, and the game found (`src/maps/games.mjs`)
+
+`--mod` takes one of the kit's profiles by name (`MAP_PROFILES`: `ts` or `specialists`, `ts-roleplay`, `msc` or
+`mastersword`; `mapProfileOf(name)` gives its file and the mod's folder) as well as a profile's file. With no
+`--game`, a profile made from the installed game is handed the Half-Life folder found on this machine
+(`findHalfLife({ mod })`): `SMAK_HALF_LIFE` when it is set (`none`: no game looked for), else
+`steamapps/common/Half-Life` in a Steam library (`steamLibraries`: the Steam folder the registry or the usual places
+give, and those its `libraryfolders.vdf` names) that holds the mod's folder. So `smak map-measure x.bsp --mod ts`
+and `smak map-character x.bsp --mod ts --kind compact` need no `--game`. `--kind` is handed to the profile (The
+Specialists': `arena`, `compact`, `roleplay`).
 
 ## Decompiling (`src/maps/decompile.mjs`, `fidelity.mjs`, `texlights.mjs`)
 

@@ -12,6 +12,9 @@
 //   sounds        entities of the profile's `character.sounds` (a sound that plays, a room's echo)
 //   music         entities of the profile's `character.music`
 //   lights        `light` and `light_spot` entities
+//   lampFaces     faces (of every model) wearing a lamp's texture (dressing.mjs's `lampsOf`: the game's texture
+//                 lights, a `~` name, a lamp's word, what the map's `info_texlights` names): a map lit by its
+//                 texture lights has few light entities and many of these, and is no unlit map
 //   lightMean     the floor's light, the mean of its samples, 0 to 255 (`lightReport`)
 //   shadow        the share of the floor whose light is under 24 (`DARK_FLOOR`)
 //   brightest     the floor's brightest light
@@ -26,6 +29,7 @@ import { lightReport, DARK_FLOOR } from "./light.mjs";
 import { textureKind } from "./miptex.mjs";
 import { isCompiled } from "./space.mjs";
 import { modOf, isNamed, GOLDSRC } from "./mod.mjs";
+import { lampsOf } from "./dressing.mjs";
 
 /** A face looking this much up is floor; one within this of upright is wall. */
 const FLOOR = 0.7;
@@ -118,6 +122,10 @@ export function characterOf(bsp, { mod } = {}) {
   const light = lightReport(bsp);
   const lit = typeof light.floor?.mean === "number" && light.floor.area > 0;
   const { mins, maxs } = worldBounds(bsp);
+  const isLamp = lampsOf(bsp);
+  let lampFaces = 0;
+  for (let model = 0; model < bsp.models.length; model++)
+    for (const face of modelFaces(bsp, model)) if (isLamp(faceTexture(bsp, face)?.name ?? "")) lampFaces++;
   const figures = {
     size: maxs.map((value, axis) => Math.round(value - mins[axis])),
     faces: bsp.faces.length,
@@ -131,6 +139,7 @@ export function characterOf(bsp, { mod } = {}) {
     sounds: counted(classes.sounds),
     music: counted(classes.music),
     lights: counted(["light", "light_spot"]),
+    lampFaces,
     lightMean: lit ? round1(light.floor.mean) : null,
     shadow: lit ? round1(100 * light.floor.darkShare) : null,
     brightest: lit ? light.floor.most : null,
@@ -138,7 +147,7 @@ export function characterOf(bsp, { mod } = {}) {
   const facts = [
     `${figures.size.join(" x ")} units, ${figures.faces} faces, ${Math.round(floor / 1000)} thousand square units of floor`,
     `the ground: ${figures.offGrid}% of the walls off the grid, ${figures.sloped}% of the floor sloped, ${levels} floor levels (${LEVEL} units, ${LEVEL_SHARE * 100}% of the floor each), a height spread of ${figures.heightSpread}`, // prettier-ignore
-    `the dressing: ${figures.textures} textures, ${figures.props} props, ${figures.sounds} sounds, ${figures.music} music, ${figures.lights} lights`,
+    `the dressing: ${figures.textures} textures, ${figures.props} props, ${figures.sounds} sounds, ${figures.music} music, ${figures.lights} lights and ${figures.lampFaces} lamp faces (texture lights)`,
     figures.lightMean === null
       ? "the light: the map has none (no lightmaps)"
       : `the light on the floor: ${figures.lightMean} of 255 on average, ${figures.shadow}% of it under ${DARK_FLOOR}, the brightest ${figures.brightest}`,
@@ -182,7 +191,7 @@ export function characterAgainst(figures, reference, { most = PLAIN_MOST } = {})
  * `[{ name, figures }]` as `characterOf` gives them (a map with no light is left out of the light's figures).
  */
 export function learnCharacter(list, { from } = {}) {
-  const names = [...LOW_IS_PLAIN, ...HIGH_IS_PLAIN, "props", "lights", "music", "floorArea", "faces"];
+  const names = [...LOW_IS_PLAIN, ...HIGH_IS_PLAIN, "props", "lights", "lampFaces", "music", "floorArea", "faces"];
   const figures = {};
   for (const name of names) {
     const values = list.map((each) => each.figures[name]).filter((value) => typeof value === "number").sort((a, b) => a - b);

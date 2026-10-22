@@ -9,6 +9,9 @@
 //     source   the map's brush source (readMap's, or what a map spec built): its brushes' roles, as Valve's
 //              .rmf sources are measured (panels, strips, lamp brushes, angled)
 //     views    pictures of it ({ width, height, rgba }): their edge density and how far they compress
+//     against  the bands it is held to: Valve's (VALVE_DRESSING) unless told; a mod's profile gives its own
+//              (`dressing`, as `learnDressing` measures them over the mod's maps)
+//   learnDressing(list)    the bands of many maps' measures, in VALVE_DRESSING's shape
 //   dressingOfSource(map)  the brush roles alone, for a map not yet compiled
 //   brushRole(shape)       one brush's role: "lit", "strip", "panel", "block" (and `angled`)
 //   isLampTexture(name)    a texture that lights or shows as a lamp
@@ -23,6 +26,8 @@ import { png } from "../image.mjs";
  * c1a0 sources for the brush roles. A map's measure outside [least, most] is warned of.
  */
 export const VALVE_DRESSING = {
+  name: "Valve's",
+  of: "Valve's campaign maps",
   maps: "every campaign map (96, c0a0 to c5a1, compiled, valve/maps); the brush roles from the SDK's c1a0.rmf and c1a0d.rmf, whose two numbers are widened a quarter each way for least and most",
   // each band the 5th to the 95th in 100 of the maps (least, most), with the quartiles and the median
   measures: {
@@ -275,22 +280,27 @@ const said = (key, v) => (v === null ? "not measured" : MEASURES[key]?.share ? `
 
 /**
  * A map's dressing beside Valve's: `rows` one a measure ({ key, value, valve, off }), `facts` a line each,
- * `warnings` for a measure outside Valve's least to most, saying which way to go.
+ * `warnings` for a measure outside Valve's least to most, saying which way to go. `against`: other bands (a
+ * profile's `dressing`, `learnDressing`'s), `{ name, of, measures }`; a measure they have no band for is held
+ * against Valve's. Each row's `valve` is the band it was held to, `by` whose.
  */
 export function dressingOf(bsp, { source = null, views = null, against = VALVE_DRESSING, landmark = null } = {}) {
   const { measures, counts } = measureDressing(bsp, { source, views });
+  against ??= VALVE_DRESSING;
   const rows = [];
   const facts = [];
   const warnings = [];
   for (const [key, value] of Object.entries(measures)) {
-    const valve = against.measures[key] ?? null;
+    const own = against.measures?.[key] ?? null;
+    const by = own ? against : VALVE_DRESSING;
+    const valve = own ?? VALVE_DRESSING.measures[key] ?? null;
     const off = value === null || !valve ? null : value < valve.least ? "under" : value > valve.most ? "over" : null;
-    rows.push({ key, value: r2(value), valve, off });
-    const range = valve ? ` (Valve's: ${said(key, valve.least)} to ${said(key, valve.most)}, median ${said(key, valve.median)})` : "";
+    rows.push({ key, value: r2(value), valve, off, by: by.name ?? "the reference's" });
+    const range = valve ? ` (${by.name ?? "the reference's"}: ${said(key, valve.least)} to ${said(key, valve.most)}, median ${said(key, valve.median)})` : "";
     const line = `dressing: ${MEASURES[key].words}: ${said(key, value)}${range}`;
     facts.push(line);
     const way = off && MEASURES[key][off];
-    if (way) warnings.push(`${line}: ${off === "under" ? "under the 5th" : "over the 95th"} in 100 of Valve's campaign maps; ${way}`);
+    if (way) warnings.push(`${line}: ${off === "under" ? "under the 5th" : "over the 95th"} in 100 of ${by.of ?? "the reference's maps"}; ${way}`);
   }
   // the map's one main area and its landmark (a map spec's focus), seen from the ways into its room or not
   if (landmark) {
@@ -299,4 +309,25 @@ export function dressingOf(bsp, { source = null, views = null, against = VALVE_D
   }
   facts.push(`dressing counts: ${counts.faces} world faces, ${counts.tallWalls} tall walls, ${counts.lampFaces} lamp faces, ${counts.lights} light entities, ${counts.planes} planes over ${counts.floorArea} square units of floor`);
   return { measures, counts, rows, facts, warnings };
+}
+
+/** The measures `learnDressing` bands: those of a compiled map alone (no source, no views). */
+export const DRESSING_LEARNED = ["scaleOne", "shifted", "bandedWalls", "oneTextureWalls", "joinHeight", "lampFaces", "nonAxial", "detail", "darkFloor", "contrast"];
+
+/**
+ * The bands of many maps' dressing, in VALVE_DRESSING's shape: `{ name, of, maps, measures: { key: { least, q1,
+ * median, q3, most } } }`, least and most the 5th and the 95th in 100 (as Valve's are), each the value that share
+ * of the way up the sorted list. `list` is `[{ name, measures }]`, `measureDressing`'s for each map; a map with no
+ * value for a measure (no light, no tall walls, no light entity) is left out of that measure's band. `name` is
+ * how the lines say whose ("The Specialists'"), `of` the maps in words ("The Specialists' 29 maps").
+ */
+export function learnDressing(list, { name, of } = {}) {
+  const measures = {};
+  for (const key of DRESSING_LEARNED) {
+    const values = list.map((each) => each.measures?.[key]).filter((v) => typeof v === "number" && Number.isFinite(v)).sort((a, b) => a - b);
+    if (!values.length) continue;
+    const at = (share) => Math.round(values[Math.min(values.length - 1, Math.floor(share * values.length))] * 1000) / 1000;
+    measures[key] = { least: at(0.05), q1: at(0.25), median: at(0.5), q3: at(0.75), most: at(0.95) };
+  }
+  return { name: name ?? `${list.length} maps'`, of: of ?? `${list.length} maps`, maps: list.map((each) => each.name), measures };
 }

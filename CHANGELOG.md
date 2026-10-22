@@ -49,6 +49,32 @@ mending for, says so under **Mind**.
   (couches facing each other over a coffee table, a walk round it), `cluster` (a pile of crates). A room's
   `density` (a number, or sparse, normal, dense, cluttered; a profile's by use) thickens or thins it. The ways
   through and the places to start stay clear, and every room is still walked.
+- **Two teams on a deathmatch map** (`src/maps/teams.mjs`, `smak map-teams`): Havoc9's ts_matchmode replayed from
+  its source. A spawn file (`tsm_spawns_<map>.cfg`, `readSpawnCfg`) over the map's own; else the map's
+  `info_player_deathmatch` then `info_player_start`, 64 at the most, split as `partition_spawns` splits them
+  (`collectSpawns`, `partitionSpawns`: the farthest pair in 3D the anchors, each spawn with the nearer, in single
+  precision). `teamsOf` tells the nearest spawns across the teams, spawns in sight of the other side's (the
+  encounters' sight test, now `sightTest`), the walk between the sides, each side's walk to a goal (a point or an
+  entity; `--each`: the median of every spawn's) and their balance, spawns stuck or over nothing; FAIL and WARN by
+  the profile's new `teams` (The Specialists': cross 512 and 1400, balance 25% and 10%, sight a FAIL); exit code 1
+  on a FAIL. `--write-cfg` writes the plugin's file as amx_tsm_spawn_save does (`spawnCfgText`), each spawn at its
+  floor + 36 and turned to the goal or the map's middle.
+- **The walk test to a point**: `reachOf`'s `to` takes `[x, y, z]` beside entities; a point not reached says where
+  the walked floor comes nearest.
+- **A map's dressing against the mod's own maps**: `dressingOf`'s `against` (a profile's `dressing`; each line says
+  whose, Valve's for a measure the bands lack), `learnDressing` and `smak map-dressing <folder> --learn -o
+  bands.json`; `map-dressing --mod` and a map spec's build with a profile hold a map to the profile's bands. The
+  Specialists' (`DRESSING`), measured over its 29 maps: the floor under 24 1% to 56% (median 10%, Valve's 21%), the
+  light's contrast 2.2 to 10.7 (median 3.9, Valve's 12.9).
+- **The Specialists' compact arenas**: `COMPACT`, the figures of its eight compact maps (ts_trident,
+  ts_hammertime, ts_lobbyduel, ts_wyndham, ts_supertimor, ts_metro, ts_rundown, ts_neobaroque), by
+  `kind: "compact"` (`map-character --mod ts --kind compact`).
+- **Lamp faces beside the lights**: `characterOf`'s `lampFaces`, the faces wearing a lamp's texture (`lampsOf`), so
+  a map lit by its texture lights (ts_trident: one light entity, 58 lamp faces) does not read as unlit.
+- **Profiles by name and the game found** (`src/maps/games.mjs`): `--mod ts`, `specialists`, `ts-roleplay`, `msc`,
+  `mastersword` (`MAP_PROFILES`, `mapProfileOf`); with no `--game`, a profile made from the installed game is handed
+  the Half-Life folder found (`findHalfLife`: `SMAK_HALF_LIFE`, or a Steam library, `steamLibraries`), so
+  `map-measure --mod ts` works with no `--game`. `--kind` is handed to the profile.
 
 ## 0.24.0 (2026-10-20)
 

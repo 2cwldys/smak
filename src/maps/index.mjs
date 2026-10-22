@@ -50,3 +50,5 @@ export * from "./match.mjs";
 export * from "./fidelity.mjs";
 export * from "./describe.mjs";
 export * from "./dressing.mjs";
+export * from "./teams.mjs";
+export * from "./games.mjs";
