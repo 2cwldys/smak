@@ -145,6 +145,10 @@ node bin/smak.mjs map-reach <bsp|map> [-o walked.png] [--goal <n|class>] [--jump
                                                    the walk test: what is not reached and why, what stands in solid, the openings,
                                                    the one-way places (--exit <name>: a way out of the map); exit code 1 on a fault.
                                                    --jump: with jumps, up 45 and across gaps (--speed 320 --gravity 800); --no-slopes
+node bin/smak.mjs map-waypoints <bsp|map> --mod ts [--out <Half-Life>/rcbot] [--plan p.png] [--spacing 160]   RCBot's waypoints
+                                                   from the walk test (starts, ladders, jumps, stairs, openings, corners, crouching
+                                                   passages; paths where a body walks or drops the straight line), written as the bot's
+                                                   .rcw at waypoints/<mod>/<map>.rcw (docs/MAPS.md, "Waypoints for bots")
 node bin/smak.mjs map-section <bsp|map> -o s.png --from x,y --to x,y   a side section along that line, floors with their heights
 node bin/smak.mjs map-storeys <bsp|map> -o s.png [--z a,b,c] [--reach]   one plan for each storey, side by side
 node bin/smak.mjs map-openings <bsp|map> -o o.png [--both]   a view through each gate and doorway the walk test finds

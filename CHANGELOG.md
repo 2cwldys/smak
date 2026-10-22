@@ -3,6 +3,19 @@
 The newest first. A version that changes what a model's file looks like, or that a model made before needs
 mending for, says so under **Mind**.
 
+## Not released yet
+
+- **Waypoints for bots** (`src/maps/waypoints.mjs`, `src/maps/rcbot.mjs`; `smak map-waypoints <map> --mod ts --out
+  <Half-Life>/rcbot`): RCBot's `.rcw` read and written byte for byte as the bot writes it (`readRcw`, `writeRcw`,
+  from its own WaypointLoad and WaypointSave, v1.51b13; 1112 of the bot's files written back unchanged), and
+  waypoints laid from the walk test (`waypointsOf`): one at each start, the foot and top of each ladder, each jump
+  to floor only a jump reaches with its landing, the ends of stairs, each opening, then every 160 units of walk,
+  corners and drops mended until every two neighbours are joined by a line a body walks (both ways) or drops
+  (one way), crouching waypoints in a passage only a crouching body fits, jumps and drops added where the paths
+  do not yet join what the walk does; only those got to from a start and leading back kept; the top of the sky
+  and clips over it left out; RCBot's limit of 1024 waypoints kept. The bot works out its visibility table itself.
+  `reachOf(map, { graph: true })` hands back the walk itself (`graph`, not enumerable) for what is built on it.
+
 ## 0.24.0 (2026-10-20)
 
 - **The figure judges** (`src/figures/`, exported as `figures`), from the figures research: does a figure (a
