@@ -18,6 +18,8 @@ test("sconce: on a wall facing any way, its glass a light's texture, closed brus
       sure(Math.max(...out) > 10 && Math.min(...out) > -2.5, `${shape} ${facing}: ${Math.min(...out)} to ${Math.max(...out)}`);
       sure(Math.abs(light[0] - Math.round(Math.cos(a) * 24)) <= 1 && Math.abs(light[1] - Math.round(Math.sin(a) * 24)) <= 1 && light[2] === 112, `${facing}: ${light}`);
     }
+  // without its plate: the shade alone, one brush fewer
+  sure(sconce({ at: [0, 0, 96], glass: "~L", metal: "M", plate: false }).brushes.length === sconce({ at: [0, 0, 96], glass: "~L", metal: "M" }).brushes.length - 1);
   let refused = "";
   try {
     sconce({ at: [0, 0, 0], glass: "~L" });

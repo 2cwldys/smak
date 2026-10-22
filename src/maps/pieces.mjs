@@ -126,11 +126,11 @@ export function spiralStairs({
  * Specialists' lamps do (a light entity in mid-air lights a wall with nothing shining on it). `at` is the point
  * on the wall's face at the shade's foot, `facing` the way out of the wall in degrees (0 east, 90 north: any
  * angle), `width` across the wall (24), `height` the glass's (32), `depth` how far it stands out (12); `glass`
- * the light's texture, `metal` the plate's and the caps'. `shape`: "fan" (faceted, opening upward, the period's),
+ * the light's texture, `metal` the plate's and the caps' (`plate: false`, the shade alone). `shape`: "fan" (faceted, opening upward, the period's),
  * "drum" (half a cylinder) or "box". → `{ brushes, light }`: `light` the point in front of the glass where a
  * `light` entity of its own goes, if one is wanted.
  */
-export function sconce({ at: foot, facing = 0, width = 24, height = 32, depth = 12, glass, metal, shape = "fan" }) {
+export function sconce({ at: foot, facing = 0, width = 24, height = 32, depth = 12, glass, metal, shape = "fan", plate = true }) {
   if (!Array.isArray(foot) || foot.length !== 3) throw new Error("sconce: at is [x, y, z], the foot of its shade on the wall's face");
   if (!glass || !metal) throw new Error("sconce: its glass (a light's texture) and its metal");
   if (!(width >= 8 && height >= 8 && depth >= 4)) throw new Error(`sconce: width and height 8 or more, depth 4 or more (${width}, ${height}, ${depth})`);
@@ -139,7 +139,8 @@ export function sconce({ at: foot, facing = 0, width = 24, height = 32, depth = 
   const [z0, z1] = [foot[2], foot[2] + height];
   const r = (v) => Math.round(v * 100) / 100;
   // built facing +x at the origin, its back on x = 0; then turned and moved
-  const made = [box([-2, -half - 3, z0 - 6], [0, half + 3, z1 + 6], metal)];
+  // its plate on the wall (`plate: false`: none, the shade alone: fewer faces where many hang in one view)
+  const made = plate ? [box([-2, -half - 3, z0 - 6], [0, half + 3, z1 + 6], metal)] : [];
   const caps = { top: metal, bottom: metal, sides: glass };
   if (shape === "box") made.push(box([0, -half, z0], [depth, half, z1], caps));
   else if (shape === "drum") {

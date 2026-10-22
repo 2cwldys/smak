@@ -92,7 +92,7 @@ mending for, says so under **Mind**.
 - **Lamps built as fixtures on walls and hung** (src/maps/pieces.mjs): `sconce`, a shade of glass on a plate
   standing out of a wall facing any way (a fan, a drum or a box), and `chandelier`, tiers of glass under a canopy and
   a rod. Their glass is a light's texture, lit as a texture light: a room was lit only by tubes on its ceiling,
-  laid along y, or by lights in the air.
+  laid along y, or by lights in the air.  `plate: false` hangs a sconce's shade alone, for a hall where many are seen at once.
 - **Open stairs**: `stairs(..., { open: 8 })` lays each step as a tread that thick with nothing under it (a fire
   escape, an open-riser stair), at the heights and depths the solid flight has; with `ramp` and `tread` as before.
 
