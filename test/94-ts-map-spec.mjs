@@ -129,6 +129,8 @@ if (TS)
       sure(tris.length > 0 && hi[2] - lo[2] > 1 && hi[2] - lo[2] < 300, say);
       sure(-lo[0] <= (thing.wall ?? r) + 2 && hi[0] <= (thing.deep ?? r) + 2 && Math.max(-lo[1], hi[1]) <= r + 2, `${say}: wall ${thing.wall}, deep ${thing.deep}, r ${r}`);
       sure(lo[2] + (thing.lift ?? 0) >= -2, `${say}: lift ${thing.lift}`);
+      // its top over its foot, what a solid one's CLIP box reaches to
+      sure(thing.high === undefined || Math.abs(hi[2] + (thing.lift ?? 0) - thing.high) <= 3, `${say}: high ${thing.high}`);
     }
   });
 else console.log("skip  The Specialists' map spec against the installed game\n      skipped: no ts/specialists.wad (SMAK_HALF_LIFE names the Half-Life folder)");

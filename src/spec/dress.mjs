@@ -156,7 +156,7 @@ function thingPiece(thing, kit = KIT_PIECES) {
   const under = thing.on ? kit[thing.on] : null;
   const own = { min: [0, -r], max: [off + (thing.deep ?? r), r] };
   const print = under ? unionOf(own, printOf(under)) : own;
-  return { print, origin: [off, 0], model: thing.model, z: (under ? topOf(under) : 0) + (thing.lift ?? 0), turn: thing.turn ?? 0, on: under ? thing.on : null };
+  return { print, origin: [off, 0], model: thing.model, z: (under ? topOf(under) : 0) + (thing.lift ?? 0), lift: thing.lift ?? 0, turn: thing.turn ?? 0, on: under ? thing.on : null };
 }
 /** Two footprints as one: the least box round both. */
 const unionOf = (a, b) => ({ min: [Math.min(a.min[0], b.min[0]), Math.min(a.min[1], b.min[1])], max: [Math.max(a.max[0], b.max[0]), Math.max(a.max[1], b.max[1])] });
@@ -217,12 +217,14 @@ export function dressRooms({ rooms, ways = [], landmarks = [], taken = [], seed 
       // a mod's thing in the middle of the room: one, along its long way, its middle kept clear of the ways
       if (where === "middle") {
         const thing = things[variants[0]];
-        const r = thing?.r ?? 16;
-        const print = { min: [mid[0] - r, mid[1] - r], max: [mid[0] + r, mid[1] + r] };
+        // its footprint about its origin, turned along the room's long way
+        const piece = thing && thingPiece(thing, PIECES);
+        const own = piece && turned({ min: [piece.print.min[0] - piece.origin[0], piece.print.min[1]], max: [piece.print.max[0] - piece.origin[0], piece.print.max[1]] }, x1 - x0 >= y1 - y0 ? 0 : 1);
+        const print = own && { min: [mid[0] + own.min[0], mid[1] + own.min[1]], max: [mid[0] + own.max[0], mid[1] + own.max[1]] };
         if (want > 0 && thing && !blocked.some((b) => overlaps(print, b, 8)) && !placed.some((p) => overlaps(print, p, 6))) {
           placed.push(print);
           used.set(variants[0], (used.get(variants[0]) ?? 0) + 1);
-          props.push({ model: thing.model, room: room.id, at: [0, 0], facing: (x1 - x0 >= y1 - y0 ? 0 : 90) + (thing.turn ?? 0), z: thing.lift ?? 0, print: { min: [-r, -r], max: [r, r] }, dressed: true });
+          props.push({ model: thing.model, room: room.id, at: [0, 0], facing: (x1 - x0 >= y1 - y0 ? 0 : 90) + (thing.turn ?? 0), z: thing.lift ?? 0, lift: thing.lift ?? 0, print: own, dressed: true });
         }
         continue;
       }
@@ -256,7 +258,7 @@ export function dressRooms({ rooms, ways = [], landmarks = [], taken = [], seed 
         if (piece) {
           // the model stands at its origin, turned as the piece is: its footprint about that
           const [ox, oy] = turnedPoint(piece.origin, q);
-          props.push({ model: piece.model, room: room.id, at: [at[0] + ox - mid[0], at[1] + oy - mid[1]], facing: (90 * q + piece.turn) % 360, z: piece.z, print: { min: [own.min[0] - ox, own.min[1] - oy], max: [own.max[0] - ox, own.max[1] - oy] }, dressed: true });
+          props.push({ model: piece.model, room: room.id, at: [at[0] + ox - mid[0], at[1] + oy - mid[1]], facing: (90 * q + piece.turn) % 360, z: piece.z, lift: piece.lift, print: { min: [own.min[0] - ox, own.min[1] - oy], max: [own.max[0] - ox, own.max[1] - oy] }, dressed: true });
           // what it stands on: the kit's piece, put at the same place and turned with it
           if (piece.on) {
             prefabs[`dress_${piece.on}`] = PIECES[piece.on];

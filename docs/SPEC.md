@@ -695,7 +695,7 @@ Valve's textures are photographs cut down: their fine detail is the material's o
 | `ladders` | `[{ room, side, along, width, height }]`: a ladder against that wall of the room (`side` north, south, east or west; `along` 0 to 1, 0.5 unless told; 32 wide and the room's height unless told), built as Valve's are: a `func_ladder` to climb and over it the rungs a player sees, a `func_wall` in render mode 4 in a texture with holes (`{LADDER1` when the game's `.wad` is given, a mesh of the map's own otherwise). Never make a ladder as furniture: a ladder texture without its holes reads as a vent |
 | `prefabs` | `{ name: { pieces: [...] } }` or `{ name: { file: "table.map" } }`: brush furniture made once, put in many places |
 | `models` | `{ name: <a model spec> }` or `{ name: { file } }`: models built with the map, for `props`. Each is written to `models/<map name>/<name>.mdl` beside the map, and its props name that path: copy the folder into `<mod>/models/` and the `.bsp` finds them, apart from the mod's own |
-| `props` | Models put in rooms: `{ model, room, at, facing, z, solid }`. `model` is one of `models`, a `.mdl` path the game has, or the kit's own furniture as `"kit:<name>"` (the specs in `kits/furniture/`: toilet, bathtub, sink_cabinet, bed, sofa, armchair, dresser, stove, fridge, coffee_table, tv_stand, bench, sedan, trees and more), built with the map. A model is walked through in the game: kit furniture, or a prop with `solid: true`, gets a `CLIP` box of its footprint and height that stops a body and draws nothing. Furnish with these, not with boxes |
+| `props` | Models put in rooms: `{ model, room, at, facing, z, solid }`. `model` is one of `models`, a `.mdl` path the game has, or the kit's own furniture as `"kit:<name>"` (the specs in `kits/furniture/`: toilet, bathtub, sink_cabinet, bed, sofa, armchair, dresser, stove, fridge, coffee_table, tv_stand, bench, sedan, trees and more), built with the map. A model is walked through in the game: kit furniture, a prop with `solid: true`, or a model a mod's profile says is solid (its `spec.things`, with the footprint and `high` it gives, turned as the prop stands, from its foot up), gets a `CLIP` box that stops a body and draws nothing; `solid: false` leaves one out. Furnish with these, not with boxes |
 | `include` | Other map specs taken in as modules (below) |
 | `layout` | A drawing of the plan (below), in place of placing rooms by words |
 | `wads` | A game's .wad files to take textures from: `["halflife.wad"]`, found by name in the game's folder |
@@ -1007,6 +1007,11 @@ profile, which says where each word was read from) gives:
   (benches, lamps, plants, a statue in the middle) and `rooftop` (machines, pipes, barrels). The game has no models
   for a bathroom or a stove; its crates are brushes (`func_breakable`): the kit's crates (and crates of 40 and 48
   of the profile's own `pieces`) dress a warehouse, a garage and an alley, each a `func_breakable` of wood;
+- props a player cannot walk through: a `ts_model` is a point to a player (the game's program gives it a box of
+  no size), and the maps' makers clip some (118 of 886: the seating most, plants and boxes none). Couches, armchairs,
+  tables, booths, the game's boxes, a dumpster, a bench and a statue are `solid` in the profile and get a `CLIP` box
+  of their footprint and height, in a room's dressing too; plants, pictures, office chairs and the street lamp are
+  walked through;
 - what breaks, as the game's maps make it (1006 `func_breakable` in 27 of its 29 maps): glass (`material` 0) in
   render mode 2 at 100 and `health` 1, wood (crates) at 15, metal at 50; every one with `respawntime` 45, since no
   stock map sets it (0 is the game's 30 seconds, under 0 never, per `ts/mapping.txt`) and the Havoc9 matchmode

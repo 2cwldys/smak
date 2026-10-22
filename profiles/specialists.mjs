@@ -147,7 +147,17 @@ export const FIGURE_STYLE = {
  *             foot (the game's potted plants stand on their middle), `turn` the yaw that faces it +x, its back
  *             to -x, read from where the maps stand it (the nearest wall behind it: a couch's back is +y, 33 of
  *             43 against a wall so) and from its pictures; a computer stands `on` a desk of the kit's (the maps
- *             stand theirs on brush desks). The counts: [placed, in maps].
+ *             stand theirs on brush desks). `high` its top over its foot, measured so. The counts: [placed, in
+ *             maps].
+ *   solid     the game's program makes a ts_model a point to a player: ts_i386.so's CTSModel::Spawn sets its size to
+ *             nothing (UTIL_SetSize with two zero vectors), its solid to SOLID_SLIDEBOX and its movetype to none, so
+ *             a player walks through a couch and stops only at its origin, and a shot passes it. The maps' makers
+ *             put CLIP brushes round some (measured: the player's hull solid at a ts_model's origin where the
+ *             point hull is open all round it): 118 of 886, the seating most (3dm_sofa_antro 18 of 18,
+ *             lmd_dualbooth 16 of 18, Schmung/sg_couch 8 of 17, 3dm_chair 27 of 69), plants, boxes and benches
+ *             none. The profile clips what a player would walk into and not through: couches, armchairs,
+ *             tables, booths, boxes, a dumpster, a bench, a statue (`solid: true`); plants, pictures, office
+ *             chairs and the street lamp are walked through, as in the game's maps.
  *   uses      office, lobby, cafe, warehouse, garage, server, stairwell, and in the open (`sky`) alley, plaza and
  *             rooftop; the game has no models for a bathroom or a kitchen's stove, and its crates are brushes
  *             (func_breakable, 1006 in 27 maps): a warehouse's crates are the kit's in cardbox1 beside the
@@ -221,35 +231,38 @@ export const SPEC = {
     crate40: { pieces: [{ box: [[0, -20, 0], [40, 20, 40]], texture: "crate" }], breakable: "wood" },
     crate48: { pieces: [{ box: [[0, -24, 0], [48, 24, 48]], texture: "crate" }], breakable: "wood" },
   },
-  prop: { class: "ts_model" },
+  // a ts_model is a point to a player (CTSModel::Spawn gives it a box of no size, SOLID_SLIDEBOX): a thing that is
+  // `solid` below is given a CLIP box of its footprint and `high`; the rest are walked through, as most are in the
+  // game's maps
+  prop: { class: "ts_model", solid: false },
   things: {
-    couch: { model: "models/schmung/sg_couch.mdl", r: 72, wall: 27, deep: 19, turn: 90 },                   // [43, 6]
-    sofa: { model: "models/3dm_sofa.mdl", r: 60, wall: 24, deep: 24, turn: 90 },                            // [14, 2]
-    armchair: { model: "models/schmung/sg_chair.mdl", r: 34, wall: 27, deep: 19, turn: 90 },                // [21, 4]
-    officeChair: { model: "models/3dm_chair.mdl", r: 22, wall: 19, deep: 19 },                              // [27, 1]
-    chair: { model: "models/schmung/sg_bkchair.mdl", r: 19, wall: 15, deep: 13, turn: 180 },                // [8, 1]
-    coffeeTable: { model: "models/sg_3dmtab.mdl", r: 54, turn: 90 },                                        // [6, 1]
-    table: { model: "models/schmung/sg_table2.mdl", r: 37 },                                                // [1, 1]
-    workstation: { model: "models/3dm_pc4.mdl", r: 16, wall: 35, deep: 0, turn: 180, on: "bench" },        // [6, 2]
-    workstation2: { model: "models/3dm_pc3.mdl", r: 20, wall: 35, deep: 0, turn: 180, on: "bench" },       // [1, 1]
-    booth: { model: "models/teahouse/lmd_singlebooth.mdl", r: 36, wall: 4, deep: 25, turn: 180 },          // [12, 1]
-    plant: { model: "models/xen/plants/xen_plant6b.mdl", r: 25, lift: 70 },                                // [45, 3]
-    plant2: { model: "models/xen/plants/xen_plant2b.mdl", r: 33, lift: 47 },                               // [25, 3]
-    plant8: { model: "models/xen/plants/xen_plant8b.mdl", r: 27, lift: 68 },                               // [24, 3]
-    tallPlant: { model: "models/ts_theatre/xt_plant2.mdl", r: 49, lift: 14 },                              // [6, 2]
-    statue: { model: "models/sg_cstatue.mdl", r: 21, wall: 7, deep: 14, lift: 1 },                         // [2, 2]
-    painting1: { model: "models/schmung/sg_paintinga1.mdl", r: 53, wall: 2, deep: 3, lift: 64 },           // [2, 1]
-    painting2: { model: "models/schmung/sg_paintinga2.mdl", r: 53, wall: 2, deep: 3, lift: 64 },           // [2, 1]
-    painting3: { model: "models/schmung/sg_paintinga3.mdl", r: 53, wall: 2, deep: 3, lift: 64 },           // [3, 1]
-    painting4: { model: "models/schmung/sg_paintinga4.mdl", r: 53, wall: 2, deep: 3, lift: 64 },           // [2, 1]
-    photo: { model: "models/schmung/sg_photb.mdl", r: 42, wall: 2, deep: 4, lift: 64 },                    // [2, 1]
-    box: { model: "models/hammertime/cg_box01.mdl", r: 22, wall: 22 },                                     // [2, 1]
-    box2: { model: "models/hammertime/cg_box02.mdl", r: 22, wall: 22 },                                    // [1, 1]
-    boxStack: { model: "models/hammertime/cg_box03.mdl", r: 47, wall: 23, deep: 23 },                      // [5, 1]
-    dumpster: { model: "models/xen/xen_trashcanb.mdl", r: 52, wall: 16, deep: 25 },                        // [4, 1]
-    trash: { model: "models/rdm_unmulch1.mdl", r: 40, wall: 28 },                                          // [2, 2]
-    bench: { model: "models/schmung/bench3.mdl", r: 55, wall: 21, deep: 17, turn: 90 },                    // [3, 1]
-    streetlamp: { model: "models/schmung/sg_streetlamp.mdl", r: 10, wall: 10, deep: 62 },                  // [8, 1]: its arm overhead
+    couch: { model: "models/schmung/sg_couch.mdl", r: 72, wall: 27, deep: 19, turn: 90, high: 46, solid: true },                   // [43, 6]
+    sofa: { model: "models/3dm_sofa.mdl", r: 60, wall: 24, deep: 24, turn: 90, high: 49, solid: true },                            // [14, 2]
+    armchair: { model: "models/schmung/sg_chair.mdl", r: 34, wall: 27, deep: 19, turn: 90, high: 46, solid: true },                // [21, 4]
+    officeChair: { model: "models/3dm_chair.mdl", r: 22, wall: 19, deep: 19, high: 48 },                              // [27, 1]
+    chair: { model: "models/schmung/sg_bkchair.mdl", r: 19, wall: 15, deep: 13, turn: 180, high: 52 },                // [8, 1]
+    coffeeTable: { model: "models/sg_3dmtab.mdl", r: 30, wall: 54, deep: 54, turn: 90, high: 25, solid: true },                                   // [6, 1]
+    table: { model: "models/schmung/sg_table2.mdl", r: 37, high: 39, solid: true },                                                // [1, 1]
+    workstation: { model: "models/3dm_pc4.mdl", r: 16, wall: 35, deep: 0, turn: 180, on: "bench", high: 27 },        // [6, 2]
+    workstation2: { model: "models/3dm_pc3.mdl", r: 20, wall: 35, deep: 0, turn: 180, on: "bench", high: 27 },       // [1, 1]
+    booth: { model: "models/teahouse/lmd_singlebooth.mdl", r: 36, wall: 4, deep: 25, turn: 180, high: 57, solid: true },          // [12, 1]
+    plant: { model: "models/xen/plants/xen_plant6b.mdl", r: 25, lift: 70, high: 91 },                                // [45, 3]
+    plant2: { model: "models/xen/plants/xen_plant2b.mdl", r: 33, lift: 47, high: 99 },                               // [25, 3]
+    plant8: { model: "models/xen/plants/xen_plant8b.mdl", r: 27, lift: 68, high: 100 },                               // [24, 3]
+    tallPlant: { model: "models/ts_theatre/xt_plant2.mdl", r: 49, lift: 14, high: 93 },                              // [6, 2]
+    statue: { model: "models/sg_cstatue.mdl", r: 21, wall: 7, deep: 14, lift: 1, high: 110, solid: true },                         // [2, 2]
+    painting1: { model: "models/schmung/sg_paintinga1.mdl", r: 53, wall: 2, deep: 3, lift: 64, high: 91 },           // [2, 1]
+    painting2: { model: "models/schmung/sg_paintinga2.mdl", r: 53, wall: 2, deep: 3, lift: 64, high: 91 },           // [2, 1]
+    painting3: { model: "models/schmung/sg_paintinga3.mdl", r: 53, wall: 2, deep: 3, lift: 64, high: 91 },           // [3, 1]
+    painting4: { model: "models/schmung/sg_paintinga4.mdl", r: 53, wall: 2, deep: 3, lift: 64, high: 91 },           // [2, 1]
+    photo: { model: "models/schmung/sg_photb.mdl", r: 42, wall: 2, deep: 4, lift: 64, high: 95 },                    // [2, 1]
+    box: { model: "models/hammertime/cg_box01.mdl", r: 22, wall: 22, high: 40, solid: true },                                     // [2, 1]
+    box2: { model: "models/hammertime/cg_box02.mdl", r: 22, wall: 22, high: 40, solid: true },                                    // [1, 1]
+    boxStack: { model: "models/hammertime/cg_box03.mdl", r: 47, wall: 23, deep: 23, high: 80, solid: true },                      // [5, 1]
+    dumpster: { model: "models/xen/xen_trashcanb.mdl", r: 52, wall: 16, deep: 25, high: 55, solid: true },                        // [4, 1]
+    trash: { model: "models/rdm_unmulch1.mdl", r: 40, wall: 28, high: 15 },                                          // [2, 2]
+    bench: { model: "models/schmung/bench3.mdl", r: 55, wall: 21, deep: 17, turn: 90, high: 55, solid: true },                    // [3, 1]
+    streetlamp: { model: "models/schmung/sg_streetlamp.mdl", r: 10, wall: 10, deep: 62, high: 235 },                  // [8, 1]: its arm overhead
   },
   // each [what, the things or the kit's pieces it is one of, where, how many to a 256 x 256 of floor (the first at
   // least one)], as src/spec/dress.mjs's uses are written

@@ -104,6 +104,7 @@ const areas = [
   "94-ts-map-spec", // The Specialists' map spec: its textures, ts_model props and rooms furnished by its uses; its models where the game is installed
   "97-ts-map-delivered", // a mod's map delivered as the .bsp alone: no .wad of its own, or its pictures put inside the .bsp
   "98-ts-map-breakables", // what breaks: furniture, prefabs and their pieces as func_breakable with their material's keys, a mod's over the kit's
+  "99-ts-map-solid-props", // props a player cannot walk through: a mod's solid things clipped, turned as they stand; the rest walked through
   "19-example-and-kit-faults", // the examples' wrong arguments and refused models; the kits' fittings and rings
 ];
 

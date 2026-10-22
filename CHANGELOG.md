@@ -29,6 +29,12 @@ mending for, says so under **Mind**.
   takes them too. A mod's profile may flag the kit's dressing pieces or give its own (`spec.pieces`). The
   Specialists' profile, read off its maps' 1006 breakables: glass in render mode 2 at 100 and health 1, crates of
   wood at 15, every one back after 45 seconds; the kit's crates, and crates of 40 and 48, break each alone.
+- **Solid props from the profile.** A mod's thing may say `solid` and `high`: a prop of that model, put by the spec
+  or by a room's use, gets a `CLIP` box of its footprint (turned as it stands) from its foot to its top, unless the
+  prop says `solid: false`; a profile's `prop.solid` says it for all. The Specialists' ts_model is a point to a
+  player (its program sizes it to nothing): its couches, armchairs, tables, booths, boxes, dumpster, bench and statue
+  are solid, its plants, pictures, office chairs and street lamp walked through, as its maps' makers clip them. A
+  thing in the middle of a room (a coffee table) keeps its footprint, turned along the room, not a square.
 
 ## 0.24.0 (2026-10-20)
 

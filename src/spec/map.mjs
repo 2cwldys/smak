@@ -1994,6 +1994,8 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
     files.models = join(out, `${spec.name}-models.png`);
     writeFileSync(files.models, png(sheet.width, sheet.height, sheet.rgba));
   }
+  // props given a CLIP box, by room
+  const clipped = new Map();
   place(
     [...(spec.props ?? []), ...dressedProps.filter((thing) => thing.model)],
     "props",
@@ -2003,20 +2005,29 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
       const model = modelFiles[key] ?? thing.model;
       // a prop is the mod's class for one (Master Sword's env_model) unless told
       const prop = profile?.spec?.prop ?? {};
-      entities.push(pointEntity(thing.class ?? prop.class ?? "cycler_sprite", at, { model, angles: [0, yawOf(room, thing.facing, at), 0], ...(prop.keys ?? {}), ...(thing.keys ?? {}) }));
-      // a model is walked through in the game: furniture of the kit's, or a prop that says `solid: true`, is
-      // given a CLIP box of its footprint and height, which stops a body and draws nothing
-      if (thing.solid ?? String(thing.model).startsWith("kit:")) {
-        const own = turnedPrint(modelPrints[key] ?? { min: [-16, -16], max: [16, 16] }, isNumber(thing.facing) ? thing.facing : FACINGS[thing.facing] ?? 0);
-        const min = [at[0] + own.min[0], at[1] + own.min[1], at[2]];
-        const max = [at[0] + own.max[0], at[1] + own.max[1], at[2] + (modelHeights[key] ?? 32)];
+      const yaw = yawOf(room, thing.facing, at);
+      entities.push(pointEntity(thing.class ?? prop.class ?? "cycler_sprite", at, { model, angles: [0, yaw, 0], ...(prop.keys ?? {}), ...(thing.keys ?? {}) }));
+      // a model is walked through in the game: furniture of the kit's, a prop that says `solid: true`, or one of a
+      // mod's things that is solid (its profile's `things`, unless its `prop.solid` says all are) is given a CLIP box
+      // of its footprint and height, which stops a body and draws nothing (The Specialists' ts_model is a point to a
+      // player: its program gives it a box of no size)
+      const known = Object.values(profile?.spec?.things ?? {}).find((t) => t.model === thing.model);
+      if (thing.solid ?? known?.solid ?? prop.solid ?? String(thing.model).startsWith("kit:")) {
+        const r = known?.r ?? 16;
+        const own = thing.print ?? (known ? turnedPrint({ min: [-(known.wall ?? r), -r], max: [known.deep ?? r, r] }, yaw - (known.turn ?? 0)) : turnedPrint(modelPrints[key] ?? { min: [-16, -16], max: [16, 16] }, isNumber(thing.facing) ? thing.facing : FACINGS[thing.facing] ?? 0));
+        // from its foot (a mod's model may stand on its middle, lifted) to its top
+        const foot = Math.max(room.min[2], at[2] - (thing.lift ?? known?.lift ?? 0));
+        const min = [at[0] + own.min[0], at[1] + own.min[1], foot];
+        const max = [at[0] + own.max[0], at[1] + own.max[1], foot + (thing.high ?? known?.high ?? modelHeights[key] ?? 32)];
         brushes.push(box(min, max, "CLIP"));
         furniturePieces.push({ name: `props (${thing.model})`, room, min, max });
+        clipped.set(room.id, (clipped.get(room.id) ?? 0) + 1);
       }
     },
     // a prop's footprint: its model's, turned as it faces (a facing that names a room counts as unturned)
     (thing) => thing.print ?? turnedPrint(modelPrints[kitKey(thing.model)] ?? { min: [-16, -16], max: [16, 16] }, isNumber(thing.facing) ? thing.facing : FACINGS[thing.facing] ?? 0),
   );
+  if (clipped.size) report.facts.push(`props: ${[...clipped.values()].reduce((a, b) => a + b, 0)} solid, each in a CLIP box of its footprint and height (${[...clipped].map(([id, n]) => `${n} in ${id}`).join(", ")})`);
   // a lamp is never in mid-air: one that hangs below the ceiling gets a shade over it and a rod up to the ceiling
   // (Steven's play-test: "random lights in the middle of the air"; src/maps/sweep.mjs finds them in any map)
   // in a framed room with fixtures, a light under the ceiling is in a panel of glass that glows (a texture light, as
