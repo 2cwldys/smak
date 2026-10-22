@@ -185,7 +185,8 @@ const mid = (room) => room.min.map((v, k) => (v + room.max[k]) / 2);
 
 /**
  * What a spec's `compile` asks of the compilers: { quality: "draft" | "normal" | "final", threads, light: {
- * bounce, ao, extra, softShadows }, hulls: { large: false, crouch: false }, clipEconomy: true }.
+ * bounce, ao, extra, softShadows }, hulls: { large: false, crouch: false }, clipEconomy: true }. (`embed`, the
+ * map's own pictures put inside the .bsp, is read where the .wad is written.)
  */
 function compileOptions(asked = {}) {
   const rad = [];
@@ -2198,15 +2199,22 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
     if (!read.has(name)) read.set(name, (readPicture ?? ((file) => unpicture(readFileSync(resolve(folder ?? ".", file.replace(/^(work|models):/, ""))))))(name));
     return read.get(name);
   };
+  // a mod's map is built on the .wad files the game ships (its profile's `spec.wads`): the sky is then the
+  // compilers' own (zhlt.wad and sdhlt.wad have it, and hlcsg puts it inside the .bsp by itself), and a picture of
+  // the map's own is put inside the .bsp too (hlcsg -wadinclude), unless the spec says `compile.embed: false`: the
+  // map delivered is the .bsp alone, and a player who has the game has every .wad it names
+  const shipped = Boolean(profile?.spec?.wads);
+  const embed = spec.compile?.embed ?? shipped;
+  const painted = [...used.entries()].filter(([key]) => !(shipped && key === "sky"));
   let pictures;
   try {
-    pictures = [...used.entries()].map(([key, material]) => ({ name: nameOfKey(key), image: surfacePicture(material, ...pictureSize(key, material), { readPicture: readOnce }), base: materialOf(material).base, filter: materialOf(material).filter }));
+    pictures = painted.map(([key, material]) => ({ name: nameOfKey(key), image: surfacePicture(material, ...pictureSize(key, material), { readPicture: readOnce }), base: materialOf(material).base, filter: materialOf(material).filter }));
   } catch (error) {
     report.errors.push(`textures: ${error.message}`);
     return { report, files, map: null };
   }
   for (const p of pictures) for (const fact of p.image.facts ?? []) report.facts.push(`texture ${p.name}: ${fact}`);
-  writeFileSync(wadFile, writeWad(pictures));
+  if (pictures.length) writeFileSync(wadFile, writeWad(pictures));
   // a picture flatter, brighter or more coloured than nine in ten of Valve's walls looks cheap in the game
   // a photograph laid as it is (literal) is the person's picture, not a surface to hold to Valve's
   const looks = lookSentence(pictures.filter((p) => !p.image.rgba && !UNWORN.has(p.base) && p.filter !== "literal").map((p) => ({ ...p, allow: ALLOWED[p.base] })), "of the map's own textures");
@@ -2224,8 +2232,15 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
     const said = lookSentence(named.filter((n) => !/^[{!+~-]|^sky$/i.test(n.name)), "textures of the spec's own .wad files");
     if (said) report.warnings.push(said);
   }
-  files.wad = wadFile;
   const gameWads = [...new Set(gameTextures.values())];
+  // the .wad files the map is compiled with: its own (when it has pictures of its own) and the game's it wears
+  const mapWads = [...(pictures.length ? [wadFile] : []), ...gameWads];
+  // those put inside the .bsp: the map's own, and the maker's own beside the spec, when it is to be delivered alone
+  const included = embed ? [...(pictures.length ? [wadFile] : []), ...gameWads.filter((file) => ownWads.has(file))].map((file) => basename(file).replace(/\.wad$/i, "")) : [];
+  if (pictures.length) files.wad = wadFile;
+  if (!pictures.length && gameWads.length) report.facts.push(`textures: every one the map wears is in ${gameWads.map((file) => basename(file)).join(", ")}${shipped ? ", which the game ships" : ""}: no .wad of the map's own`);
+  else if (included.length) report.facts.push(`textures: ${included.map((n) => `${n}.wad`).join(", ")} (${pictures.length} ${pictures.length === 1 ? "picture" : "pictures"} of the map's own${included.length > (pictures.length ? 1 : 0) ? " and the maker's" : ""}) put inside the .bsp as it compiles (hlcsg -wadinclude): the map needs ${gameWads.filter((file) => !ownWads.has(file)).map((file) => basename(file)).join(", ") || "no .wad"} beside it${shipped ? ", which the game ships" : ""}`);
+  else if (pictures.length && shipped) warnings.push(`textures: compile.embed is false: ${basename(wadFile)} (${pictures.length} pictures of the map's own) is named by the map and has to be shipped beside it, in the mod's folder`);
   // a sky of the map's own, made from its words, in gfx/env/<map>/ as its models are in models/<map>/; its sun where
   // the map's light comes from, and dark when the map is
   let skyname = spec.sky ?? "desert";
@@ -2258,7 +2273,7 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
     warnings.push(...landmarkSeen.warnings);
     if (landmarkSeen.aim) entities.push(pointEntity("info_target", landmarkSeen.aim.map(Math.round), { targetname: "landmark" }));
   }
-  const map = { worldspawn: { wad: [wadFile, ...gameWads], message: spec.note ?? name, skyname }, brushes, entities };
+  const map = { worldspawn: { wad: mapWads, message: spec.note ?? name, skyname }, brushes, entities };
   const mapFile = join(out, `${name}.map`);
   writeFileSync(mapFile, writeMap(map));
   files.map = mapFile;
@@ -2283,7 +2298,9 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
   // the entities held against the game's entity definitions (its FGD, and the compilers' own), when given
   const fgds = [...[fgd].flat(), ...[spec.fgd ?? []].flat().map((file) => resolve(folder ?? ".", file))];
   const definitions = fgds.length ? definitionsOf(...fgds) : undefined;
-  const plan = checkPlan(map, { textures, definitions, ...(profile ? { mod: profile } : {}) });
+  // the .wad files put inside the .bsp are not looked for in the game's folders: the compiled map does not name them
+  const delivered = included.length ? { ...map, worldspawn: { ...map.worldspawn, wad: mapWads.filter((file) => !included.includes(basename(file).replace(/\.wad$/i, ""))) } } : map;
+  const plan = checkPlan(delivered, { textures, definitions, ...(profile ? { mod: profile } : {}) });
   if (definitions) report.facts.push(`entities checked against ${definitions.from.join(", ")} (${Object.keys(definitions.classes).length} classes)`);
   else if (profile) report.facts.push(`entities checked against the profile of ${profile.title ?? profile.name}`);
   else warnings.push("no FGD given: the entities' classes and keys were not checked against the game's definitions");
@@ -2326,7 +2343,7 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
     report.facts.push(`not compiled: ${found.message}`);
     report.faults.push("not compiled: the compilers were not found, so the leak test of the compiler and the light could not run");
   } else {
-    const result = compileMap(mapFile, { wads: [wadFile, ...gameWads], compilers: found, out: join(out, `${name}.bsp`), ...compileOptions(composed && spec.compile?.light?.bounce === undefined ? { ...(spec.compile ?? {}), light: { ...(spec.compile?.light ?? {}), bounce: composed.bounce } } : spec.compile) });
+    const result = compileMap(mapFile, { wads: mapWads, wadinclude: included, compilers: found, out: join(out, `${name}.bsp`), ...compileOptions(composed && spec.compile?.light?.bounce === undefined ? { ...(spec.compile ?? {}), light: { ...(spec.compile?.light ?? {}), bounce: composed.bounce } } : spec.compile) });
     const limits = Object.entries(result.limits ?? {}).filter(([n]) => ["allocblock", "worldleaves", "worldfaces", "clipnodes", "models", "planes"].includes(n));
     if (limits.length) report.facts.push(`the engine's limits: ${limits.map(([n, l]) => `${n} ${l.used} of ${l.most}`).join(", ")}`);
     warnings.push(...result.warnings.filter((w) => /near the engine's limit/.test(w)));
@@ -2334,6 +2351,13 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
     else {
       files.bsp = result.bsp;
       const bsp = readBsp(readFileSync(result.bsp));
+      // the .wad files the compiled map asks the game for (its worldspawn's `wad`, as hlcsg wrote it), and the
+      // pictures it carries inside: what is delivered with it
+      const asks = String(Object.fromEntries(bsp.entities[0] ?? []).wad ?? "").split(";").map((w) => basename(w.replace(/\\/g, "/"))).filter(Boolean);
+      const inside = bsp.textures.filter((t) => t.embedded).length;
+      report.facts.push(`the compiled map asks the game for ${asks.join(", ") || "no .wad"} and carries ${inside} ${inside === 1 ? "picture" : "pictures"} inside`);
+      const unshipped = asks.filter((w) => shipped && embed && !(profile.spec.wads ?? []).some((given) => basename(given).toLowerCase() === w.toLowerCase()));
+      if (unshipped.length) report.faults.push(`the compiled map asks the game for ${unshipped.join(", ")}, which it does not ship: put its pictures inside (compile.embed) or ship ${unshipped.length > 1 ? "them" : "it"} with the map`);
       const roomsBoxes = Object.fromEntries([...rooms.values()].map((room) => [room.id, { min: room.min, max: room.max }]));
       const lit = lightReport(bsp, { rooms: roomsBoxes });
       for (const room of lit.rooms) {

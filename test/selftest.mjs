@@ -102,6 +102,7 @@ const areas = [
   "92-figure-profiles", // each game's manner for the figure judges: MSC, TS and Half-Life's profiles by name, file and object
   "93-figure-commands", // smak figure-survey, figure-judge, figure-texture, figure-shape and figure-validate on a library of the test's own
   "94-ts-map-spec", // The Specialists' map spec: its textures, ts_model props and rooms furnished by its uses; its models where the game is installed
+  "97-ts-map-delivered", // a mod's map delivered as the .bsp alone: no .wad of its own, or its pictures put inside the .bsp
   "19-example-and-kit-faults", // the examples' wrong arguments and refused models; the kits' fittings and rings
 ];
 

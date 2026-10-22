@@ -1000,6 +1000,15 @@ profile, which says where each word was read from) gives:
   (benches, lamps, plants, a statue in the middle) and `rooftop` (machines, pipes, barrels). The game has no models
   for a bathroom or a stove; its crates are brushes (`func_breakable`), which a use does not make.
 
+**Delivered as the .bsp alone.** A mod's map is built on the .wad files its game ships (the profile's `spec.wads`):
+a map that wears only their textures writes no .wad of its own and names none but theirs (the sky is the
+compilers' own texture: zhlt.wad and sdhlt.wad have it, and hlcsg puts it inside the .bsp by itself). One with
+pictures of its own (a spec's `textures` painted by the kit: marble, brass) writes them to `<name>.wad`, which the
+.map names for an editor, and the compile puts them inside the .bsp (`hlcsg -wadinclude <name>`): the compiled map
+asks the game for the shipped .wad files alone, and the report says so (`the compiled map asks the game for
+specialists.wad, halflife.wad and carries N pictures inside`). `"compile": { "embed": false }` leaves them out of
+the .bsp, and the report warns that `<name>.wad` has to be shipped beside the map.
+
 ```json
 { "spec": "smak.map/1", "name": "ts_offices", "mod": "../smak/profiles/specialists.mjs",
   "rooms": [{ "id": "lobby", "size": [448, 320, 160], "use": "lobby", "surfaces": { "floor": "ts_parquet" } },

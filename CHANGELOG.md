@@ -18,6 +18,11 @@ mending for, says so under **Mind**.
   its `r`: a couch is long and shallow), `turn` (the yaw that faces a model made facing elsewhere into the room)
   and `on` (a piece of the kit's it stands on, put with it: a computer on a desk).
 - A room's dressing keeps clear of the places to start: a start stood in a couch.
+- **A mod's map is delivered as the .bsp alone.** Built on the .wad files the game ships, a map that wears only
+  their textures writes and names no .wad of its own (it wrote one holding nothing but `sky`, which the compilers
+  have); one with pictures of its own puts them inside the .bsp (`hlcsg -wadinclude`), so the compiled map asks the
+  game only for the .wad files it ships. `compile.embed: false` ships them beside it instead. The report says
+  which .wad files the compiled map asks for and how many pictures it carries.
 
 ## 0.24.0 (2026-10-20)
 
