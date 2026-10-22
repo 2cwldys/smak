@@ -251,6 +251,7 @@ function cutNear(polygon, near) {
  *   ground      true: a line across the picture where z = 0 is, the floor a thing stands on, drawn over the
  *               model so that a foot under it is seen crossed. Only a level orbit view has such a line
  *               (pitch 0: "side", "front"); any other is refused
+ *   near        with perspective: what is nearer the eye than this is cut off (GoldSrc cuts at 4: gl_znear)
  *   width, height, background [r, g, b], light (false: the texture as it is), cull (false: both sides of
  *   every triangle; "solid": both sides of every triangle but a masked one's, whose holes show its far side
  *   on purpose: a net)
@@ -291,7 +292,7 @@ export function render(src, opts = {}) {
     return [dot(d, right), dot(d, up), dot(d, forward)];
   };
   const lamp = unit([0, 1, 2].map((a) => -forward[a] * LAMP.back + up[a] * LAMP.up - right[a] * LAMP.left));
-  const near = first || !perspective ? NEAR_FIRST : Math.max(NEAR_LEAST, opts.dist / NEAR_SHARE);
+  const near = opts.near ?? (first || !perspective ? NEAR_FIRST : Math.max(NEAR_LEAST, opts.dist / NEAR_SHARE));
 
   const pictures = new Map();
   const pictureOf = (texture) => {
