@@ -49,7 +49,7 @@ export const VALVE_KINDS = {
 /** The kind of Valve's surfaces a base of the kit's is held against, or null for all of them. */
 const BASE_KIND = {
   wood: "wood", darkwood: "wood", planks: "wood", door: "door",
-  plaster: "concrete", stone: "concrete", asphalt: "concrete",
+  plaster: "concrete", stone: "concrete", asphalt: "concrete", marble: "tile",
   iron: "metal", steel: "metal", metal: "metal", brass: "metal", gold: "metal", copper: "metal",
   tile: "tile",
   dirt: "ground", grass: "ground", snow: "ground",
@@ -129,7 +129,7 @@ export function lookFaults(look, allow = [], base = null) {
  * coloured by what they are, and signs, paint and warning stripes, are coloured on purpose; a warning stripe a
  * texel or two wide is sharp edges, not grain.
  */
-export const ALLOWED = { snow: ["bright"], bone: ["bright"], leather: ["colour"], rope: ["colour"], brass: ["colour"], gold: ["colour", "bright"], copper: ["colour"], paint: ["colour"], hazard: ["colour", "structure"] };
+export const ALLOWED = { snow: ["bright"], bone: ["bright"], marble: ["bright", "colour"], leather: ["colour"], rope: ["colour"], brass: ["colour"], gold: ["colour", "bright"], copper: ["colour"], paint: ["colour"], hazard: ["colour", "structure"] };
 
 /**
  * One sentence for a report on a set of pictures `[{ name, image, allow }]` (`allow`: what it may be past

@@ -76,6 +76,12 @@ mending for, says so under **Mind**.
   the Half-Life folder found (`findHalfLife`: `SMAK_HALF_LIFE`, or a Steam library, `steamLibraries`), so
   `map-measure --mod ts` works with no `--game`. `--kind` is handed to the profile.
 
+- **Marble**, a material base (`{ "base": "marble", "tone", "vein", "veins", "scale", "cell" }`): polished stone
+  clouded lighter and darker, crossed by veins that wander on a slant with a finer set across them; with `cell`
+  laid as tiles with a fine joint. A map's picture of it tiles by noise that comes round with the picture, not by
+  blending copies (which left veins a quarter as dark in its middle), and is worn less than a wall (half the patches, two thirds of the grain). It may
+  be brighter and more coloured than Valve's walls without a warning.
+
 ## 0.24.0 (2026-10-20)
 
 - **The figure judges** (`src/figures/`, exported as `figures`), from the figures research: does a figure (a

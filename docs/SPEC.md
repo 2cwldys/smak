@@ -584,7 +584,9 @@ wears; the report says so. `smak map-view --wad`, `map-views` and `map-plan` dra
 ## Materials
 
 `base` is one of: `wood`, `darkwood`, `planks`, `iron`, `steel`, `brass`, `gold`, `copper`, `leather`,
-`cloth`, `rope`, `stone`, `brick`, `plaster`, `tile`, `metal`, `grass`, `dirt`, `glass`, `flame`, `neon`,
+`cloth`, `rope`, `stone`, `marble` (polished stone clouded and crossed by veins that wander on a slant, `vein` their
+colour, `veins` how many, `scale` its clouds in units, 48; with `cell` laid as tiles; let be bright and coloured, a
+bank's cream and green), `brick`, `plaster`, `tile`, `metal`, `grass`, `dirt`, `glass`, `flame`, `neon`,
 `hazard` (stripes of its tone and black), `flat` (its tone and nothing else: no grain, patches or wear, as the game's own BLACK and YELLOW are; a plain colour a person asks for), `leaves` (pointed leaves on two layers with holes between, a masked texture: a crown's `cards`; `cell` a leaf's size in units, 2.5, `fill` the share of places that hold one, 0.75), `asphalt`, `water`, `paint`, `bone`, `door` (maps: a panelled door with
 its handle, fitted to the leaf), `mesh` (a net, a wire fence,
 a grille: cords in its tone with holes between, seen through as in the game; `cell` the holes' size, 2;

@@ -34,6 +34,7 @@ export const MATERIALS = {
   leather: { tone: [0.33, 0.2, 0.11], what: "a strap, a saddle, a bag" },
   cloth: { tone: [0.6, 0.55, 0.45], what: "sacking, a banner, a cushion" },
   stone: { tone: [0.5, 0.49, 0.46], what: "carved or rough stone" },
+  marble: { tone: [0.62, 0.58, 0.5], what: "polished stone clouded lighter and darker and crossed by veins that wander on a slant: a bank's floor and walls, a column. `vein` the veins' colour (its tone darker unless told), `veins` how many (1), `scale` its clouds' size in units (48); with `cell` laid as tiles" },
   brick: { tone: [0.51, 0.285, 0.22], what: "a wall of bricks (maps: laid in courses)" },
   plaster: { tone: [0.56, 0.54, 0.49], what: "a plain wall" },
   tile: { tone: [0.62, 0.6, 0.56], what: "a floor of square tiles" },
@@ -136,6 +137,9 @@ export function materialOf(given, where = "material") {
     // the sizes of a pattern, in texels of the picture: a tile's or a panel's cell ([w, h] or one number), a
     // brick's course and length, a board's width, a hazard stripe's width and slant
     ...Object.fromEntries(["course", "length", "board", "stripe", "angle"].filter((k) => material[k] !== undefined).map((k) => [k, material[k]])),
+    // marble's veins: their colour, how many, and the size of its clouds in units
+    ...(material.vein !== undefined ? { vein: colourOfGiven(material.vein, `${where}.vein`) } : {}),
+    ...Object.fromEntries(["veins", "scale"].filter((k) => material[k] !== undefined).map((k) => [k, material[k]])),
     ...(material.picture !== undefined ? pictureOf(material, where) : {}),
     // a model's photographed material, made once by photoMaterial
     ...(material.tiled ? { tiled: material.tiled } : {}),
@@ -351,6 +355,28 @@ export function colourAt(material, x, y, light = 1, px = 8) {
       const weave = 0.92 + 0.03 * sub * Math.sin(x * 9) * Math.sin(y * 9) + 0.16 * (grain(x * 0.5, y * 0.5) - 0.5) + 0.06 * Math.sin(y * 1.3 + 3 * grain(x * 0.2, y * 0.2));
       return shade(tone, weave * light);
     }
+    case "marble": {
+      // clouds of the stone's own tone, and veins: a wavering line on a slant where a warped noise crosses a whole
+      // number, with a finer second set across it, as polished marble is cut (Calacatta, Nero Marquina, a green
+      // Verde Alpi: one tone and its veins). The clouds and veins are units across, so a floor and a wall agree.
+      // On a map's picture (`period`, its size) every noise comes round with the picture, so it tiles with no
+      // blending: veins faded into copies of themselves were a quarter as dark in the picture's middle
+      const k = material.scale ?? 48;
+      const [w, h] = material.period ?? [0, 0];
+      const smooth = (a, b, size, seed, octaves) => (w ? loopNoise(a, b, w, h, size, seed, octaves) : fbm(a / size, b / size, seed, octaves));
+      // the slant: so many crossings of the picture each way (a whole number, even, so the sine comes round)
+      const slant = (n, across) => (across ? Math.max(2, 2 * Math.round(across / (2 * k * n))) / across : 1 / (k * n));
+      const cloud = smooth(x, y, k, s + 41, 4);
+      const warp = x * slant(1.4, w) + y * slant(2.2, h) + 2.4 * smooth(x, y, k * 1.7, s + 43, 4);
+      const line = Math.abs(Math.sin(warp * Math.PI * (material.veins ?? 1)));
+      const crossing = x * slant(2.8, w) - y * slant(1.25, h) + 3 * smooth(x, y, k / 1.3, s + 47, 3);
+      const across = Math.abs(Math.sin(crossing * Math.PI * 2));
+      const vein = material.vein ?? tone.map((v) => v * 0.42);
+      const width = 0.06 + 0.06 * smooth(x, y, 20, s + 49, 2);
+      const strength = Math.min(1, Math.max(0, 1 - line / width) + 0.4 * Math.max(0, 1 - across / 0.035));
+      const clouded = shade(tone, 0.88 + 0.26 * (cloud - 0.5) * 2);
+      return shade(mix(clouded, vein, strength), light);
+    }
     case "stone":
     case "plaster": {
       const rough = base === "stone" ? 0.35 : 0.12;
@@ -505,6 +531,18 @@ function cellNoise(x, y, w, h, cell, s) {
   return 2 * (a + (b - a) * fx + (c - a) * fy + (a - b - c + d) * fx * fy) - 1;
 }
 
+/** Fractal noise of `octaves` that comes round every `w` by `h` texels, its largest cells `size` across: 0 to 1. */
+function loopNoise(x, y, w, h, size, s, octaves = 4) {
+  let sum = 0;
+  let total = 0;
+  for (let o = 0; o < octaves; o++) {
+    const k = 0.5 ** o;
+    sum += k * cellNoise(x, y, w, h, Math.max(2, size * k), s + o * 17);
+    total += k;
+  }
+  return 0.5 + (0.5 * sum) / total;
+}
+
 /**
  * The grain of a used surface at a texel, -1 to 1: grit in specks two and three and a half texels across (what
  * a photographed wall cut down to a texel a unit shows: a texel is like its neighbours), and a little of each
@@ -575,6 +613,13 @@ export function surfacePicture(given, size = 64, height = size, { readPicture } 
         c[0][i] * (1 - a) * (1 - b) + c[1][i] * a * (1 - b) + c[2][i] * (1 - a) * b + c[3][i] * a * b,
     );
   };
+  // marble's noise comes round with the picture itself: painted once, each texel the mean of four points in it
+  const periodic = { ...material, period: [size, height] };
+  const looped = (x, y) => {
+    const sum = [0, 0, 0];
+    for (const [ox, oy] of SUBTEXEL) colourAt(periodic, x + ox, y + oy, 1, 1).forEach((v, i) => (sum[i] += v / SUBTEXEL.length));
+    return sum;
+  };
   const mortar = [0.6, 0.58, 0.54];
   // a pattern's size made to divide the picture, so that it tiles: the nearest whole number of them across
   const divide = (wanted, across) => across / Math.max(1, Math.round(across / wanted));
@@ -588,7 +633,7 @@ export function surfacePicture(given, size = 64, height = size, { readPicture } 
     for (let x = 0; x < size; x++) {
       // the picture's detail where one is given (a door's is under its panels, drawn by colourAt)
       // a flat colour is its tone and nothing else, as the game's own BLACK and YELLOW are
-      let c = base === "flat" ? tone : detail && base !== "door" ? detail(x, y) : seamless(x, y);
+      let c = base === "flat" ? tone : detail && base !== "door" ? detail(x, y) : base === "marble" ? looped(x, y) : seamless(x, y);
       if (base === "brick") {
         // courses 16 high, bricks 32 long (`course`, `length`), every other course moved half a brick
         const course = Math.floor(y / courseH);
@@ -598,6 +643,12 @@ export function surfacePicture(given, size = 64, height = size, { readPicture } 
         const edge = Math.min(up, courseH - 1 - up, along, brickL - 1 - along);
         const brick = times(c, 0.85 + 0.3 * (noise(Math.floor(shifted / brickL), course, s) - 0.5));
         c = edge < 1.5 ? times(mortar, 0.9 * (0.9 + 0.2 * (noise(x, y, s + 3) - 0.5))) : brick;
+      } else if (base === "marble" && material.cell) {
+        // laid as tiles: a fine joint, each tile a tone of its own and its veins its own (a slab cut elsewhere)
+        const [u, v] = [x % cw, y % ch];
+        const edge = Math.min(u, cw - 1 - u, v, ch - 1 - v);
+        const own = 1 + CELL_TONE * (rand(Math.floor(x / cw), Math.floor(y / ch), s + 5) - 0.5) * 2;
+        c = edge < 0.6 ? times(tone, 0.45) : times(c, own);
       } else if (base === "tile") {
         // grout, then each tile's bevel lit from the top left and in shadow at the bottom right
         const [u, v] = [x % cw, y % ch];
@@ -623,7 +674,10 @@ export function surfacePicture(given, size = 64, height = size, { readPicture } 
       // a used surface's patches and grain, unless a photograph gives them (its patches, where it repeats)
       if (!UNWORN.has(base) && !detail && base !== "door") {
         const patch = roundNoise(x, y, size, height, 32, s + 17);
-        c = times(c, (1 + MOTTLE * (patch - 0.5) * 2) * (1 + GRAIN * grit(x, y, size, height, s + 23)));
+        // polished stone is worn less than a wall: half its patches and two thirds of its grain (as fine as Valve's
+        // tiles, the least of them)
+        const [patches, grained] = base === "marble" ? [0.5, 0.7] : [1, 1];
+        c = times(c, (1 + patches * MOTTLE * (patch - 0.5) * 2) * (1 + grained * GRAIN * grit(x, y, size, height, s + 23)));
       } else if (!UNWORN.has(base) && repeats) {
         // a photograph smaller than the texture repeats: the patches go over the whole of it, so the copies differ
         c = times(c, 1 + MOTTLE * (roundNoise(x, y, size, height, 32, s + 17) - 0.5) * 2);
