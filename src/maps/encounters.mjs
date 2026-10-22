@@ -222,36 +222,7 @@ export function spawnsOf(map, options = {}) {
 
   // ── the sight test ──
   const eye = PLAYER_ORIGIN_HEIGHT + (mod.play?.eye ?? 28);
-  const hiders = !space
-    ? []
-    : space.areas.filter((area) => {
-        if (area.off || area.open) return false;
-        if (!HIDES.test(area.classname)) return false;
-        const entity = entities[area.number];
-        const mode = numberOf(keyOf(entity, "rendermode")) ?? 0;
-        const amount = numberOf(keyOf(entity, "renderamt")) ?? 255;
-        return mode === 0 || amount >= SEE_THROUGH;
-      });
-  const compiled = isCompiled(map);
-  /** Whether a brush entity's own shape is on the line (a compiled map's model; brush source's are in the space). */
-  const hidden = (from, to) => {
-    if (!compiled) return false;
-    for (const area of hiders) {
-      if (!crossesBox(from, to, area.min, area.max)) continue;
-      const entity = map.entities[area.number];
-      const model = brushModelOf(entity);
-      if (model === null) continue;
-      const origin = pointOf(entity.find((pair) => pair[0] === "origin")?.[1]) ?? [0, 0, 0];
-      const length = Math.hypot(to[0] - from[0], to[1] - from[1], to[2] - from[2]);
-      const steps = Math.max(1, Math.ceil(length / SIGHT_STEP));
-      for (let step = 1; step < steps; step++) {
-        const point = [0, 1, 2].map((axis) => from[axis] + ((to[axis] - from[axis]) * step) / steps - origin[axis]);
-        if (contentsAt(map, point, { model }) === CONTENTS.SOLID) return true;
-      }
-    }
-    return false;
-  };
-  const sees = (from, to) => space.sees(from, to) && !hidden(from, to);
+  const sees = space ? sightTest(map, { space, entities }) : () => false;
   /** A player's eyes inside a trigger's box: a grid over the floor in it. */
   const eyesIn = (box) => {
     const eyes = [];
@@ -408,6 +379,44 @@ export function spawnsOf(map, options = {}) {
   if (silent.length)
     result.facts.push(`${silent.length} areas wait to be fired and nothing found fires them (a name put together by a script is not seen): ${some(silent.map((area) => area.name))}`); // prettier-ignore
   return result;
+}
+
+/**
+ * The sight test of `spawnsOf` (and of `teamsOf`): `(from, to) => boolean`, whether a clear line runs between two
+ * points, through the world and the brush entities that block the eye (`HIDES`: walls, closed doors, breakables,
+ * illusionaries; one drawn see-through hides nothing). `space` is the map's (`spaceOf`, doors closed as a rule);
+ * `entities` its `entitiesOf`, when the caller has them.
+ */
+export function sightTest(map, { space, entities = entitiesOf(map), mod } = {}) {
+  space ??= spaceOf(map, { doors: "closed", mod });
+  const hiders = space.areas.filter((area) => {
+    if (area.off || area.open) return false;
+    if (!HIDES.test(area.classname)) return false;
+    const entity = entities[area.number];
+    const mode = numberOf(keyOf(entity, "rendermode")) ?? 0;
+    const amount = numberOf(keyOf(entity, "renderamt")) ?? 255;
+    return mode === 0 || amount >= SEE_THROUGH;
+  });
+  const compiled = isCompiled(map);
+  /** Whether a brush entity's own shape is on the line (a compiled map's model; brush source's are in the space). */
+  const hidden = (from, to) => {
+    if (!compiled) return false;
+    for (const area of hiders) {
+      if (!crossesBox(from, to, area.min, area.max)) continue;
+      const entity = map.entities[area.number];
+      const model = brushModelOf(entity);
+      if (model === null) continue;
+      const origin = pointOf(entity.find((pair) => pair[0] === "origin")?.[1]) ?? [0, 0, 0];
+      const length = Math.hypot(to[0] - from[0], to[1] - from[1], to[2] - from[2]);
+      const steps = Math.max(1, Math.ceil(length / SIGHT_STEP));
+      for (let step = 1; step < steps; step++) {
+        const point = [0, 1, 2].map((axis) => from[axis] + ((to[axis] - from[axis]) * step) / steps - origin[axis]);
+        if (contentsAt(map, point, { model }) === CONTENTS.SOLID) return true;
+      }
+    }
+    return false;
+  };
+  return (from, to) => space.sees(from, to) && !hidden(from, to);
 }
 
 /** Whether the segment from `a` to `b` passes through the box. */

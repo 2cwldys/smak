@@ -202,8 +202,12 @@ terraces seen, from 333 units; 85 back after 8-20 s; three terraces of four or f
 attacking everything; the chest 1854 units from the warden.
 
 **`characterOf(bsp, { mod })`** (`smak map-character`) measures walls off the grid, floor that slopes,
-floor levels, the spread of the floor's height, textures, props, sounds, music, lights, and the floor's light
+floor levels, the spread of the floor's height, textures, props, sounds, music, lights (and beside them
+`lampFaces`, the faces wearing a lamp's texture: a map lit by its texture lights, as ts_trident is with one light
+entity and 58 lamp faces, reads as lit), and the floor's light
 (mean, shadow, brightest); `characterAgainst(figures, reference)` tells each figure on the plain side of the
 mod's middle half (`plain`) and warns when five or more are. Master Sword's figures (94 maps) are in its
-profile; `learnCharacter` (`map-character --learn`) makes them from any folder of maps. The Barrow Road had 8
+profile; `learnCharacter` (`map-character --learn`) makes them from any folder of maps. The Specialists' profile
+has three sets, by `kind` (`--kind`): `arena` (its 29 maps), `compact` (its eight compact arenas, the maps a small
+team map is laid beside) and `roleplay` (Havoc9's cities). The Barrow Road had 8
 plain figures and the Old Orchard 6; of the game's maps players come back to, none has more than 3.

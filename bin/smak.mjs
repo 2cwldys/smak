@@ -141,6 +141,7 @@ const VALUE_FLAGS = [
   "pose",
   "sheet",
   "weights",
+  "cfg",
 ];
 // the flags of the map commands that may be given more than once: each time adds to a list
 const LISTED_FLAGS = [
@@ -1795,10 +1796,20 @@ async function profileOf(flags, listed) {
   if (flags.mod === undefined) return undefined;
   const folders = (listed.game ?? []).map(existingFolder);
   if (flags.mod === "goldsrc") return { ...maps.GOLDSRC, folders };
-  const mod = await maps.loadMod(
-    existing(flags.mod),
-    defined({ folders: folders.length ? folders : undefined, cache: flags.cache, scripts: listed.scripts }),
-  );
+  // one of the kit's profiles by name (ts, msc), or a profile's file
+  const named = maps.mapProfileOf(flags.mod);
+  const file = named?.file ?? (existsSync(flags.mod) || !/^[\w-]+$/.test(flags.mod) ? existing(flags.mod) : fail(`--mod: a profile's file, goldsrc, or one of the kit's: ${Object.keys(maps.MAP_PROFILES).join(", ")}; not ${flags.mod}`)); // prettier-ignore
+  const given = defined({ folders: folders.length ? folders : undefined, kind: flags.kind, cache: flags.cache, scripts: listed.scripts }); // prettier-ignore
+  let mod;
+  try {
+    mod = await maps.loadMod(file, given);
+  } catch (error) {
+    // a profile made from the installed game, with no --game: the Half-Life folder found on this machine
+    // (SMAK_HALF_LIFE, or Steam's libraries), or what the profile said
+    const game = folders.length ? null : maps.findHalfLife({ mod: named?.folder });
+    if (!game) throw error;
+    mod = await maps.loadMod(file, { ...given, game });
+  }
   return !mod.folders.length && folders.length ? { ...mod, folders } : mod;
 }
 /** The entity definitions given by name: .fgd files (--fgd) and what map-learn wrote (--learned). */
@@ -2108,7 +2119,22 @@ async function mapViews({ command, file, flags, listed }) {
  * light; its source's brush roles (a .map, or `--source` beside a .bsp); `--against` another compiled map, its
  * numbers beside. `--json`: the rows.
  */
-async function mapDressing({ file, flags }) {
+async function mapDressing({ command, file, rest, flags, listed }) {
+  if (flags.learn) {
+    // the bands of a folder of maps (or several maps), for a profile's `dressing` or --against
+    const to = need(command, flags.o, "-o dressing.json");
+    const files = [file, ...(rest ?? [])].flatMap((each) => {
+      if (!existsSync(each)) fail(`no such file: ${each}`);
+      return statSync(each).isDirectory() ? readdirSync(each).filter((name) => /\.bsp$/i.test(name)).sort().map((name) => join(each, name)) : [each]; // prettier-ignore
+    });
+    if (!files.length) fail(`${command}: no .bsp in ${[file, ...(rest ?? [])].join(", ")}`);
+    const list = files.map((each) => ({ name: basename(each).replace(/\.bsp$/i, ""), measures: maps.measureDressing(readCompiled(each).bsp).measures })); // prettier-ignore
+    const learned = maps.learnDressing(list, defined({ name: typeof flags.as === "string" ? flags.as : undefined, of: typeof flags.from === "string" ? flags.from : undefined })); // prettier-ignore
+    save(to, `${JSON.stringify(learned, null, 1)}\n`);
+    console.log(`${to}: the dressing of ${list.length} maps, [least (5th in 100), lower quartile, median, upper quartile, most (95th)] each`); // prettier-ignore
+    for (const [key, band] of Object.entries(learned.measures)) console.log(`      ${key.padEnd(16)} ${[band.least, band.q1, band.median, band.q3, band.most].join("  ")}`); // prettier-ignore
+    return;
+  }
   if (isSource(file)) {
     const roles = maps.dressingOfSource(maps.readMap(readFileSync(existing(file), "utf8")));
     for (const [key, v] of Object.entries(roles)) console.log(`${key}: ${v === null ? "not measured" : key === "brushes" ? v : `${Math.round(v * 100)}%`}`);
@@ -2116,8 +2142,11 @@ async function mapDressing({ file, flags }) {
     return;
   }
   const source = typeof flags.source === "string" ? maps.readMap(readFileSync(existing(flags.source), "utf8")) : null;
-  const mine = maps.dressingOf(readCompiled(file).bsp, { source });
-  const theirs = typeof flags.against === "string" ? maps.dressingOf(readCompiled(flags.against).bsp) : null;
+  // the bands: a learned file's (--against x.json), the profile's own (--mod), else Valve's
+  const learned = typeof flags.against === "string" && /\.json$/i.test(flags.against);
+  const bands = learned ? JSON.parse(readFileSync(existing(flags.against), "utf8")) : (await profileOf(flags, listed))?.dressing; // prettier-ignore
+  const mine = maps.dressingOf(readCompiled(file).bsp, defined({ source, against: bands }));
+  const theirs = typeof flags.against === "string" && !learned ? maps.dressingOf(readCompiled(flags.against).bsp, defined({ against: bands })) : null; // prettier-ignore
   if (flags.json) return console.log(JSON.stringify({ rows: mine.rows, against: theirs?.rows ?? null }, null, 1));
   for (const line of mine.facts) console.log(line);
   for (const line of mine.warnings) console.log(`WARNING ${line}`);
@@ -2860,6 +2889,45 @@ async function mapSpawns({ command, file, flags, listed }) {
   process.exit(report.areas.some((area) => area.seen.length || area.fights.length) ? 1 : 0);
 }
 
+// ── map-teams ──────────────────────────────────────────────────────────────
+/**
+ * map-teams: a map's two teams as a team plugin plays it (teams.mjs; The Specialists' ts_matchmode, by its
+ * profile's `teams`): the split of its spawns (or a spawn file's, --cfg), the nearest pair across the teams,
+ * spawns in sight of the other side's, the walk between them and to a goal, and the balance of those walks.
+ * --write-cfg: the spawn file the plugin reads, written. Exit code 1 on a FAIL.
+ */
+async function mapTeams({ command, file, flags, listed }) {
+  const mod = await profileOf(flags, listed);
+  if (!mod?.teams) fail(`${command}: --mod <profile> whose \`teams\` says how its team plugin splits a map (ts: profiles/specialists.mjs)`); // prettier-ignore
+  const words = listed.goal ?? [];
+  if (words.length > 1) fail(`${command}: one --goal (a point x,y,z, or an entity's number, classname or targetname)`);
+  const point = words.length === 1 && words[0].includes(",");
+  const goal = words.length === 0 ? undefined : point ? words[0].split(",").map(Number) : entityName(words[0]);
+  if (point && (goal.length !== 3 || !goal.every(Number.isFinite))) fail(`--goal: a point x,y,z, not ${words[0]}`);
+  const name = basename(file).replace(/\.(bsp|map)$/i, "");
+  const { doors, jump, cell } = reachOptions(flags, listed);
+  const cfg = typeof flags.cfg === "string" ? readFileSync(existing(flags.cfg), "utf8") : undefined;
+  const report = maps.teamsOf(readEither(file), defined({ mod, goal, name, doors, jump, cell, cfg, each: flags.each === true || undefined, walk: flags.walk === false ? false : undefined })); // prettier-ignore
+  if (flags["write-cfg"] !== undefined && flags["write-cfg"] !== false) {
+    const asked = flags["write-cfg"] === true ? "." : String(flags["write-cfg"]);
+    const to = /\.cfg$/i.test(asked) ? asked : join(asked, maps.spawnCfgName(name));
+    save(to, report.cfg);
+    const count = report.teams.map((team) => team.spawns.length);
+    console.log(`${to}: ${count[0] + count[1]} spawns (team 1 ${count[0]}, team 2 ${count[1]}), each at its floor and turned ${goal === undefined ? "to the middle of the map" : "to the goal"}; it goes in addons/amxmodx/configs/ on the server`); // prettier-ignore
+  }
+  if (flags.json) {
+    const { rules, ...rest } = report;
+    console.log(JSON.stringify({ plugin: rules.plugin, ...rest }, null, 1));
+  } else {
+    for (const team of report.teams)
+      console.log(`team ${team.team} ${team.name.padEnd(12)} ${String(team.spawns.length).padStart(3)} spawns${report.walks ? `   to the goal ${report.walks.teams[team.team - 1].median ?? "none"}` : ""}`); // prettier-ignore
+    for (const fact of report.facts) console.log(`      ${fact}`);
+    for (const warning of report.warnings) console.log(`WARN  ${warning}`);
+    for (const fault of report.faults) console.log(`FAIL  ${fault}`);
+  }
+  process.exit(report.faults.length ? 1 : 0);
+}
+
 // ── map-wiring ─────────────────────────────────────────────────────────────
 /**
  * map-wiring: what a map's entities are wired to do: its properties (doors by name), its switches and what
@@ -2920,7 +2988,7 @@ async function mapCharacter({ command, file, flags, listed, rest }) {
     console.log(`${files[0]}:`);
     for (const fact of told[0].facts) console.log(`      ${fact}`);
   } else {
-    const names = ["offGrid", "sloped", "levels", "heightSpread", "textures", "props", "sounds", "music", "lights", "lightMean", "shadow", "brightest"]; // prettier-ignore
+    const names = ["offGrid", "sloped", "levels", "heightSpread", "textures", "props", "sounds", "music", "lights", "lampFaces", "lightMean", "shadow", "brightest"]; // prettier-ignore
     const width = Math.max(4, ...told.map((each) => each.name.length));
     console.log(`${"".padEnd(width)}  ${names.map((name) => name.slice(0, 11).padStart(12)).join("")}`);
     for (const each of told) console.log(`${each.name.padEnd(width)}  ${names.map((name) => String(each.figures[name] ?? "-").padStart(12)).join("")}`); // prettier-ignore
@@ -3692,12 +3760,17 @@ const COMMANDS = {
   "map-dressing": {
     run: mapDressing,
     own: true,
-    help: `  map-dressing <bsp|map> [--source <map>] [--against <bsp>] [--json]
+    folder: true,
+    help: `  map-dressing <bsp|map> [--source <map>] [--against <bsp|bands.json>] [--mod <profile>] [--json]
                                             its dressing beside Valve's own campaign, measured: tall walls banded and where,
                                             texture scale and shift, lamp faces a light, faces off the axes, detail a floor's
                                             256 x 256, the floor's dark share and contrast; of source, its brushes' roles (panels,
                                             strips, lamps, angled). A measure outside Valve's 5th to 95th in 100 is a WARNING,
-                                            with which way to go`,
+                                            with which way to go. --mod: the mod's own bands where its profile has them
+                                            (dressing: ts's, measured over its 29 maps), Valve's for the rest; --against bands.json
+  map-dressing <bsp or folders ...> --learn -o bands.json [--as "whose"] [--from "the maps in words"]
+                                            the bands of those maps' dressing (5th in 100, quartiles, median, 95th), for
+                                            --against or a profile's dressing`,
   },
   "map-sweep": {
     run: async ({ file, flags }) => {
@@ -3856,7 +3929,7 @@ const COMMANDS = {
     run: mapCharacter,
     own: true,
     folder: true,
-    help: `  map-character <bsp> [more .bsp or folders] [--mod <profile>] [--against figures.json] [--json]
+    help: `  map-character <bsp> [more .bsp or folders] [--mod <profile>] [--kind compact] [--against figures.json] [--json]
                                             a map's character in numbers: walls off the grid, floor that slopes, floor levels, the
                                             spread of its heights, textures, props, sounds, music, lights, the light on the floor and
                                             its shadow; held against the mod's own maps (the profile's character.figures, or
@@ -3864,6 +3937,20 @@ const COMMANDS = {
                                             for the floor's light); WARN, five or more such. Several maps: side by side.
   map-character <bsp or folders ...> --learn -o figures.json [--from "words"]
                                             the figures of those maps as [lower quartile, median, upper quartile], for --against`,
+  },
+  "map-teams": {
+    run: mapTeams,
+    own: true,
+    help: `  map-teams <bsp|map> --mod ts [--cfg tsm_spawns_<map>.cfg] [--goal x,y,z | <n|class|name>] [--each] [--write-cfg [folder|file]] [--json]
+                                            a map's two teams as Havoc9's ts_matchmode plays it: its spawns gathered and split as the
+                                            plugin splits them (info_player_deathmatch then info_player_start, 64 at most, the farthest
+                                            pair the anchors), or a spawn file's (--cfg); the nearest spawns across the teams (FAIL
+                                            under 512, WARN under 1400: the profile's teams.cross), spawns of one team in sight of the
+                                            other's (FAIL), the walk between them, and to --goal from each team (its nearest spawn;
+                                            --each: the median of each spawn's walk), the balance (WARN over 10%, FAIL over 25%).
+                                            --write-cfg: tsm_spawns_<map>.cfg as amx_tsm_spawn_save writes it, each spawn at its floor
+                                            (z the player's origin, floor + 36) and turned to the goal or the middle. Without --game the
+                                            installed Half-Life is found (SMAK_HALF_LIFE, or Steam's libraries). Exit code 1 on a FAIL`,
   },
   "map-spawns": {
     run: mapSpawns,

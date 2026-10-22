@@ -101,6 +101,7 @@ const areas = [
   "91-figures", // the figure judges: a figure's facts, its style, texture and shape measured and judged against corpora made here; a library surveyed
   "92-figure-profiles", // each game's manner for the figure judges: MSC, TS and Half-Life's profiles by name, file and object
   "93-figure-commands", // smak figure-survey, figure-judge, figure-texture, figure-shape and figure-validate on a library of the test's own
+  "96-map-teams", // a map's two teams as ts_matchmode splits them, its spawn file, sight and walks across; profiles by name, the game found, a mod's own dressing, lamp faces
   "19-example-and-kit-faults", // the examples' wrong arguments and refused models; the kits' fittings and rings
 ];
 
