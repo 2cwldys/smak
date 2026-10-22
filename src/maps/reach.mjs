@@ -943,6 +943,9 @@ const THROUGH = [
  *   touch     how near a player has to come to an entity to have got to it (32)
  *   hang      a body's feet may be this far over its floor before it is said to hang (64)
  *   widest    an opening wider than this is not listed (256)
+ *   graph     true: the result also has `graph` (not enumerable: JSON leaves it out), the walk itself for
+ *             what is built on it: `{ space, grid, layer, onFoot, flood, step, up, hops, starts, ladders
+ *             ([[from, to, ladder]] spots), layerOf(body), floodOf(layer, walk) }` (waypoints.mjs)
  *
  * It returns
  *   { warnings, facts            sentences: what is wrong, and what was found
@@ -1857,7 +1860,7 @@ export function reachOf(map, options = {}) {
   const isWalked = (spot) => flood.far[spot] !== undefined;
   const isJumped = (spot) => flood.far[spot] !== undefined && onFoot.far[spot] === undefined;
   const isTrapped = (spot) => Boolean(trap.inside?.[spot]);
-  return {
+  const result = {
     warnings,
     facts,
     starts: starts.map(({ spot: _spot, ...start }) => start),
@@ -1893,6 +1896,28 @@ export function reachOf(map, options = {}) {
       };
     },
   };
+  // the walk itself, for what is built on it (waypoints.mjs): kept out of what is printed or turned to JSON
+  if (options.graph)
+    Object.defineProperty(result, "graph", {
+      enumerable: false,
+      value: {
+        space,
+        grid,
+        layer,
+        onFoot,
+        flood,
+        step,
+        up,
+        hops,
+        starts: starts.filter((start) => start.spot >= 0),
+        ladders: (space.ladders ?? []).length
+          ? rungsOf(space, layer, (spot) => flood.far[spot] !== undefined, up)
+          : [],
+        layerOf: (ofBody) => layerOf(space, grid, ofBody),
+        floodOf: (ofLayer, walk) => floodOf(space, grid, ofLayer, walk),
+      },
+    });
+  return result;
 }
 
 /** A spot as a point: its place, and its floor. */
