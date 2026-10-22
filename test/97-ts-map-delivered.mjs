@@ -2,30 +2,17 @@
 // map wearing only their textures writes no .wad of its own and names none (its sky is the compilers' own), and one
 // with pictures of its own puts them inside the .bsp (hlcsg -wadinclude), unless the spec says compile.embed: false.
 // On a game of the test's own; compiled where the compilers are (VHLT_DIR).
-import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { mkdirSync, readFileSync, existsSync } from "node:fs";
 import { join, basename } from "node:path";
 import * as smak from "../src/index.mjs";
 import { buildMapSpec } from "../src/spec/map.mjs";
 import { findCompilers, COMPILERS_VARIABLE } from "../src/maps/compile.mjs";
-import specialists, { SPEC } from "../profiles/specialists.mjs";
+import specialists from "../profiles/specialists.mjs";
+import { fakeSpecialists } from "./fixture-specialists.mjs";
 import { test, sure, tmp } from "./helper.mjs";
 
 const folder = join(tmp, "ts-map-delivered");
 mkdirSync(folder, { recursive: true });
-
-/** A Half-Life folder of the test's own: ts/specialists.wad and valve/halflife.wad of plain pictures under the profile's names. */
-export function fakeSpecialists(at) {
-  const game = join(at, "Half-Life");
-  mkdirSync(join(game, "ts", "maps"), { recursive: true });
-  mkdirSync(join(game, "valve"), { recursive: true });
-  const plain = (name, k) => ({ name, image: { width: 64, height: 64, rgb: new Uint8Array(64 * 64 * 3).fill(40 + ((k * 23) % 160)) } });
-  const named = [...new Set([...Object.values(SPEC.textures).map((t) => t.texture), ...Object.keys(SPEC.lamps ?? {})])];
-  // the profile's comments say which .wad has each; a fake game only needs them found in one of the two
-  const halfLife = (n) => /^[+~]|^(fifties|basetrim|cardbox|lab1|drkmtl|trrm|stripes|glass|generic|light|tnnl)/i.test(n);
-  writeFileSync(join(game, "ts", "specialists.wad"), smak.maps.writeWad(named.filter((n) => !halfLife(n)).map(plain)));
-  writeFileSync(join(game, "valve", "halflife.wad"), smak.maps.writeWad(named.filter(halfLife).map(plain)));
-  return game;
-}
 
 const game = fakeSpecialists(folder);
 const mod = specialists({ game });

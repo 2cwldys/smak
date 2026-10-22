@@ -56,7 +56,10 @@
 //                   build --mod`): { wads, theme, textures, prop: { class, keys }, things, uses }: the game's
 //                   .wad files and the theme's words as its textures, the class a prop is, and its models
 //                   (`things`, { name: { model, r, wall, lift, deep, turn, on } }) that rooms are furnished
-//                   with by their `use` (`uses`, written as src/spec/dress.mjs's are)
+//                   with by their `use` (`uses`, written as src/spec/dress.mjs's are); what breaks (`breakable`,
+//                   { keys, materials: { glass: { ... } } }: the keys of a func_breakable of each material) and
+//                   the brush pieces a use may name (`pieces`, over the kit's: `{ crate_large: { breakable:
+//                   "wood" } }`)
 //   }
 //
 // The kit ships one profile, `GOLDSRC`: Half-Life's own, with nothing of any mod in it. A mod's profile is

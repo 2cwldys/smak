@@ -17,7 +17,7 @@ const folder = join(tmp, "ts-map-spec");
 mkdirSync(folder, { recursive: true });
 
 /** The textures SPEC names that are Half-Life's (valve/halflife.wad); the rest are TS's own (ts/specialists.wad). */
-const HALF_LIFE = new Set(["fifties_ceil01", "basetrim02", "cardbox1", "lab1_cab2", "drkmtlt_bord11", "+0drkmtl_scrn", "trrm_wood2", "lab1_b4", "lab1_brd10", "lab1_trim3", "stripes2", "glass_dark"]); // prettier-ignore
+const HALF_LIFE = new Set(["fifties_ceil01", "basetrim02", "cardbox1", "lab1_cab2", "drkmtlt_bord11", "+0drkmtl_scrn", "trrm_wood2", "lab1_b4", "lab1_brd10", "lab1_trim3", "stripes2", "glass_dark", "glass_bright"]); // prettier-ignore
 const named = [...new Set(Object.values(SPEC.textures).map((t) => t.texture))];
 
 /** Where a model's back is, in the world: its -x turned by its yaw less the profile's `turn`. */

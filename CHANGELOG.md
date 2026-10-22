@@ -23,6 +23,12 @@ mending for, says so under **Mind**.
   have); one with pictures of its own puts them inside the .bsp (`hlcsg -wadinclude`), so the compiled map asks the
   game only for the .wad files it ships. `compile.embed: false` ships them beside it instead. The report says
   which .wad files the compiled map asks for and how many pictures it carries.
+- **What breaks** (`breakable`): a piece of furniture, a prefab or one piece of a prefab that says `breakable:
+  "wood"` (or glass, metal, concrete... Half-Life's materials, `BREAKABLE_MATERIALS`) is a `func_breakable` of its
+  own with the keys its material takes, the kit's under a mod's (a profile's `spec.breakable`). A window's glass
+  takes them too. A mod's profile may flag the kit's dressing pieces or give its own (`spec.pieces`). The
+  Specialists' profile, read off its maps' 1006 breakables: glass in render mode 2 at 100 and health 1, crates of
+  wood at 15, every one back after 45 seconds; the kit's crates, and crates of 40 and 48, break each alone.
 
 ## 0.24.0 (2026-10-20)
 

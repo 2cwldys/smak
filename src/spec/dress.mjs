@@ -86,7 +86,7 @@ export function breaksOf(room, breaks, { kept, textureOf, chamfer = 0, beamDeep 
  * The pieces a room is dressed with: brush prefabs, each built facing +x (its back at x 0, against a wall, its
  * front out into the room), its foot on the floor. Several of each kind, so that no two rooms read the same.
  */
-const PIECES = {
+const KIT_PIECES = {
   crate_small: { pieces: [{ box: [[0, -12, 0], [24, 12, 24]], texture: "crate" }] },
   crate_large: { pieces: [{ box: [[0, -16, 0], [32, 16, 32]], texture: "crate" }] },
   crate_stack: { pieces: [{ box: [[0, -32, 0], [32, 0, 32]], texture: "crate" }, { box: [[0, 0, 0], [28, 28, 28]], texture: "crate" }, { box: [[2, -28, 32], [26, -4, 56]], texture: "crate" }] },
@@ -150,10 +150,10 @@ export const useWordsOf = (uses = {}) => [...new Set([...USE_WORDS, ...Object.ke
  * model made facing -y turns 90); `on` a piece of the kit's it stands on (`bench`: a computer on a desk), put with
  * it, the model on its top) as a piece facing +x with its back at x 0: its footprint, and where its origin is in it.
  */
-function thingPiece(thing) {
+function thingPiece(thing, kit = KIT_PIECES) {
   const r = thing.r ?? 16;
   const off = thing.wall ?? r;
-  const under = thing.on ? PIECES[thing.on] : null;
+  const under = thing.on ? kit[thing.on] : null;
   const own = { min: [0, -r], max: [off + (thing.deep ?? r), r] };
   const print = under ? unionOf(own, printOf(under)) : own;
   return { print, origin: [off, 0], model: thing.model, z: (under ? topOf(under) : 0) + (thing.lift ?? 0), turn: thing.turn ?? 0, on: under ? thing.on : null };
@@ -170,10 +170,13 @@ function topOf(prefab) {
  * of each way through ({ min: [x, y], max: [x, y] }); `landmarks`: footprints to keep clear of; `taken`:
  * footprints already standing. `uses` and `things`: a mod's own (its profile's `spec`): uses written as USES are,
  * whose kinds name its things, models of the game's that stand against a wall, in a corner or in the middle
- * (`middle`: one, along the room's long way). Returns { prefabs: { name: prefab }, furniture: [{ prefab, room, at,
- * rotate }], props: [{ model, room, at, facing, z, print }], facts }.
+ * (`middle`: one, along the room's long way). `pieces`: a mod's brush pieces, each over the kit's of its name or a
+ * new one (`{ crate_large: { breakable: "wood" } }`: the kit's crate made a func_breakable of wood; `{ crate48: {
+ * pieces: [...], breakable: "wood" } }` one of its own). Returns { prefabs: { name: prefab }, furniture: [{ prefab,
+ * room, at, rotate }], props: [{ model, room, at, facing, z, print }], facts }.
  */
-export function dressRooms({ rooms, ways = [], landmarks = [], taken = [], seed = 1, uses = {}, things = {} }) {
+export function dressRooms({ rooms, ways = [], landmarks = [], taken = [], seed = 1, uses = {}, things = {}, pieces = {} }) {
+  const PIECES = { ...KIT_PIECES, ...Object.fromEntries(Object.entries(pieces).map(([name, piece]) => [name, { ...KIT_PIECES[name], ...piece }])) };
   const prefabs = {};
   const furniture = [];
   const props = [];
@@ -230,7 +233,7 @@ export function dressRooms({ rooms, ways = [], landmarks = [], taken = [], seed 
         const free = variants.filter((v) => (things[v] || PIECES[v]) && (used.get(v) ?? 0) < (things[v] ? MOST_THINGS : 2));
         if (!free.length) break;
         const name = free[Math.floor(random() * free.length)];
-        const piece = things[name] ? thingPiece(things[name]) : null;
+        const piece = things[name] ? thingPiece(things[name], PIECES) : null;
         const prefab = PIECES[name];
         const q = QUARTERS[spot.wall];
         const own = turned(piece ? piece.print : printOf(prefab), q);

@@ -821,7 +821,8 @@ stacked) with the wall's rock between them, and the link goes through that rock:
   it names a game's texture. A sliding door opens and shuts the same way. Any door's picture is fitted to its
   leaf, one whole picture across it.
 - `window`: 48 by 48, `sill` (40) over the higher floor. Nothing walks through a window. `glass: true` (or
-  `{ alpha, health, material }`) glazes it: a `func_breakable` pane, half see-through, that shatters.
+  `{ alpha, health, material, keys }`) glazes it: a `func_breakable` pane, half see-through, that shatters, with the
+  keys of glass (a mod's, where its profile gives them: The Specialists' at health 1, back after 45 seconds).
 - `stairs`: for rooms stacked one above the other: a stair in the lower room up through a hole in the
   floor of the upper (the lower room needs `rise / 16 * 24 + 32` of length along x). It climbs along x
   against the south wall, or with `along: 1` the north (between, a share): keep it clear of a doorway.
@@ -879,7 +880,13 @@ them) take `_1`, `_2`... at each one put, so each machine's buttons fire its own
 own `lights_main`) is kept. `furniture: [{ prefab: "table", room:
 "hall", at: "centre", rotate: 90 }]` puts one (turned by a multiple of 90). `entity: "func_breakable"` (or
 `{ class, keys... }`) makes its brushes a brush entity: a crate that breaks (`material: 1`, wood), a
-`func_wall`, a `func_illusionary`. Furniture wearing a `mesh` (a chain-link fence: a box 2 thick in
+`func_wall`, a `func_illusionary`. `breakable: "wood"` (on a piece of furniture, on a prefab, or on one piece of a
+prefab) makes each piece it covers a `func_breakable` of its own, so a stack of crates breaks a crate at a time,
+with the keys its material takes: Half-Life's materials `glass` (0), `wood` (1; `true` is wood), `metal` (2),
+`flesh`, `cinder` and `concrete` (4), `tile`, `computer`, `unbreakable_glass`, `rocks`, each with the kit's
+health (glass 20 and half see-through, render mode 2 at 90) under a mod's (its profile's `spec.breakable`: `{
+keys, materials: { glass: { ... } } }`). A teller's counter is a prefab of a wooden base and a glass screen on it
+that says `breakable: "glass"`. The report counts them (`breakables: 12 func_breakable (4 glass, 8 wood)`). Furniture wearing a `mesh` (a chain-link fence: a box 2 thick in
 `{ "base": "mesh", "cell": 6, "weave": "diamond" }`) or a game's `{` texture is a `func_wall` in render mode
 4 unless told, the only way the game draws its holes; its texture is named with `{` (`{SM_CHAIN_LINK`).
 Unless told, other furniture is a `func_detail`: it cuts no portals, so a
@@ -998,7 +1005,13 @@ profile, which says where each word was read from) gives:
   kit's crates, shelves, barrels), `garage` (a dumpster, boxes, barrels, rubbish), `server` (consoles, cabinets),
   `stairwell` (a plant), and for rooms open to the sky `alley` (a dumpster, rubbish, a street lamp), `plaza`
   (benches, lamps, plants, a statue in the middle) and `rooftop` (machines, pipes, barrels). The game has no models
-  for a bathroom or a stove; its crates are brushes (`func_breakable`), which a use does not make.
+  for a bathroom or a stove; its crates are brushes (`func_breakable`): the kit's crates (and crates of 40 and 48
+  of the profile's own `pieces`) dress a warehouse, a garage and an alley, each a `func_breakable` of wood;
+- what breaks, as the game's maps make it (1006 `func_breakable` in 27 of its 29 maps): glass (`material` 0) in
+  render mode 2 at 100 and `health` 1, wood (crates) at 15, metal at 50; every one with `respawntime` 45, since no
+  stock map sets it (0 is the game's 30 seconds, under 0 never, per `ts/mapping.txt`) and the Havoc9 matchmode
+  plugin resets nothing between rounds. A window's glass is the game's `glass_bright`, and the word `glass` names it
+  for a screen of the spec's own;
 
 **Delivered as the .bsp alone.** A mod's map is built on the .wad files its game ships (the profile's `spec.wads`):
 a map that wears only their textures writes no .wad of its own and names none but theirs (the sky is the

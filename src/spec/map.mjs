@@ -240,6 +240,14 @@ function lightWarning(light, at, warnings) {
   if (typeof b === "number" && b < DIM_LIGHT) warnings.push(`${at}.brightness: ${b} is a light entity's brightness, all but dark (a lamp is ${LAMP_BRIGHTNESS}): not a multiple`);
 }
 
+/**
+ * What a func_breakable is made of: Half-Life's materials (the SDK's `Materials`, func_break.h: the sound it makes
+ * and the pieces it breaks into), by the words a piece's `breakable` says; and the keys each takes unless the mod's
+ * profile says otherwise (`spec.breakable`: { keys, materials: { word: keys } }). Glass is half see-through.
+ */
+export const BREAKABLE_MATERIALS = { glass: 0, wood: 1, metal: 2, flesh: 3, cinder: 4, concrete: 4, tile: 5, computer: 6, unbreakable_glass: 7, rocks: 8 };
+const BREAKABLE_KEYS = { glass: { rendermode: 2, renderamt: 90, health: 20 }, unbreakable_glass: { rendermode: 2, renderamt: 90, health: 20 }, metal: { health: 50 }, cinder: { health: 60 }, concrete: { health: 60 }, rocks: { health: 60 }, other: { health: 20 } };
+
 /** A texture light's brightness for a material that glows, unless it says (`glow`). */
 const GLOW = 600;
 /** A map whose darkest room's floor is lit under this gets its views drawn again three times as bright. */
@@ -935,6 +943,17 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
     materials[key] ??= { ...photo, base: "door", tone: materialOf(material, `door ${word}`).tone };
     return textureOf(key);
   };
+  // what breaks: a piece that says `breakable` (a word of BREAKABLE_MATERIALS), or every piece of a prefab or a
+  // piece of furniture that does, each a func_breakable of its own (a crate breaks alone, as the game's do), with
+  // the keys its material takes: the kit's, under the mod's (its profile's `spec.breakable`)
+  const breakables = new Map();
+  const breakableKeys = (word, where) => {
+    const said = word === true ? "wood" : word;
+    if (!(said in BREAKABLE_MATERIALS)) throw new Error(`${where}.breakable: what it is made of, ${Object.keys(BREAKABLE_MATERIALS).join(", ")} (or true: wood)`);
+    breakables.set(said, (breakables.get(said) ?? 0) + 1);
+    const mod = profile?.spec?.breakable ?? {};
+    return { material: BREAKABLE_MATERIALS[said], ...(BREAKABLE_KEYS[said] ?? BREAKABLE_KEYS.other), ...(mod.keys ?? {}), ...(mod.materials?.[said] ?? {}) };
+  };
   let themeNames;
   try {
     themeNames = { floor: textureOf("floor"), wall: textureOf("wall"), ceiling: textureOf("ceiling") };
@@ -1160,10 +1179,9 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
       pane.max[axis] = middle + 1;
       entities.push(
         brushEntity("func_breakable", [box(pane.min, pane.max, textureOf(glass.material ?? "glass"))], {
-          rendermode: 2,
-          renderamt: glass.alpha ?? 90,
-          material: 0,
-          health: glass.health ?? 20,
+          ...breakableKeys("glass", `links[${i}].glass`),
+          ...(glass.alpha !== undefined ? { renderamt: glass.alpha } : {}),
+          ...(glass.health !== undefined ? { health: glass.health } : {}),
           ...(glass.keys ?? {}),
         }),
       );
@@ -1690,15 +1708,20 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
     return asked === "detail" ? { class: "func_detail" } : null;
   };
   let prefabsPut = 0;
-  const putPrefab = (prefab, at, quarters, where, entity = prefab.entity ?? detailed(null, prefab)) => {
+  const putPrefab = (prefab, at, quarters, where, entity = prefab.entity ?? detailed(null, prefab), breakable = prefab.breakable) => {
     const target = entity ? [] : brushes;
     const done = () => {
-      if (!entity) return;
+      if (!entity || !target.length) return;
       const { class: classname, ...keys } = typeof entity === "string" ? { class: entity } : entity;
       entities.push(brushEntity(classname, target, keys));
     };
     if (!prefab.file) {
-      target.push(...placedPrefab(prefab, at, quarters, textureOf));
+      const placed = placedPrefab(prefab, at, quarters, textureOf);
+      placed.forEach((brush, k) => {
+        const breaks = prefab.pieces[k].breakable ?? breakable;
+        if (breaks) entities.push(brushEntity("func_breakable", [brush], breakableKeys(breaks, where)));
+        else target.push(brush);
+      });
       return done();
     }
     prefabsPut += 1;
@@ -1708,7 +1731,8 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
       if (!word) throw new Error(`${where}: its .map wears ${name}, which is no material of the spec (its textures are SM_ and a word of theme, textures or a base)`);
       textureOf(word);
     }
-    target.push(...placed.brushes);
+    if (breakable) entities.push(brushEntity("func_breakable", placed.brushes, breakableKeys(breakable, where)));
+    else target.push(...placed.brushes);
     entities.push(...placed.entities);
     done();
   };
@@ -1770,7 +1794,7 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
       // a texture with holes ({: a mesh, a fence, or a game's grate) has them only on a brush entity in render mode 4
       const holed = (prefab.pieces ?? []).some((piece) => textureOf(piece.texture ?? "furniture").startsWith("{"));
       const seeThrough = holed ? { class: "func_wall", rendermode: 4, renderamt: 255 } : null;
-      putPrefab(prefab, at, Math.round((thing.rotate ?? 0) / 90), `furniture[${i}]`, thing.entity ?? prefab.entity ?? seeThrough ?? detailed(thing, prefab));
+      putPrefab(prefab, at, Math.round((thing.rotate ?? 0) / 90), `furniture[${i}]`, thing.entity ?? prefab.entity ?? seeThrough ?? detailed(thing, prefab), thing.breakable ?? prefab.breakable);
       // nor in front of a door or an opening, where a player steps through
       const own = turnedPrint(prefabPrint(prefab), 90 * Math.round((thing.rotate ?? 0) / 90));
       for (const way of inTheWay(prefab, own, at))
@@ -1806,6 +1830,7 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
       seed: [...String(spec.name ?? "map")].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7),
       uses: profile?.spec?.uses,
       things: profile?.spec?.things,
+      pieces: profile?.spec?.pieces,
     });
     dressedProps.push(...dressed.props, ...dressed.furniture);
     Object.assign(prefabs, dressed.prefabs);
@@ -2189,6 +2214,7 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
     entities.push(textureLights([...mid(first).slice(0, 2), first.min[2] + 32], glowing));
     report.facts.push(`texture lights: ${Object.keys(glowing).join(", ")}`);
   }
+  if (breakables.size) report.facts.push(`breakables: ${[...breakables.values()].reduce((a, b) => a + b, 0)} func_breakable (${[...breakables].map(([word, n]) => `${n} ${word}`).join(", ")})${profile?.spec?.breakable?.keys ? `, with the mod's ${Object.entries(profile.spec.breakable.keys).map(([k, v]) => `${k} ${v}`).join(", ")}` : ""}`);
   if (errors.length) return { report, files, map: null };
   // ── the files: the .wad of its pictures, and the .map ──
   mkdirSync(out, { recursive: true });

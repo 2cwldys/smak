@@ -152,6 +152,17 @@ export const FIGURE_STYLE = {
  *             rooftop; the game has no models for a bathroom or a kitchen's stove, and its crates are brushes
  *             (func_breakable, 1006 in 27 maps): a warehouse's crates are the kit's in cardbox1 beside the
  *             game's boxes.
+ *   breakable what breaks (func_breakable: 1006 in 27 of the 29 maps, read 2026-10-21 from their entities). Glass
+ *             is the most: most leave `material` out (its default is 0, glass: 533) and draw it in render mode 2
+ *             (522), `renderamt` 75 to 150 (100 the middle), `health` 1 (222 of the glass, 68 more at 3).
+ *             Crates are wood (`material` 1, 242 of all): cardbox1, cardboxtop/bot, the maps' own boxes, 32 to 48
+ *             a side, `health` 25, 15, 2 or 1 (15 the middle); seven of them stand on another. Metal (`material`
+ *             2, 61) is vents and grates at `health` 1, doors and crates at 50 to 100; concrete (4, 129) 25 to 60.
+ *             No map of the game's sets `respawntime` (0: the game's 30 seconds, per ts/mapping.txt; under 0:
+ *             never); a round of the Havoc9 matchmode plugin resets nothing, so a map of its takes 45
+ *             (maps/meridian/STUDY.md: 30 to 60, never under 0). The kit's crates are wood that breaks, each
+ *             crate alone, as the game's do (`pieces`); a window's glass is the game's glass_bright, which its
+ *             maps break most of the shipped glass (27).
  */
 // prettier-ignore
 export const SPEC = {
@@ -188,6 +199,27 @@ export const SPEC = {
     ts_metal: { texture: "metal_rusty5eee" },
     ts_hazard: { texture: "stripes2" },
     ts_glass: { texture: "glass_dark" },
+    // a window's pane (links of kind window with glass), a glass screen's (a piece that breaks as glass)
+    glass: { texture: "glass_bright" },
+  },
+  // what breaks (src/spec/map.mjs BREAKABLE_MATERIALS): the keys each material takes in the game's maps
+  breakable: {
+    keys: { respawntime: 45 },
+    materials: {
+      glass: { material: 0, rendermode: 2, renderamt: 100, health: 1 },
+      wood: { material: 1, health: 15 },
+      metal: { material: 2, health: 50 },
+      concrete: { material: 4, health: 50 },
+      computer: { material: 6, health: 25 },
+    },
+  },
+  // the kit's dressing pieces as the game's: its crates break, each alone; and its plain crates of 40 and 48
+  pieces: {
+    crate_small: { breakable: "wood" },
+    crate_large: { breakable: "wood" },
+    crate_stack: { breakable: "wood" },
+    crate40: { pieces: [{ box: [[0, -20, 0], [40, 20, 40]], texture: "crate" }], breakable: "wood" },
+    crate48: { pieces: [{ box: [[0, -24, 0], [48, 24, 48]], texture: "crate" }], breakable: "wood" },
   },
   prop: { class: "ts_model" },
   things: {
@@ -225,11 +257,11 @@ export const SPEC = {
     office: [["desk", ["workstation", "workstation2"], "wall", 1], ["chair", ["officeChair"], "wall", 0.5], ["plant", ["plant", "plant2"], "corner", 0.5], ["picture", ["painting1", "painting3"], "wall", 0.4]],
     lobby: [["couch", ["couch", "sofa"], "wall", 0.7], ["table", ["coffeeTable"], "middle", 0.5], ["plant", ["plant", "plant8", "tallPlant"], "corner", 1], ["armchair", ["armchair"], "wall", 0.4], ["picture", ["painting2", "painting4", "photo"], "wall", 0.5]],
     cafe: [["table", ["table"], "middle", 0.5], ["booth", ["booth"], "wall", 0.8], ["chair", ["chair"], "wall", 0.5], ["plant", ["plant2"], "corner", 0.4]],
-    warehouse: [["boxes", ["boxStack", "box", "box2", "crate_stack", "crate_large"], "corner", 1.6], ["shelf", ["shelf"], "wall", 0.5], ["barrel", ["barrels", "barrel"], "corner", 0.6]],
-    garage: [["dumpster", ["dumpster"], "wall", 0.3], ["boxes", ["boxStack", "box"], "corner", 0.6], ["barrel", ["barrels"], "corner", 0.4], ["trash", ["trash"], "corner", 0.3]],
+    warehouse: [["boxes", ["boxStack", "box", "box2", "crate_stack", "crate_large", "crate40", "crate48"], "corner", 1.6], ["shelf", ["shelf"], "wall", 0.5], ["barrel", ["barrels", "barrel"], "corner", 0.6]],
+    garage: [["dumpster", ["dumpster"], "wall", 0.3], ["boxes", ["boxStack", "box", "crate40"], "corner", 0.6], ["barrel", ["barrels"], "corner", 0.4], ["trash", ["trash"], "corner", 0.3]],
     server: [["console", ["console_wide", "console"], "wall", 0.8], ["cabinet", ["cabinet", "locker"], "corner", 0.4], ["chair", ["officeChair"], "wall", 0.2]],
     stairwell: [["plant", ["plant", "plant8"], "corner", 0.3]],
-    alley: [["dumpster", ["dumpster"], "wall", 0.4], ["trash", ["trash"], "corner", 0.6], ["lamp", ["streetlamp"], "wall", 0.3], ["boxes", ["box", "box2"], "corner", 0.5]],
+    alley: [["dumpster", ["dumpster"], "wall", 0.4], ["trash", ["trash"], "corner", 0.6], ["lamp", ["streetlamp"], "wall", 0.3], ["boxes", ["box", "box2", "crate40"], "corner", 0.5]],
     plaza: [["bench", ["bench"], "wall", 0.4], ["lamp", ["streetlamp"], "wall", 0.3], ["plant", ["tallPlant"], "corner", 0.4], ["statue", ["statue"], "middle", 0.3]],
     rooftop: [["machine", ["machine", "tank"], "wall", 0.3], ["pipes", ["pipes_up"], "wall", 0.2], ["barrel", ["barrels"], "corner", 0.3], ["boxes", ["box"], "corner", 0.2]],
   },
