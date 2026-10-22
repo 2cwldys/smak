@@ -3,7 +3,7 @@
 The newest first. A version that changes what a model's file looks like, or that a model made before needs
 mending for, says so under **Mind**.
 
-## Unreleased
+## 0.25.1 (2026-10-22)
 
 What Havoc9's first play of h9_te_meridian found, and the checks that would have told it before:
 - **`fitted` makes words read on every side unless told** (`readable` is true unless `readable: false`): a sign

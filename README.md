@@ -145,6 +145,10 @@ lights) delivered as the .bsp alone; `smak map-teams` replays a team plugin's sp
 spawn file; `smak map-waypoints` writes RCBot's waypoints from the walk test; and new pieces for any map: marble,
 pictures fitted to their brushes, sconces and chandeliers.
 
+0.25.1 mends what the first play of a map made with it found. RCBot's bots now roam open floor rather than
+running at crates, keep room along their paths and do not take drops as shortcuts. Signs read on every side.
+`checkPlan` tells detail that hangs in the air. `map-props` no longer takes a picture in a doorway as hung.
+
 Every version's changes, the newest first: [CHANGELOG.md](CHANGELOG.md).
 
 ## Where it comes from
