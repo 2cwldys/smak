@@ -3,7 +3,7 @@
 The newest first. A version that changes what a model's file looks like, or that a model made before needs
 mending for, says so under **Mind**.
 
-## Not released yet
+## 0.25.0 (2026-10-21)
 
 - **The Specialists' map spec** (`profiles/specialists.mjs`, `SPEC`): a map spec with `"mod"` The Specialists is
   built in the game's manner. Its textures are the shipped .wad files' (specialists.wad and halflife.wad; the
@@ -123,6 +123,10 @@ mending for, says so under **Mind**.
   do not yet join what the walk does; only those got to from a start and leading back kept; the top of the sky
   and clips over it left out; RCBot's limit of 1024 waypoints kept. The bot works out its visibility table itself.
   `reachOf(map, { graph: true })` hands back the walk itself (`graph`, not enumerable) for what is built on it.
+
+**Mind**: a map spec built on a mod whose shipped .wad files hold every texture writes and names no .wad of its own
+any more, and one with pictures of its own now carries them inside the .bsp (`compile.embed: false` ships the .wad
+beside it, as before).
 
 ## 0.24.0 (2026-10-20)
 

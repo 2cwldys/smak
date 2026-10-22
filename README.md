@@ -139,9 +139,11 @@ body 0: `info` shows the body numbers, and `--body N` picks one.
 
 ## What is new
 
-0.24.0 brings judges of figures: how a model stands against a game's own in style, texture and shape, and what
-to change, with each game's manner in its profile (Master Sword, The Specialists, Half-Life and its HD pack). The
-corpus is measured from the games on your own machine (`smak figure-survey`) and never shipped.
+0.25.0 makes maps for The Specialists: its profile builds a map spec in the game's manner (its textures,
+`ts_model` props clipped where they are solid, rooms furnished by their use, breakables, its lamps as texture
+lights) delivered as the .bsp alone; `smak map-teams` replays a team plugin's split of the spawns and writes its
+spawn file; `smak map-waypoints` writes RCBot's waypoints from the walk test; and new pieces for any map: marble,
+pictures fitted to their brushes, sconces and chandeliers.
 
 Every version's changes, the newest first: [CHANGELOG.md](CHANGELOG.md).
 
