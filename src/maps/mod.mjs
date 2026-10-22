@@ -60,7 +60,8 @@
 //                   with by their `use` (`uses`, written as src/spec/dress.mjs's are); what breaks (`breakable`,
 //                   { keys, materials: { glass: { ... } } }: the keys of a func_breakable of each material) and
 //                   the brush pieces a use may name (`pieces`, over the kit's: `{ crate_large: { breakable:
-//                   "wood" } }`)
+//                   "wood" } }`); the game's light textures as texture lights (`lamps`, { texture: [r, g, b,
+//                   brightness] }: every room's lamp is a fixture of `textures.fixture` when that is one of them)
 //   }
 //
 // The kit ships one profile, `GOLDSRC`: Half-Life's own, with nothing of any mod in it. A mod's profile is

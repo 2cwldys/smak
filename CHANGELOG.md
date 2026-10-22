@@ -35,6 +35,13 @@ mending for, says so under **Mind**.
   player (its program sizes it to nothing): its couches, armchairs, tables, booths, boxes, dumpster, bench and statue
   are solid, its plants, pictures, office chairs and street lamp walked through, as its maps' makers clip them. A
   thing in the middle of a room (a coffee table) keeps its footprint, turned along the room, not a square.
+- **A mod's lamps** (a profile's `spec.lamps`, `{ texture: [r, g, b, brightness] }`, and `textures.fixture` one of the
+  game's): every room's lamp is built in a fixture of the game's light texture, two tubes at its own size on the
+  ceiling, its picture laid whole, and each of the mod's lamps a map wears is a texture light (`info_texlights`).
+  The Specialists' fixture is `+0~fifties_lgt2`; its lamps are halflife.wad's lights its maps wear, each in the
+  colour its maps' makers lit it (measured on their lamps' faces) at the brightness of the kit's Valve list, with
+  words for a spec's own (`ts_lamp_warm`, `ts_lamp_cool`, `ts_sodium`, `ts_screen`). A map of its rooms no longer
+  warns that none of its brushes wear a lamp.
 
 ## 0.24.0 (2026-10-20)
 

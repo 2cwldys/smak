@@ -1012,6 +1012,14 @@ profile, which says where each word was read from) gives:
   tables, booths, the game's boxes, a dumpster, a bench and a statue are `solid` in the profile and get a `CLIP` box
   of their footprint and height, in a room's dressing too; plants, pictures, office chairs and the street lamp are
   walked through;
+- lamps of the game's own: every room's lamp (unless a `frame` says `fixtures: false`) is a fixture of two tubes of
+  `+0~fifties_lgt2` (halflife.wad's light the game's maps wear most, 12 of them) on the ceiling, each its whole
+  picture once, lit as a texture light (an `info_texlights` in the map, which hlrad reads: no lights.rad, and the
+  game ships none). The profile's `lamps` give each of the game's light textures its colour, as the maps' makers
+  lit it (the light on its own faces in their maps: fifties_lgt2 252 255 234), and the brightness this kit's Valve
+  list gives it; any of them a spec wears is lit so. Words for a spec's own lamps: `ts_lamp`, `ts_lamp_warm`
+  (`~trn_lt1`), `ts_lamp_cool` (`+0~light3a`), `ts_sodium` (`+0~tnnl_lgt4`, 255 185 124), `ts_screen`
+  (`+0drkmtl_scrn`). The dressing's share of brushes wearing a lamp comes to Valve's (11 to 21 in 100);
 - what breaks, as the game's maps make it (1006 `func_breakable` in 27 of its 29 maps): glass (`material` 0) in
   render mode 2 at 100 and `health` 1, wood (crates) at 15, metal at 50; every one with `respawntime` 45, since no
   stock map sets it (0 is the game's 30 seconds, under 0 never, per `ts/mapping.txt`) and the Havoc9 matchmode

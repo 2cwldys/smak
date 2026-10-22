@@ -162,6 +162,17 @@ export const FIGURE_STYLE = {
  *             rooftop; the game has no models for a bathroom or a kitchen's stove, and its crates are brushes
  *             (func_breakable, 1006 in 27 maps): a warehouse's crates are the kit's in cardbox1 beside the
  *             game's boxes.
+ *   lamps     the game's light textures, lit as texture lights (an info_texlights in the map: hlrad's own list, no
+ *             lights.rad needed). The game ships no lights.rad and specialists.wad has no light texture: its maps'
+ *             lamps are halflife.wad's, +0~fifties_lgt2 the most (12 maps), then ~trn_lt1 (9), +0~generic86 and
+ *             +0~light3a (6), ~light3b and +0~generic85 (4)... Each colour is the one the maps' makers lit it in:
+ *             the median of the light on its own faces in those maps (an emitter's face is lit by its own value,
+ *             99 to 100 in 100 of their luxels at full: fifties_lgt2 252 255 234, warm where Valve's list has it
+ *             cool). +0~white (7 maps) is no emitter (6 in 100 at full) and is left out. Each brightness is the
+ *             one this kit's Valve list was calibrated to (src/maps/texlights.mjs: a recompile of Valve's maps lit
+ *             as the retail ones), for want of the makers' own: a lamp of the same texture and size. The fixture
+ *             every room's lamp is built as (`fixture`) is +0~fifties_lgt2, a tube of 16 by 64 on the ceiling;
+ *             ts_lamp, ts_lamp_warm, ts_lamp_cool, ts_sodium and ts_screen name the rest for a spec's own.
  *   breakable what breaks (func_breakable: 1006 in 27 of the 29 maps, read 2026-10-21 from their entities). Glass
  *             is the most: most leave `material` out (its default is 0, glass: 533) and draw it in render mode 2
  *             (522), `renderamt` 75 to 150 (100 the middle), `health` 1 (222 of the glass, 68 more at 3).
@@ -211,6 +222,30 @@ export const SPEC = {
     ts_glass: { texture: "glass_dark" },
     // a window's pane (links of kind window with glass), a glass screen's (a piece that breaks as glass)
     glass: { texture: "glass_bright" },
+    // the lamps (lamps, below): every room's fixture, and words for a spec's own
+    fixture: { texture: "+0~fifties_lgt2" },
+    ts_lamp: { texture: "+0~fifties_lgt2" },
+    ts_lamp_warm: { texture: "~trn_lt1" },
+    ts_lamp_cool: { texture: "+0~light3a" },
+    ts_sodium: { texture: "+0~tnnl_lgt4" },
+    ts_screen: { texture: "+0drkmtl_scrn" },
+  },
+  // the game's light textures as texture lights: [r, g, b, brightness], the colour its maps' makers lit each in,
+  // the brightness this kit's Valve list gives it; the maps that wear it, as a comment
+  lamps: {
+    "+0~fifties_lgt2": [252, 255, 234, 2600], // 12
+    "~trn_lt1": [255, 249, 160, 3300], // 9
+    "+0~generic86": [255, 242, 178, 16100], // 6
+    "+0~light3a": [226, 220, 255, 27700], // 6
+    "~light3b": [207, 207, 255, 4800], // 4
+    "+0~generic85": [162, 187, 255, 20700], // 4
+    "+0~light4a": [255, 249, 205, 8600], // 3
+    "+0~generic65": [255, 255, 255, 5200], // 2
+    "+0~fifts_lght01": [255, 255, 208, 2500], // 2
+    "+0~tnnl_lgt4": [255, 185, 124, 3200], // 2
+    "+0drkmtl_scrn": [124, 143, 255, 36200], // 2
+    yellow: [255, 226, 160, 3000], // 2
+    "~spotyellow": [255, 255, 181, 23100], // 2
   },
   // what breaks (src/spec/map.mjs BREAKABLE_MATERIALS): the keys each material takes in the game's maps
   breakable: {

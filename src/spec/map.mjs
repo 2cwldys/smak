@@ -2035,17 +2035,33 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
   let fixtures = 0;
   // composed light: a dimmed lamp's fixture glows dim too (its own glass, a fifth of the glow): a texture light
   // at full glow over every lamp lit the floor even whatever the lamps' own light did
+  // a mod's lamp (its profile's `spec.lamps`, the fixture one of the game's light textures): every room's lamp is
+  // built in a fixture of it, a texture light, unless a frame says `fixtures: false`
+  const gameFixture = Boolean(materials.fixture && typeof materials.fixture === "object" && (materials.fixture.texture || materials.fixture.pick));
+  const fixturesIn = (room) => !room.spec.sky && (frameOf(room)?.fixtures ?? (gameFixture && Boolean(profile?.spec?.lamps)));
   const fixtureOf = (dim) => {
-    if (!dim) return textureOf("fixture");
+    if (!dim || gameFixture) return textureOf("fixture");
     const glass = materialOf(materials.fixture, "fixture");
     materials.fixture_dim ??= { ...(typeof materials.fixture === "object" ? materials.fixture : {}), base: glass.base ?? "glass", tone: glass.tone.map((v) => v * 0.6), flags: ["fullbright"], glow: Math.round((materials.fixture?.glow ?? GLOW) / 5) };
     return textureOf("fixture_dim");
   };
+  // a panel on the ceiling: the kit's glass 32 by 16; or a game's lamp texture at its own size, two side by side as
+  // a fixture of two tubes, each its whole picture once on its face (fifties_lgt2 is a tube of 16 by 64: its width
+  // along x, its height along y, as a ceiling's picture is laid). Valve's maps are 15 in 100 of their brushes lamps
+  const panelOf = (room, [x, y], name) => {
+    if (!gameFixture) return [box([x - 16, y - 8, room.max[2] - 2], [x + 16, y + 8, room.max[2]], name)];
+    const [w, h] = sizeOfTexture(name);
+    return [x - w / 2 - 4, x + w / 2 + 4].map((cx) => {
+      const min = [cx - w / 2, y - h / 2, room.max[2] - 2];
+      const max = [cx + w / 2, y + h / 2, room.max[2]];
+      return box(min, max, { top: name, bottom: { name, offset: [-min[0], max[1]] }, sides: name });
+    });
+  };
   const hang = (room, [x, y, z], { dim = false } = {}) => {
-    const lit = frameOf(room)?.fixtures && !room.spec.sky;
+    const lit = fixturesIn(room);
     if (lit && room.max[2] - z <= LAMP_UNDER + 8) {
       fixtures++;
-      entities.push(brushEntity("func_detail", [box([x - 16, y - 8, room.max[2] - 2], [x + 16, y + 8, room.max[2]], fixtureOf(dim))], {}));
+      entities.push(brushEntity("func_detail", panelOf(room, [x, y], fixtureOf(dim)), {}));
       return;
     }
     if (room.max[2] - z <= LAMP_UNDER + 8 || room.spec.sky) return;
@@ -2192,7 +2208,7 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
     const fill = frameOf(room)?.fill;
     if (fill > 0) entities.push(light([Math.round((room.min[0] + room.max[0]) / 2), Math.round((room.min[1] + room.max[1]) / 2), room.min[2] + 48], { brightness: fill, color: [200, 205, 215] }));
   }
-  if (fixtures) report.facts.push(`frame: ${fixtures} lamps in fixtures that glow (a texture light each)`);
+  if (fixtures) report.facts.push(`${gameFixture ? "lamps" : "frame"}: ${fixtures} lamps in fixtures that glow (a texture light each${gameFixture ? `, ${textureOf("fixture")}` : ""})`);
   // composed: a weak light in each way through, under its head, so a doorway spills light into the room beyond
   if (composed?.spill > 0)
     for (const way of frameWays) {
@@ -2220,6 +2236,9 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
       .filter(([, material]) => material.flags.includes("fullbright"))
       .map(([key, material]) => [textureName(key), [...material.tone.map((v) => Math.round(v * 255)), material.glow ?? GLOW]]),
   );
+  // and the game's light textures the map wears, as the mod's profile lights them (`spec.lamps`: [r, g, b, value])
+  const lampsOfMod = new Map(Object.entries(profile?.spec?.lamps ?? {}).map(([name, light]) => [name.toUpperCase(), light]));
+  for (const name of gameTextures.keys()) if (lampsOfMod.has(name.toUpperCase())) glowing[name] = lampsOfMod.get(name.toUpperCase());
   if (Object.keys(glowing).length) {
     const first = [...rooms.values()][0];
     entities.push(textureLights([...mid(first).slice(0, 2), first.min[2] + 32], glowing));
