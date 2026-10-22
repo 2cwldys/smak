@@ -808,17 +808,19 @@ function ringPieces({ centre, radius, outer, angles, pieces, snap }, from, to, t
  *                shared among the steps there are. A slab of `top: false` stands on the box's floor
  * With `top: false` the highest step comes first in the list.
  *
+ * `open: 8` makes each step a tread that thick with nothing under it (a fire escape, an open-riser stair).
  * `ramp: "CLIP"` (or any texture) adds, last in the list, a wedge laid on the steps' nosings, from the floor
  * one step's depth before the first riser to the top: a player walks up it smoothly instead of climbing
  * each step (what boxy stairs "feel wrong" for), while shots and grenades, which a CLIP brush does not
  * stop, still meet the steps. Where the box has no room before the first riser, the foot of the ramp is
  * the box's low side, and the ramp a little steeper.
  */
-export function stairs(min, max, high, texture, { steps, rise = 16, top = true, tread, ramp } = {}) {
+export function stairs(min, max, high, texture, { steps, rise = 16, top = true, tread, ramp, open } = {}) {
   if (ramp !== undefined) {
-    const flight = stairs(min, max, high, texture, { steps, rise, top, tread });
+    const flight = stairs(min, max, high, texture, { steps, rise, top, tread, open });
     return [...flight, stairRamp(min, max, high, ramp, { steps, rise, top, tread })];
   }
+  if (open !== undefined) return openFlight(min, max, high, texture, { steps, rise, top, tread, open });
   const side = SIDES[high];
   if (!side) throw new Error(`stairs: the high side is "+x", "-x", "+y" or "-y", not ${high}`);
   for (let i = 0; i < 3; i++)
@@ -874,6 +876,29 @@ export function stairs(min, max, high, texture, { steps, rise = 16, top = true, 
     brushes.push(box(low, top, texture));
   }
   return brushes;
+}
+
+/**
+ * The flight `stairs` makes with `open`: each step a tread `open` thick with nothing under it, as a fire escape's,
+ * a gallery's or an open-riser stair's are; laid as the solid flight would lay them (the same heights and depths).
+ */
+function openFlight(min, max, high, texture, { steps, rise, top, tread, open }) {
+  if (!(typeof open === "number" && open > 0)) throw new Error(`stairs: open is a tread's thickness, over 0, not ${JSON.stringify(open)}`);
+  const solidSteps = stairs(min, max, high, texture, { steps, rise, top, tread });
+  const side = SIDES[high];
+  return solidSteps.map((brush, n) => {
+    const shape = shapeOf(brush);
+    const lo = [...shape.min];
+    const hi = [...shape.max];
+    // a step of a flight with its top step reaches on to the high side: its own tread is its front's depth
+    const deep = tread ?? (max[side.axis] - min[side.axis]) / solidSteps.length;
+    if (top) {
+      if (side.sign > 0) hi[side.axis] = Math.min(hi[side.axis], lo[side.axis] + deep);
+      else lo[side.axis] = Math.max(lo[side.axis], hi[side.axis] - deep);
+    }
+    lo[2] = Math.max(lo[2], hi[2] - open);
+    return box(lo.map(tidy), hi.map(tidy), texture);
+  });
 }
 
 /** The ramp `stairs` lays on its steps with `ramp`: from one step's depth before the first riser to the top. */

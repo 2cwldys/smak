@@ -89,6 +89,13 @@ mending for, says so under **Mind**.
   `faces` and `rest` fit some faces only. The Specialists' maps have 49 to 98 in 100 of their faces shifted off the
   world's grid; a box on the grid has none.
 
+- **Lamps built as fixtures on walls and hung** (src/maps/pieces.mjs): `sconce`, a shade of glass on a plate
+  standing out of a wall facing any way (a fan, a drum or a box), and `chandelier`, tiers of glass under a canopy and
+  a rod. Their glass is a light's texture, lit as a texture light: a room was lit only by tubes on its ceiling,
+  laid along y, or by lights in the air.
+- **Open stairs**: `stairs(..., { open: 8 })` lays each step as a tread that thick with nothing under it (a fire
+  escape, an open-riser stair), at the heights and depths the solid flight has; with `ramp` and `tread` as before.
+
 ## 0.24.0 (2026-10-20)
 
 - **The figure judges** (`src/figures/`, exported as `figures`), from the figures research: does a figure (a

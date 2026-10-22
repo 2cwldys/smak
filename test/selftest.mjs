@@ -106,6 +106,7 @@ const areas = [
   "98-ts-map-breakables", // what breaks: furniture, prefabs and their pieces as func_breakable with their material's keys, a mod's over the kit's
   "99-ts-map-solid-props", // props a player cannot walk through: a mod's solid things clipped, turned as they stand; the rest walked through
   "100-ts-map-lamps", // a mod's lamps: every room's lamp a fixture of the game's light texture, lit as a texture light in its makers' colour
+  "104-fixtures", // lamps built as fixtures: a sconce on a wall facing any way, a chandelier; stairs of open treads
   "103-fitted", // a picture fitted to a brush: its corner on each face's, whole when asked, words that read on every side
   "102-marble", // marble: veins over clouded stone, as tiles, let be bright
   "101-ts-map-dressing", // rooms dressed as thickly as the game's: along every wall, crates piled, desks in rows, couches about a table, a room's density

@@ -5,7 +5,7 @@
 // for what only decorates, so that it does not cut the world for hlvis). Lines and points are in plan,
 // [x, y]; heights are z. Every piece is checked against a player's numbers where it is walked: a step of 18 at
 // the most, a tread a player's width can stand on, a head's room under the turn above.
-import { prism, solid, terrain, turned, moved, cylinder, STEP_HEIGHT, planesOf, readMap, shapeOf } from "./source.mjs";
+import { prism, solid, terrain, turned, moved, cylinder, cone, box, STEP_HEIGHT, planesOf, readMap, shapeOf } from "./source.mjs";
 import { path } from "./ground.mjs";
 
 // ── constants ───────────────────────────────────────────────────────────────
@@ -117,6 +117,78 @@ export function spiralStairs({
     brushes.push(cylinder("z", centre, inner, from, to + PLAYER_HEIGHT + 16, columnTexture, { sides: 12 }));
   const end = first + turn * (steps - 0.5) * sweep;
   return { brushes, top: [...point(middle, end), to] };
+}
+
+// ── lamps built as fixtures: a wall's sconce, a chandelier ──────────────────
+/**
+ * A wall sconce: a shade of glass standing out from a wall, on a plate, its glass a light's texture (one the map's
+ * texture lights name, `textureLights` or a mod's lamps), so the lamp is seen and lights as Valve's and The
+ * Specialists' lamps do (a light entity in mid-air lights a wall with nothing shining on it). `at` is the point
+ * on the wall's face at the shade's foot, `facing` the way out of the wall in degrees (0 east, 90 north: any
+ * angle), `width` across the wall (24), `height` the glass's (32), `depth` how far it stands out (12); `glass`
+ * the light's texture, `metal` the plate's and the caps'. `shape`: "fan" (faceted, opening upward, the period's),
+ * "drum" (half a cylinder) or "box". → `{ brushes, light }`: `light` the point in front of the glass where a
+ * `light` entity of its own goes, if one is wanted.
+ */
+export function sconce({ at: foot, facing = 0, width = 24, height = 32, depth = 12, glass, metal, shape = "fan" }) {
+  if (!Array.isArray(foot) || foot.length !== 3) throw new Error("sconce: at is [x, y, z], the foot of its shade on the wall's face");
+  if (!glass || !metal) throw new Error("sconce: its glass (a light's texture) and its metal");
+  if (!(width >= 8 && height >= 8 && depth >= 4)) throw new Error(`sconce: width and height 8 or more, depth 4 or more (${width}, ${height}, ${depth})`);
+  if (!["fan", "drum", "box"].includes(shape)) throw new Error(`sconce: shape is fan, drum or box, not ${shape}`);
+  const half = width / 2;
+  const [z0, z1] = [foot[2], foot[2] + height];
+  const r = (v) => Math.round(v * 100) / 100;
+  // built facing +x at the origin, its back on x = 0; then turned and moved
+  const made = [box([-2, -half - 3, z0 - 6], [0, half + 3, z1 + 6], metal)];
+  const caps = { top: metal, bottom: metal, sides: glass };
+  if (shape === "box") made.push(box([0, -half, z0], [depth, half, z1], caps));
+  else if (shape === "drum") {
+    const sides = 8;
+    const outline = Array.from({ length: sides + 1 }, (_, k) => {
+      const a = -Math.PI / 2 + (Math.PI * k) / sides;
+      return [r(depth * Math.cos(a)), r(half * Math.sin(a))];
+    });
+    made.push(prism("z", outline, z0, z1, caps));
+  } else {
+    // a fan: narrow at its foot, opening upward, faceted (half an octagon in plan that grows with its height)
+    const ring = (k) => [[0, -half * k], [depth * 0.55 * k, -half * 0.8 * k], [depth * k, -half * 0.3 * k], [depth * k, half * 0.3 * k], [depth * 0.55 * k, half * 0.8 * k], [0, half * k]];
+    const low = ring(0.55).map(([x, y]) => [r(x), r(y), z0]);
+    const high = ring(1).map(([x, y]) => [r(x), r(y), z1]);
+    made.push(solid([...low, ...high], (n) => (Math.abs(n[2]) > 0.9 ? metal : glass)));
+    made.push(box([0, r(-half * 1.05), z1], [r(depth * 1.05), r(half * 1.05), z1 + 2], metal));
+  }
+  const brushes = moved(turned(made, facing, [0, 0, 0]), [foot[0], foot[1], 0]);
+  const a = (facing * Math.PI) / 180;
+  const light = [foot[0] + Math.cos(a) * (depth + 12), foot[1] + Math.sin(a) * (depth + 12), (z0 + z1) / 2];
+  return { brushes, light: light.map((v) => Math.round(v)) };
+}
+
+/**
+ * A chandelier hung from a ceiling: a canopy on the ceiling at `top`, a rod down `drop` units, and tiers of glass
+ * under it, each a drum of `sides` (8) narrower than the one over it (`radius` the widest, 32; `tiers` 3; each
+ * `tier` high, 10, a ring of metal between), ending in a cone of glass. Its glass wears `glass` (a light's
+ * texture), the rest `metal`. → `{ brushes, light, low }`: `light` its middle (a light entity's place, if one is
+ * wanted), `low` the height of its lowest point (keep it over a head where a player walks: 72 over the floor, more).
+ */
+export function chandelier({ centre, top, drop = 64, radius = 32, tiers = 3, tier = 10, sides = 8, glass, metal }) {
+  if (!Array.isArray(centre) || centre.length !== 2) throw new Error("chandelier: centre is [x, y]");
+  if (!glass || !metal) throw new Error("chandelier: its glass (a light's texture) and its metal");
+  if (!(radius >= 8 && tiers >= 1 && tier >= 4 && drop >= 4)) throw new Error("chandelier: radius 8 or more, a tier at least, each 4 high or more, a drop of 4 or more");
+  const [x, y] = centre;
+  const brushes = [cylinder("z", centre, Math.max(6, radius / 4), top - 4, top, metal, { sides })];
+  brushes.push(box([x - 1, y - 1, top - 4 - drop], [x + 1, y + 1, top - 4], metal));
+  let z = top - 4 - drop;
+  const caps = { top: metal, bottom: metal, sides: glass };
+  for (let k = 0; k < tiers; k++) {
+    const r = Math.max(4, Math.round(radius * (1 - (0.6 * k) / Math.max(1, tiers))));
+    brushes.push(cylinder("z", centre, r + 2, z - 2, z, metal, { sides }));
+    brushes.push(cylinder("z", centre, r, z - 2 - tier, z - 2, caps, { sides }));
+    z -= tier + 2;
+  }
+  const last = Math.max(4, Math.round(radius * 0.4));
+  brushes.push(cone("z", centre, last, z, z - Math.max(6, last), glass, { sides }));
+  const low = z - Math.max(6, last);
+  return { brushes, light: [x, y, Math.round((top - 4 - drop + low) / 2)], low };
 }
 
 // ── a bridge, a railing, a balcony ──────────────────────────────────────────
