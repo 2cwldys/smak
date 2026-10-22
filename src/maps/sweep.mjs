@@ -49,7 +49,10 @@ export function sweepOf(bytes, { reach = null } = {}) {
           if (solid([nx, ny, h + CHEST])) continue;
           const there = walk.stands(nx, ny, h + 18);
           if (there !== null && there !== undefined && there >= h - 18) continue;
-          const landed = there ?? lowestOpenFloor(solid, nx, ny, h, mins[2]);
+          // a body falls onto the first solid under it: a floor it fits on further down, under a slab it does not
+          // fit on (by a wall, under a stair), is no drop (the mezzanine's edge by a wall read as a fall to the cellar)
+          const below = lowestOpenFloor(solid, nx, ny, h, mins[2]);
+          const landed = there !== null && there !== undefined && below !== null ? Math.max(there, below) : there ?? below;
           if (landed === null || h - landed <= SAFE_DROP) continue;
           const key = `${Math.round(x / 64)},${Math.round(y / 64)},${Math.round(h / 64)}`;
           if (seen.has(key)) continue;

@@ -96,6 +96,10 @@ mending for, says so under **Mind**.
 - **Open stairs**: `stairs(..., { open: 8 })` lays each step as a tread that thick with nothing under it (a fire
   escape, an open-riser stair), at the heights and depths the solid flight has; with `ramp` and `tread` as before.
 
+- **The sweep's drops**: an upper floor's edge by a wall, where a body does not fit, over a room below that runs on
+  under it, where one does, was told as a fall to that room (Meridian's mezzanine by the hall's back wall: 384 down
+  to the vault). A body falls onto the first solid under it: such an edge is no drop.
+
 ## 0.24.0 (2026-10-20)
 
 - **The figure judges** (`src/figures/`, exported as `figures`), from the figures research: does a figure (a
