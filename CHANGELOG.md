@@ -82,6 +82,13 @@ mending for, says so under **Mind**.
   blending copies (which left veins a quarter as dark in its middle), and is worn less than a wall (half the patches, two thirds of the grain). It may
   be brighter and more coloured than Valve's walls without a warning.
 
+- **`fitted`** (src/maps/source.mjs): a picture fitted to a box as a mapper fits one by hand. On each face its
+  corner stands on the face's corner (top left as seen; a floor's north west), so a trim band's edge falls on the
+  brush's edge; `whole` stretches one picture across each face (or one way), `repeat` lays so many, `readable` flips
+  the north and west faces, where the world's grid runs a picture right to left, so a sign reads from every side;
+  `faces` and `rest` fit some faces only. The Specialists' maps have 49 to 98 in 100 of their faces shifted off the
+  world's grid; a box on the grid has none.
+
 ## 0.24.0 (2026-10-20)
 
 - **The figure judges** (`src/figures/`, exported as `figures`), from the figures research: does a figure (a
