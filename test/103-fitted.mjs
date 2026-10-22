@@ -58,6 +58,9 @@ test("fitted: tiling at a scale, anchored on the brush; repeats; faces chosen, t
   // a flipped face is a negative scale, and the .map keeps it
   const flipped = fitted("SIGN", [64, 16], min, max, { whole: true, readable: true }).north;
   sure(flipped.scale[0] < 0, JSON.stringify(flipped));
+  // readable unless told: a sign fitted to a north face does not read backwards (Meridian's RECORDS did)
+  sure(fitted("SIGN", [64, 16], min, max, { whole: true }).north.scale[0] < 0);
+  sure(fitted("SIGN", [64, 16], min, max, { whole: true, readable: false }).north.scale[0] > 0);
   const back = readMap(writeMap({ brushes: [box(min, max, fitted("SIGN", [64, 16], min, max, { whole: true, readable: true }))] }));
   const read = back.brushes[0].faces.find((f) => normalOf(f)[1] === 1);
   sure(read.scale[0] < 0 && near(texel(read, [264, 24, 48])[0], 0), JSON.stringify(read));

@@ -14,18 +14,28 @@
 //      is farther than that from one, and two are never nearer, but for those of step 1
 //   3. each piece of floor is given to its nearest waypoint (by walk); two waypoints whose pieces touch are
 //      joined both ways when a body walks the straight line between them on the level (a step at most up or
-//      down at each place of the grid), one way when the line drops (250 at the most); when it is not walked
-//      both ways (a corner between them), a waypoint is put at the place of the walk between them that
-//      stands farthest off the line; where the walk got into a piece only by a drop no path takes, one at
-//      the top of that drop and one where it lands; and the pieces are given out again, eight times at most
-//   4. then any two within 1.5 x `spacing` whose straight line is walked or dropped down are joined, the
-//      nearest first, up to `paths` paths (16) out of one waypoint
+//      down at each place of the grid) with room beside it (ROOM: never brushing a wall, a prop's clip or
+//      an edge where the floor has more room), one way when the line drops (250 at the most); when it is not
+//      walked both ways (a corner between them) and no third waypoint joins them, a waypoint is put at the
+//      place farthest off the line of a walk between them that keeps off the walls, moved into more room if
+//      it can be; where the walk got into a piece only by a drop no path takes, one at the top of that drop
+//      and one where it lands; and the pieces are given out again, eight times at most, and once more taking
+//      the lines a body only just fits along
+//   4. then any two within 1.5 x `spacing` whose straight line is walked with room are joined, the nearest
+//      first, up to `paths` paths (16) out of one waypoint, but not where two shorter paths it has go
+//      nearly the same way; no drops here
 //   5. floor where only a crouching player fits and that is much the shorter way (or the only one) between
 //      two places a standing one walks (a vent, a low passage; not the nook under a table or a stair) gets
 //      waypoints of its own, CROUCH, 18 over the floor, joined along the crouching body's walk
 //   6. where the paths still do not join what the walk does: a jump up out of a place a path gets into and
-//      has no way back from, a drop into a place no path gets to; and the pieces given out again
-//   7. only the waypoints a path from a place to start gets to, and that have a path back to one, are kept
+//      has no way back from, a drop into a place no path gets to; and the pieces given out again. Then where
+//      the nearest waypoint a place sees (the one a bot that has lost its way makes for) is on another floor
+//      and not walked to, a waypoint on that place's own floor ("near")
+//   7. drops where a walk of about the same length goes to the same waypoint are taken out, and the top of a
+//      crate a jump gets onto is a side trip (down only to where the jump was made); no waypoint is put on the
+//      top of what gives way (a crate that breaks)
+//   8. only the waypoints a path from a place to start gets to, and that have a path back to one, are kept;
+//      and the first 50 of the file, where RCBot's bots roam to, are places in room spread over the map
 // A waypoint's origin is a player's there: 36 over the floor standing, 18 crouching.
 //
 // WHAT IT IS WORTH. It is the walk test's geometry with the engine's numbers, not the game: a line a body fits
@@ -67,10 +77,47 @@ const PASSAGE = 96;
 const CROUCH_SPACING = 96;
 /** A flight of stairs or a ramp has its ends waypointed when it rises this much (units). */
 const FLIGHT_RISE = 40;
+/** How many rounds of waypoints are put where the nearest waypoint misleads a bot (step 6b). */
+const NEAREST_ROUNDS = 3;
 /** How many times corners are mended (step 3) before the paths are made all the same. */
 const MENDS = 8;
 /** How many rounds of jumps and drops are added where the paths do not yet join what the walk does (step 6). */
 const REPAIRS = 6;
+/**
+ * The room a path keeps (units): the body walking the straight line between two waypoints has this much
+ * floor beside it, either side, at every place of the grid along it, besides its own half width (16), where
+ * the floor has it: the line stands 24 off a wall, so that between the places of the grid, where the walk
+ * is not asked, the body still clears it. A bot does not keep to the line: RCBot heads for the next
+ * waypoint as soon as the distance to the one it is making for stops falling, which is short of it, and is
+ * pushed by others, so that a line that only just clears a corner is a corner the bot walks into. Near a
+ * waypoint that stands in less room (a doorway, the top of a stair, a ledge) the line is asked for no more
+ * than that and as much again as it has gone from it: it leaves a narrow place as a cone, not along a wall.
+ * Twice as much (16) was tried: on The Specialists' maps it put two waypoints for one at the corners.
+ */
+const ROOM = 8;
+/** How far a waypoint at a corner, or on floor by a wall, may be moved to stand in more room (units, by walk). */
+const CORNER_SHIFT = 48;
+/**
+ * A drop is a path one way, which RCBot weighs by its length alone, as it weighs any path: a bot takes a
+ * drop wherever it is the shorter way, and finds itself below with the long way back. A drop is offered only
+ * where the paths that are walked do not go to the same waypoint within this many times its length (and
+ * `DROP_SLACK` units): where a walk of about the same length goes there, the walk is the way.
+ */
+const DROP_DETOUR = 1.5;
+const DROP_SLACK = 64;
+/**
+ * A path from a waypoint is not made where two it has already go nearly the same way, through a waypoint
+ * nearer than either end: their two lengths together no more than this many times its length. The bot has
+ * fewer long lines to follow that skim what the shorter ones go round.
+ */
+const ROUNDABOUT = 1.1;
+/**
+ * RCBot's bots roam to a goal chosen at random among the FIRST 50 waypoints of the file (dlls/waypoint.cpp,
+ * WaypointFindRandomGoal: `indexes[50]`, `if (count < 50)`). The order of the file is the bot's plan: the
+ * first 50 are places spread over the map where a player stands in room (never the top of a crate a jump gets
+ * onto, a corner, a ledge or a narrow lane).
+ */
+const RCBOT_GOALS = 50;
 /** A player's origin over his floor, standing and crouching. */
 const STANDING_MIDDLE = 36;
 const CROUCHING_MIDDLE = 18;
@@ -172,10 +219,13 @@ function netOf(grid, layer, flood, ok = (spot) => spot >= 0 && flood.far[spot] !
     /**
      * Whether a body walks the straight line from spot `a` to spot `b`, place by place of the grid (each a
      * step to one straight beside the last, as a line crosses the grid). On the level a step is a link (no
-     * more than a step up or down); with `drop`, a step may also go down as far as that. Returns null, or
+     * more than a step up or down); with `drop`, a step may also go down as far as that. `room(trail,
+     * length)`, when given, is asked of the line once it is walked: `trail` holds each place it came to after
+     * `a`, `{ spot, at, down }` (`at`: how many places along the line from `a`; `down`: the body dropped to
+     * it), and `length` is the line's in places; false, and the line is not taken. Returns null, or
      * `{ dropped }`: the deepest drop taken.
      */
-    march(a, b, drop = 0) {
+    march(a, b, drop = 0, room = null) {
       const columns = grid.counts[0];
       const i0 = layer.place[a] % columns;
       const j0 = Math.floor(layer.place[a] / columns);
@@ -189,6 +239,7 @@ function netOf(grid, layer, flood, ok = (spot) => spot >= 0 && flood.far[spot] !
       let i = 0;
       let j = 0;
       let dropped = 0;
+      const trail = room ? [] : null;
       // how far a place of the grid stands off the line, in places: a step that takes the body more than
       // one place off it is not taken
       const length = Math.hypot(across, along) || 1;
@@ -207,6 +258,7 @@ function netOf(grid, layer, flood, ok = (spot) => spot >= 0 && flood.far[spot] !
         // the step the line asks for, or the other way round a corner of the grid it passes near
         let alongI = first;
         let next = stepTo(alongI);
+        let fell = false;
         if (next < 0) {
           alongI = !first;
           next = stepTo(alongI);
@@ -226,13 +278,17 @@ function netOf(grid, layer, flood, ok = (spot) => spot >= 0 && flood.far[spot] !
               if (next < 0 || layer.floor[other] > layer.floor[next]) next = other;
             }
           if (next < 0) return null;
+          fell = true;
           dropped = Math.max(dropped, layer.floor[spot] - layer.floor[next]);
         }
         if (alongI) i++;
         else j++;
         spot = next;
+        if (trail) trail.push({ spot, at: Math.hypot(i, j), down: fell });
       }
-      return spot === b ? { dropped } : null;
+      if (spot !== b) return null;
+      if (trail && !room(trail, Math.hypot(across, along))) return null;
+      return { dropped };
     },
   };
   return net;
@@ -241,9 +297,10 @@ function netOf(grid, layer, flood, ok = (spot) => spot >= 0 && flood.far[spot] !
 /**
  * From the spots `seeds`, the walk over a net's level floor to every spot within `radius` (Infinity: all):
  * `{ far: Map(spot -> units), from: Map(spot -> spot), owner: Map(spot -> seed index) }`. `within(spot)`
- * keeps the walk to some spots.
+ * keeps the walk to some spots; `weight(spot)` is what each unit of the walk onto a spot costs (1 unless
+ * told), and `far` is then that cost.
  */
-function spread(net, seeds, radius = Infinity, within = null) {
+function spread(net, seeds, radius = Infinity, within = null, weight = null) {
   const far = new Map();
   const from = new Map();
   const owner = new Map();
@@ -261,7 +318,7 @@ function spread(net, seeds, radius = Infinity, within = null) {
     if (done.has(spot) || length > far.get(spot)) continue;
     done.add(spot);
     net.around(spot, (other, step) => {
-      const next = length + step;
+      const next = length + (weight ? step * weight(other) : step);
       if (next > radius || (within && !within(other))) return;
       if (far.has(other) && far.get(other) <= next) return;
       far.set(other, next);
@@ -370,11 +427,13 @@ function piecesOf(net, spots, inside) {
  *   paths     the most paths out of one waypoint (16)
  *   drop      the highest drop a path goes down (250)
  *   most      the most waypoints (RCBot's 1024): over it, `spacing` is made wider until they fit, and said
- * It returns `{ waypoints: [{ origin, flags, paths, ways, kind }], facts, warnings, spacing, cell, reach }`:
- * `paths` are the numbers of the waypoints a bot goes on to, `ways` what each path is ("walk", "drop",
- * "ladder", "jump"), `kind` why the waypoint is there ("start", "ladder", "jump", "landing", "flight",
- * "opening", "floor", "corner", "ledge" and "drop" (the top of a drop and where it lands), "crouch");
- * `reach`, the walk test it was laid on.
+ * It returns `{ waypoints: [{ origin, flags, paths, ways, tight, kind }], facts, warnings, spacing, cell,
+ * reach }`: `paths` are the numbers of the waypoints a bot goes on to, `ways` what each path is ("walk",
+ * "drop", "ladder", "jump"), `tight` whether a body only just fits along it (less than ROOM beside it),
+ * `kind` why the waypoint is there ("start", "ladder", "jump", "landing", "flight", "opening", "floor",
+ * "corner", "ledge" and "drop" (the top of a drop and where it lands), "near" (where the nearest waypoint
+ * was on another floor), "crouch"); `reach`, the walk test it was laid on. The first 50 (RCBot's goals)
+ * are open floor and places to start, spread over the map.
  */
 export function waypointsOf(map, options = {}) {
   const most = options.most ?? RCBOT_MOST_WAYPOINTS;
@@ -485,8 +544,28 @@ function waypointsAt(reach, options) {
   const jumped = piecesOf(anyWalk, jumpSpots, jumpOnly);
   const jumpsTaken = [];
   const takenPieces = new Set();
+  // the top of what gives way (a crate that breaks, a wall switched off) is no place to send a bot: broken,
+  // it is not there, and the bot jumps at nothing, or into the next crate
+  const giving = (space.areas ?? []).filter((area) => area.gives && !area.open);
+  const onWhatGives = (spot) => {
+    const [x, y, floor] = anyWalk.pointOf(spot);
+    const half = BODIES.standing.half;
+    return giving.some(
+      (area) =>
+        Math.abs(floor - area.max[2]) <= 2 &&
+        x > area.min[0] - half &&
+        x < area.max[0] + half &&
+        y > area.min[1] - half &&
+        y < area.max[1] + half,
+    );
+  };
+  let onGiving = 0;
   for (const [number, piece] of jumped.pieces.entries()) {
     if (piece.length * grid.cell * grid.cell < JUMP_AREA) continue;
+    if (giving.length && piece.filter(onWhatGives).length * 2 > piece.length) {
+      onGiving++;
+      continue;
+    }
     let best = -1;
     for (const spot of piece) {
       if (!onFootSeen(flood.from[spot])) continue;
@@ -508,6 +587,51 @@ function waypointsAt(reach, options) {
     return { waypoints: [], facts, warnings, spacing, cell: grid.cell, reach };
   }
   const clear = clearanceOf(stand, walked);
+  const clearOf = (spot) => clear.get(spot) ?? 0;
+  // the room a path keeps (ROOM), in places of the grid: at each place of the line, as much room as ROOM
+  // asks, or as the floor across the line there has (the most room a place has within ROOM of it, square
+  // to the line: through a doorway or a corridor only a little wider than the body, its middle, and no
+  // more), or as the nearest end has and the places since it, whichever is least. A line that drops has two
+  // ends more, the edge it goes over and the place it lands: no room is asked there, and from them the
+  // cone opens again
+  const roomPlaces = Math.max(1, Math.round(ROOM / grid.cell));
+  const columns = grid.counts[0];
+  const roomFor = (a, b) => (trail, length) => {
+    const ends = [
+      [0, clearOf(a)],
+      [length, clearOf(b)],
+    ];
+    trail.forEach((place, index) => {
+      if (place.down) ends.push([index ? trail[index - 1].at : 0, 0], [place.at, 0]);
+    });
+    const [ax, ay] = stand.pointOf(a);
+    const [bx, by] = stand.pointOf(b);
+    const across = Math.hypot(bx - ax, by - ay) || 1;
+    const side = [-(by - ay) / across, (bx - ax) / across];
+    return trail.every(({ spot, at }) => {
+      const has = clearOf(spot);
+      let need = roomPlaces;
+      for (const [where, room] of ends) need = Math.min(need, room + Math.abs(at - where));
+      if (has >= need) return true;
+      // the most room across the line here: the floor beside, at about this height
+      const placeNumber = layer.place[spot];
+      const i = placeNumber % columns;
+      const j = Math.floor(placeNumber / columns);
+      let most = has;
+      for (let away = 1; away <= roomPlaces && most < need; away++)
+        for (const sign of [1, -1]) {
+          const oi = i + Math.round(side[0] * away * sign);
+          const oj = j + Math.round(side[1] * away * sign);
+          if (oi < 0 || oj < 0 || oi >= columns || oj >= grid.counts[1]) continue;
+          const other = layer.spotAt(oi + oj * columns, layer.floor[spot], step);
+          if (other >= 0 && usable(other) && Math.abs(layer.floor[other] - layer.floor[spot]) <= step)
+            most = Math.max(most, clearOf(other));
+        }
+      return has >= Math.min(need, most);
+    });
+  };
+  /** Whether a body walks the line between two spots on the level (with `drop`, down too), with room. */
+  const walks = (a, b, drop = 0) => stand.march(a, b, drop, roomFor(a, b));
 
   // ── the waypoints: each on a spot of the standing walk, or of the crouching one ──
   const points = [];
@@ -515,6 +639,12 @@ function waypointsAt(reach, options) {
   const put = (spot, kind, flags = 0, net = stand, middle = STANDING_MIDDLE, alone = false) => {
     const [x, y, floor] = net.pointOf(spot);
     const origin = [x, y, floor + middle];
+    // never two on the very same spot, though one stand alone (but a jump's own: a bot jumps at it)
+    const same = kind !== "jump" && points.find((point) => point.net === net && point.spot === spot && point.kind !== "jump"); // prettier-ignore
+    if (same) {
+      same.flags |= flags;
+      return same;
+    }
     const near =
       !alone &&
       points.find(
@@ -528,10 +658,13 @@ function waypointsAt(reach, options) {
     points.push(point);
     return point;
   };
-  /** A path from one waypoint to another: `why` ("walk", "drop", "ladder", "jump"), forced or not. */
-  const join = (from, to, why, forced = false) => {
+  /**
+   * A path from one waypoint to another: `why` ("walk", "drop", "ladder", "jump"), forced or not, and
+   * `tight` where a body only just fits along it (less than ROOM beside it).
+   */
+  const join = (from, to, why, forced = false, tight = false) => {
     if (from === to) return;
-    if (!from.out.has(to)) from.out.set(to, { why, forced, length: distance(from.origin, to.origin) });
+    if (!from.out.has(to)) from.out.set(to, { why, forced, tight, length: distance(from.origin, to.origin) });
   };
 
   // 1. the places a waypoint has to be
@@ -659,25 +792,99 @@ function waypointsAt(reach, options) {
   };
   for (const point of points) cover(point);
   const byRoom = [...walked].sort((a, b) => (clear.get(b) ?? 0) - (clear.get(a) ?? 0) || a - b);
+  // the floor left over is by the walls (a room's far corner, the end of a corridor): its waypoint is put
+  // where a body has room, twice ROOM if it can, within CORNER_SHIFT of it, not against the wall
+  const offTheWall = (spot) => {
+    let best = spot;
+    let bestRoom = Math.min(clearOf(spot), roomPlaces * 2);
+    for (const [other] of spread(stand, [spot], CORNER_SHIFT).far) {
+      const room = Math.min(clearOf(other), roomPlaces * 2);
+      if (room > bestRoom) (bestRoom = room), (best = other);
+    }
+    return best;
+  };
   for (const spot of byRoom) {
     if (covered.has(spot)) continue;
-    cover(put(spot, "floor"));
+    cover(put(offTheWall(spot), "floor"));
   }
 
   // 3. each piece of floor given to its nearest waypoint; every two whose pieces touch joined
   // Two whose pieces touch are walked between both ways (the pieces meet on the level): joined both ways
-  // when the straight line is walked, and otherwise mended with a waypoint at the corner between them. A
-  // line that drops is joined one way meanwhile.
-  const tryJoin = (a, b) => {
+  // when the straight line is walked with room (ROOM), and otherwise mended with a waypoint at the corner
+  // between them. A line that drops is joined one way meanwhile. The last round (`tight`) takes a line the
+  // body only fits along, as it is, where the paths do not already go round from one to the other: two
+  // waypoints the walk joins are never left apart for want of room
+  /** Whether the paths that are not drops lead from one waypoint to another within `most` units. */
+  const walkedWithin = (from, to, most) => {
+    const far = new Map([[from, 0]]);
+    const heap = heapOf();
+    heap.push(0, from);
+    while (heap.size) {
+      const [length, point] = heap.pop();
+      if (point === to) return true;
+      if (length > far.get(point)) continue;
+      for (const [next, path] of point.out) {
+        if (path.why === "drop") continue;
+        const further = length + path.length;
+        if (further > most || (far.has(next) && far.get(next) <= further)) continue;
+        far.set(next, further);
+        heap.push(further, next);
+      }
+    }
+    return false;
+  };
+  const tryJoin = (a, b, tight = false) => {
     if (a.out.has(b) && b.out.has(a)) return true;
-    if (stand.march(a.spot, b.spot)) {
-      join(a, b, "walk", true);
-      join(b, a, "walk", true);
+    const roomy = walks(a.spot, b.spot);
+    // a line with no room is the last resort: not where the paths already go round, both ways, within
+    // twice its length and a spacing
+    const roundAbout = (from, to) => walkedWithin(from, to, distance(a.origin, b.origin) * 2 + spacing);
+    if (!roomy && tight && roundAbout(a, b) && roundAbout(b, a)) return true;
+    if (roomy || (tight && stand.march(a.spot, b.spot))) {
+      join(a, b, "walk", true, !roomy);
+      join(b, a, "walk", true, !roomy);
       return true;
     }
-    if (!a.out.has(b) && stand.march(a.spot, b.spot, drop)) join(a, b, "drop", true);
-    if (!b.out.has(a) && stand.march(b.spot, a.spot, drop)) join(b, a, "drop", true);
+    for (const [from, to] of [
+      [a, b],
+      [b, a],
+    ]) {
+      if (from.out.has(to)) continue;
+      const down = walks(from.spot, to.spot, drop);
+      if (down || (tight && stand.march(from.spot, to.spot, drop))) join(from, to, "drop", true, !down);
+    }
     return false;
+  };
+  /** What a place of less room than ROOM costs to walk, for each unit, against 1 in the open. */
+  const keepOff = (spot) => 1 + 2 * Math.max(0, roomPlaces - clearOf(spot));
+  /** Whether two waypoints are walked between, both ways, through one other. */
+  const throughOne = (a, b) => {
+    for (const [c, path] of a.out)
+      if (
+        path.why === "walk" &&
+        c.out.get(b)?.why === "walk" &&
+        b.out.get(c)?.why === "walk" &&
+        c.out.get(a)?.why === "walk"
+      )
+        return true;
+    return false;
+  };
+  /**
+   * Where a waypoint put at a corner between `a` and `b` stands: of the places within CORNER_SHIFT of the
+   * walk's corner, one from which both lines are walked with room, then one from which both are walked at
+   * all, the roomiest such; the corner itself when none is. The walk's own corner is where it brushes the
+   * wall it turns round: a waypoint there has the bot turn with its shoulder against the wall.
+   */
+  const roomiest = (spot, a, b) => {
+    let best = spot;
+    let bestRank = -Infinity;
+    for (const [other, far] of spread(stand, [spot], CORNER_SHIFT).far) {
+      const roomy = walks(a.spot, other) && walks(other, b.spot);
+      const fits = roomy || (stand.march(a.spot, other) && stand.march(other, b.spot));
+      const rank = (roomy ? 2000 : fits ? 1000 : 0) + Math.min(clearOf(other), 50) * 10 - far / CORNER_SHIFT;
+      if (rank > bestRank) (bestRank = rank), (best = other);
+    }
+    return bestRank >= 1000 ? best : spot;
   };
   // the drops the walk took (off a ledge, down a hole): a waypoint's piece may be got to by nothing else
   const drops = [];
@@ -719,14 +926,24 @@ function waypointsAt(reach, options) {
       for (const [first, second] of touching.values()) {
         const a = standing[first];
         const b = standing[second];
-        if (tryJoin(a, b) !== false) continue;
+        if (tryJoin(a, b, mend === MENDS) !== false) continue;
+        // two already joined both ways through a third need no corner of their own
+        if (throughOne(a, b)) continue;
         if (mend === MENDS) continue;
         // the walk from one to the other through their two pieces, and its place farthest off their line
-        let walk = spread(stand, [a.spot], Infinity, (spot) => {
-          const owner = given.owner.get(spot);
-          return owner === first || owner === second;
-        });
-        if (!walk.far.has(b.spot)) walk = spread(stand, [a.spot], spacing * 4);
+        // (a walk that keeps off the walls where it can: a place with less room than ROOM costs more to
+        // walk, so that the walk turns its corner in the open and the waypoint put there stands in room)
+        let walk = spread(
+          stand,
+          [a.spot],
+          Infinity,
+          (spot) => {
+            const owner = given.owner.get(spot);
+            return owner === first || owner === second;
+          },
+          keepOff,
+        );
+        if (!walk.far.has(b.spot)) walk = spread(stand, [a.spot], spacing * 8, null, keepOff);
         if (!walk.far.has(b.spot)) continue;
         const [ax, ay] = stand.pointOf(a.spot);
         const [bx, by] = stand.pointOf(b.spot);
@@ -759,7 +976,8 @@ function waypointsAt(reach, options) {
       for (const [key, spot] of dropPairs) {
         const [a, b] = key.split(" ").map((number) => standing[Number(number)]);
         if (a.out.has(b)) continue;
-        if (stand.march(a.spot, b.spot, drop)) join(a, b, "drop", true);
+        const down = walks(a.spot, b.spot, drop);
+        if (down || (mend === MENDS && stand.march(a.spot, b.spot, drop))) join(a, b, "drop", true, !down);
         else if (mend < MENDS && !leads(a, b)) ledges.push(spot);
       }
       const before = points.length;
@@ -767,14 +985,15 @@ function waypointsAt(reach, options) {
         // the corner a waypoint of its own; or one there already, which helps when the line to it from each
         // of the two is walked; if not, the place half way along the walk is one of its own
         const count = points.length;
-        const corner = put(farthest, "corner");
+        const corner = put(roomiest(farthest, a, b), "corner");
         if (points.length > count) continue;
         if (corner !== a && corner !== b && tryJoin(a, corner) === true && tryJoin(corner, b) === true)
           continue;
-        const [x, y, floor] = stand.pointOf(middle);
+        const halfway = roomiest(middle, a, b);
+        const [x, y, floor] = stand.pointOf(halfway);
         const at = [x, y, floor + STANDING_MIDDLE];
         if (!points.some((point) => point.net === stand && distance(point.origin, at) < SAME_PLACE / 2))
-          put(middle, "corner", 0, stand, STANDING_MIDDLE, true);
+          put(halfway, "corner", 0, stand, STANDING_MIDDLE, true);
       }
       corners += points.length - before;
       for (const spot of ledges) {
@@ -791,7 +1010,11 @@ function waypointsAt(reach, options) {
         join(edge, landing, "drop", true);
         dropsWaypointed++;
       }
-      if (points.length === before) break;
+      // nothing more to mend: one round more takes the lines a body only just fits along, and ends
+      if (points.length === before) {
+        if (mend >= MENDS) break;
+        mend = MENDS - 1;
+      }
     }
   };
   mendAll();
@@ -887,7 +1110,20 @@ function waypointsAt(reach, options) {
     }
   }
 
-  // 4. any two near enough whose line is walked, the nearest first
+  // 4. any two near enough whose line is walked with room, the nearest first; not where two paths the
+  // waypoint has already go nearly the same way (ROUNDABOUT). No drop is added here: the drops are those of
+  // steps 3 and 6, where the floor of one waypoint meets another's over an edge or the walk needs one. A drop
+  // offered between any two near enough is a short cut a bot takes off every ledge
+  const roundabout = (a, b) => {
+    const whole = distance(a.origin, b.origin);
+    for (const [c, path] of a.out) {
+      if (path.why !== "walk" || c.out.get(b)?.why !== "walk") continue;
+      const first = distance(a.origin, c.origin);
+      const second = distance(c.origin, b.origin);
+      if (first < whole && second < whole && first + second <= whole * ROUNDABOUT) return true;
+    }
+    return false;
+  };
   const joinNear = () => {
     const standing = points.filter((point) => point.net === stand);
     for (const a of standing) {
@@ -896,16 +1132,32 @@ function waypointsAt(reach, options) {
         .sort((p, q) => distance(a.origin, p.origin) - distance(a.origin, q.origin));
       for (const b of near) {
         if (a.out.size >= mostPaths) break;
-        if (stand.march(a.spot, b.spot)) {
+        if (roundabout(a, b)) continue;
+        if (walks(a.spot, b.spot)) {
           join(a, b, "walk");
           if (b.out.size < mostPaths) join(b, a, "walk");
-        } else if (stand.march(a.spot, b.spot, drop)) join(a, b, "drop");
+        }
       }
     }
-    // a piece only a jump reaches has a way back down, where its line drops
-    for (const { takeoff, landing, piece } of jumpPairs)
-      if (![...landing.out.keys()].some((to) => to.net !== stand || jumped.pieceOf.get(to.spot) !== piece))
-        if (stand.march(landing.spot, takeoff.spot, drop)) join(landing, takeoff, "drop", true);
+    // a piece only a jump reaches has a way back down, where its line drops: to where the jump was made
+    // from, or else to the nearest waypoint off it that a drop gets to
+    for (const { takeoff, landing, piece } of jumpPairs) {
+      if ([...landing.out.keys()].some((to) => to.net !== stand || jumped.pieceOf.get(to.spot) !== piece))
+        continue;
+      if (stand.march(landing.spot, takeoff.spot, drop)) {
+        join(landing, takeoff, "drop", true);
+        continue;
+      }
+      const off = (b) =>
+        b !== landing &&
+        jumped.pieceOf.get(b.spot) !== piece &&
+        distance(landing.origin, b.origin) <= reachAt;
+      const below = standing
+        .filter(off)
+        .sort((p, q) => distance(landing.origin, p.origin) - distance(landing.origin, q.origin))
+        .find((b) => stand.march(landing.spot, b.spot, drop));
+      if (below) join(landing, below, "drop", true);
+    }
   };
   joinNear();
 
@@ -989,6 +1241,94 @@ function waypointsAt(reach, options) {
     joinNear();
   }
 
+  // 6b. the waypoint nearest a place is one a bot there walks to. A bot that has lost its way (it spawned,
+  // fought, was pushed, or has not seen its next waypoint for two seconds) takes the nearest waypoint it
+  // sees, by straight distance, whatever floor it is on (dlls/waypoint.cpp, NearestWaypoint), and walks at
+  // it: beside a pit that is one at the pit's bottom, under a balcony one on the balcony. Where the nearest
+  // waypoint a place sees is on another floor, higher or lower than a jump, and is not walked to from it in
+  // a straight line, a waypoint is put on the place's own floor, the roomiest place of those so misled about
+  // each waypoint, and the pieces are given out again; three rounds at most
+  const sight = typeof space.sees === "function";
+  const BUCKET_SIZE = 128;
+  for (let round = 0; sight && round < NEAREST_ROUNDS; round++) {
+    const standing = points.filter((point) => point.net === stand);
+    const given = ownersOf(
+      stand,
+      standing.map((point) => point.spot),
+    );
+    const buckets = new Map();
+    const keyOf = (x, y) => `${Math.floor(x / BUCKET_SIZE)} ${Math.floor(y / BUCKET_SIZE)}`;
+    for (const point of points) {
+      const key = keyOf(point.origin[0], point.origin[1]);
+      if (!buckets.has(key)) buckets.set(key, []);
+      buckets.get(key).push(point);
+    }
+    const misled = new Map();
+    for (const [spot, number] of given.owner) {
+      const owner = standing[number];
+      const [x, y, floor] = stand.pointOf(spot);
+      const eye = [x, y, floor + STANDING_MIDDLE];
+      const reach = distance(eye, owner.origin);
+      if (reach <= grid.cell) continue;
+      const nearer = [];
+      const reachCells = Math.ceil(reach / BUCKET_SIZE);
+      const [ci, cj] = [Math.floor(x / BUCKET_SIZE), Math.floor(y / BUCKET_SIZE)];
+      for (let i = ci - reachCells; i <= ci + reachCells; i++)
+        for (let j = cj - reachCells; j <= cj + reachCells; j++)
+          for (const point of buckets.get(`${i} ${j}`) ?? []) {
+            const away = distance(eye, point.origin);
+            if (point !== owner && away < reach) nearer.push([away, point]);
+          }
+      nearer.sort((p, q) => p[0] - q[0]);
+      for (const [, point] of nearer) {
+        if (!space.sees(eye, point.origin)) continue;
+        const otherFloor = Math.abs(point.origin[2] - eye[2]) > JUMP_HEIGHT;
+        if (otherFloor && point.net === stand && !stand.march(spot, point.spot)) {
+          const was = misled.get(owner);
+          if (!was || clearOf(spot) > clearOf(was)) misled.set(owner, spot);
+        }
+        break;
+      }
+    }
+    const before = points.length;
+    for (const spot of misled.values()) put(spot, "near");
+    if (points.length === before) break;
+    mendAll();
+    joinNear();
+  }
+
+  // 7. the drops. RCBot weighs a path by its length and nothing else, a drop as a walk: offered a drop, a bot
+  // takes it wherever it is the shorter way, and is then below with the long way back (a truck pit by the
+  // spawn, open on its sides, its one stair at the far end). A drop is kept where the walk does not go to the
+  // same waypoint at about its length (DROP_DETOUR): what is taken out is never the only way, since the walk
+  // that stands for it is kept. And the top of a crate or a sill a jump gets onto (a piece smaller than two
+  // spacings square) is a side trip: down from it only to where the jump was made from, or beside it, never
+  // on across, so that a bot never jumps a crate as a short cut
+  let dropsWalked = 0;
+  for (const point of points)
+    for (const [to, path] of [...point.out])
+      if (path.why === "drop" && walkedWithin(point, to, path.length * DROP_DETOUR + DROP_SLACK)) {
+        point.out.delete(to);
+        dropsWalked++;
+      }
+  let sideTrips = 0;
+  for (const { takeoff, piece } of jumpPairs) {
+    if (jumped.pieces[piece].length * grid.cell * grid.cell >= (spacing * 2) ** 2) continue;
+    const onIt = points.filter((point) => point.net === stand && jumped.pieceOf.get(point.spot) === piece);
+    const beside = new Set([takeoff, ...[...takeoff.out].filter(([, path]) => path.why === "walk").map(([to]) => to)]); // prettier-ignore
+    const across = onIt.flatMap((point) =>
+      [...point.out]
+        .filter(([to, path]) => path.why === "drop" && !beside.has(to))
+        .map(([to]) => [point, to]),
+    );
+    const goesBack = onIt.some((point) =>
+      [...point.out].some(([to, path]) => path.why === "drop" && beside.has(to)),
+    );
+    if (!goesBack || !across.length) continue;
+    for (const [point, to] of across) point.out.delete(to);
+    sideTrips++;
+  }
+
   // the paths kept: the forced and those of step 3 first, then the nearest, up to `paths`
   const kept = new Map();
   for (const point of points)
@@ -1028,7 +1368,50 @@ function waypointsAt(reach, options) {
     warnings.push(
       `${stuck.length} waypoints were left out: no path from them gets back to a place to start, a pit or a one-way place (${said(stuck)})`,
     );
-  const final = points.filter((point) => forth.has(point) && back.has(point));
+  const onTheWay = points.filter((point) => forth.has(point) && back.has(point));
+  // the bot's goals first: RCBot roams to one of the first RCBOT_GOALS waypoints of the file, at random. The
+  // waypoints of open floor and the places to start where a player has twice ROOM about him, spread over
+  // the map, the farthest from those chosen next (not a doorway, a stair's end or a corner, where a bot that
+  // has arrived stands in the way); then the rest, the jumps, ledges, landings, ladders and crouching places
+  // last
+  const goalKinds = new Set(["floor", "start", "opening", "flight", "corner"]);
+  const goalFirst = new Set(["floor", "start"]);
+  const worthy = (point) =>
+    point.net === stand &&
+    goalKinds.has(point.kind) &&
+    !(point.flags & (RCW_FLAGS.JUMP | RCW_FLAGS.LADDER)) &&
+    jumped.pieceOf.get(point.spot) === undefined;
+  const candidates = onTheWay.filter(
+    (point) => worthy(point) && goalFirst.has(point.kind) && clearOf(point.spot) >= roomPlaces * 2,
+  );
+  const goals = [];
+  if (candidates.length) {
+    const middle = [0, 1, 2].map(
+      (axis) => candidates.reduce((sum, point) => sum + point.origin[axis], 0) / candidates.length,
+    );
+    let next = candidates.reduce((best, point) =>
+      distance(point.origin, middle) < distance(best.origin, middle) ? point : best,
+    );
+    const nearest = new Map(candidates.map((point) => [point, Infinity]));
+    while (next && goals.length < RCBOT_GOALS) {
+      goals.push(next);
+      nearest.delete(next);
+      let farthest = null;
+      let far = -1;
+      for (const [point, was] of nearest) {
+        const now = Math.min(was, distance(point.origin, next.origin));
+        nearest.set(point, now);
+        if (now > far) (far = now), (farthest = point);
+      }
+      next = farthest;
+    }
+  }
+  const chosen = new Set(goals);
+  const final = [
+    ...goals,
+    ...onTheWay.filter((point) => !chosen.has(point) && worthy(point)),
+    ...onTheWay.filter((point) => !chosen.has(point) && !worthy(point)),
+  ];
   const index = new Map(final.map((point, number) => [point, number]));
   const waypoints = final.map((point) => {
     const out = kept.get(point).filter(([to]) => index.has(to));
@@ -1040,6 +1423,7 @@ function waypointsAt(reach, options) {
       kind: point.kind,
       paths: out.map(([to]) => index.get(to)),
       ways,
+      tight: out.map(([, path]) => path.tight),
     };
   });
 
@@ -1055,12 +1439,17 @@ function waypointsAt(reach, options) {
     waypoint.paths.map((to) => distance(waypoint.origin, waypoints[to].origin)),
   );
   const flagged = (flag) => waypoints.filter((waypoint) => waypoint.flags & flag).length;
+  const tight = waypoints.reduce((sum, waypoint) => sum + waypoint.tight.filter(Boolean).length, 0);
   facts.push(
-    `${waypoints.length} waypoints on ${Math.round(walked.length * grid.cell * grid.cell)} square units of walked floor, a spacing of ${Math.round(spacing)}: ${count("start")} at places to start, ${flagged(RCW_FLAGS.LADDER)} at ${laddersWaypointed} ladders, ${flagged(RCW_FLAGS.JUMP)} to jump from, ${count("flight")} at the ends of ${flightCount} flights and ramps, ${count("opening")} in ${openingCount} openings, ${count("floor")} on open floor, ${count("corner")} at corners, ${count("ledge")} at the top of ${dropsWaypointed} drops (${mended} jumps and drops added where the paths did not join what the walk does), ${flagged(RCW_FLAGS.CROUCH)} crouching in ${passages} passages`,
+    `${waypoints.length} waypoints on ${Math.round(walked.length * grid.cell * grid.cell)} square units of walked floor, a spacing of ${Math.round(spacing)}: ${count("start")} at places to start, ${flagged(RCW_FLAGS.LADDER)} at ${laddersWaypointed} ladders, ${flagged(RCW_FLAGS.JUMP)} to jump from, ${count("flight")} at the ends of ${flightCount} flights and ramps, ${count("opening")} in ${openingCount} openings, ${count("floor")} on open floor, ${count("corner")} at corners, ${count("ledge")} at the top of ${dropsWaypointed} drops (${mended} jumps and drops added where the paths did not join what the walk does), ${flagged(RCW_FLAGS.CROUCH)} crouching in ${passages} passages, ${count("near")} where the nearest waypoint a bot sees was on another floor`,
   );
   facts.push(
-    `${pathCount} paths (${oneWay} one way), ${lengths.length ? Math.round(lengths.reduce((a, b) => a + b, 0) / lengths.length) : 0} units long on the average, at most ${Math.max(0, ...waypoints.map((waypoint) => waypoint.paths.length))} out of one waypoint`,
+    `${pathCount} paths (${oneWay} one way), ${lengths.length ? Math.round(lengths.reduce((a, b) => a + b, 0) / lengths.length) : 0} units long on the average, at most ${Math.max(0, ...waypoints.map((waypoint) => waypoint.paths.length))} out of one waypoint; ${tight} along which a body only just fits (less than ${ROOM} beside it: no other way joins the two), ${dropsWalked} drops left out where a walk of about their length goes there, ${sideTrips} tops of crates or sills a jump gets onto made side trips${onGiving ? `, ${onGiving} tops of what gives way (a crate that breaks) not waypointed` : ""}`,
   );
+  if (goals.length)
+    facts.push(
+      `the first ${goals.length} waypoints are where the bot roams to (RCBot picks a goal among the first ${RCBOT_GOALS} of the file): places a player stands in room, spread over the map`,
+    );
   const outside = waypoints.filter((waypoint) => waypoint.origin.some((value) => value > 4096));
   if (outside.length)
     warnings.push(

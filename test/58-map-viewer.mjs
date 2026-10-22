@@ -120,6 +120,27 @@ test("propsOf: a monster stuck in a wall, a box floating, one on another, a mons
   sure(warned.length >= 1 && noted.length >= 2, "warned and noted apart");
 });
 
+test("propsOf: a picture with wall behind most of it hangs; one in a doorway, a jamb at its edge, floats", () => {
+  const room = maps.hollow([0, 0, 0], [512, 512, 256], 16, "W");
+  // a wall across the room at x 300, a doorway in it from y 280 to 344, 160 high
+  const wall = [maps.box([300, 0, 0], [316, 280, 256], "W"), maps.box([300, 344, 0], [316, 512, 256], "W"), maps.box([300, 280, 160], [316, 344, 256], "W")];
+  const map = {
+    worldspawn: {},
+    brushes: [...room, ...wall],
+    entities: [
+      maps.playerStart([100, 100, 0]),
+      maps.pointEntity("picture_hung", [324, 150, 120], {}),
+      maps.pointEntity("picture_door", [324, 296, 120], {}),
+    ],
+  };
+  // their boxes as their models would give them (a model, not a body: the game does not drop it)
+  const figures = new Map([[2, { min: [316, 142, 104], max: [332, 158, 136] }], [3, { min: [316, 288, 104], max: [332, 304, 136] }]]);
+  const { props } = maps.propsOf(map, { figures, models: false });
+  const of = (classname) => props.find((prop) => prop.classname === classname);
+  sure(!of("picture_hung").warnings.length, JSON.stringify(of("picture_hung")));
+  sure(of("picture_door").warnings.some((w) => /floats/.test(w)), JSON.stringify(of("picture_door")));
+});
+
 await testAsync(
   "the map viewer serves a scene, its textures and a version that changes with the file",
   "the map viewer",

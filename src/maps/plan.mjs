@@ -295,9 +295,65 @@ function brushesOf(map) {
         brush,
         named: `brush ${own} of entity ${index + 1} (${entity.classname})`,
         world: false,
+        classname: entity.classname,
       });
   });
   return listed;
+}
+
+/** A brush all of whose faces wear these is not seen: nothing hangs on it. */
+const UNSEEN = /^(clip|origin|hint$|skip$|null|aaatrigger$|bevel|solidhint$|splitface$|boundingbox$|noclip$)/i;
+/** Boxes this near each other touch (units). */
+const TOUCH = 0.5;
+
+/**
+ * The func_detail that hangs in the air: the pieces (detail brushes that touch one another, by their boxes) of
+ * which no brush touches a seen brush of the world or of another entity. Each is told by where its box is and
+ * what it wears. Touching is by boxes, so a slanted brush may be taken to touch what it misses: a piece told is
+ * loose, one not told may still be.
+ */
+function looseDetail(listed, shapes) {
+  const boxOf = (brush) => {
+    const corners = shapes.get(brush)?.corners;
+    if (!corners?.length) return null;
+    return [0, 1, 2].map((i) => [Math.min(...corners.map((c) => c[i])), Math.max(...corners.map((c) => c[i]))]);
+  };
+  const touch = (a, b) => a.every(([lo, hi], i) => lo <= b[i][1] + TOUCH && hi >= b[i][0] - TOUCH);
+  const seen = (brush) => brush.faces.some((face) => !UNSEEN.test(String(face.texture ?? "")));
+  const detail = [];
+  const anchors = [];
+  for (const one of listed) {
+    if (!Array.isArray(one.brush?.faces)) continue;
+    const box = boxOf(one.brush);
+    if (!box || !seen(one.brush)) continue;
+    (one.classname === "func_detail" ? detail : anchors).push({ ...one, box });
+  }
+  // the pieces: detail brushes joined by touching
+  const piece = detail.map((_, i) => i);
+  const root = (i) => (piece[i] === i ? i : (piece[i] = root(piece[i])));
+  const order = detail.map((_, i) => i).sort((a, b) => detail[a].box[0][0] - detail[b].box[0][0]);
+  for (let k = 0; k < order.length; k++)
+    for (let m = k + 1; m < order.length; m++) {
+      const a = detail[order[k]];
+      const b = detail[order[m]];
+      if (b.box[0][0] > a.box[0][1] + TOUCH) break;
+      if (touch(a.box, b.box)) piece[root(order[k])] = root(order[m]);
+    }
+  const held = new Set();
+  for (const [i, one] of detail.entries()) if (anchors.some((anchor) => touch(one.box, anchor.box))) held.add(root(i));
+  const pieces = new Map();
+  for (const [i, one] of detail.entries()) {
+    const r = root(i);
+    if (held.has(r)) continue;
+    if (!pieces.has(r)) pieces.set(r, []);
+    pieces.get(r).push(one);
+  }
+  return [...pieces.values()].map((brushes) => {
+    const min = [0, 1, 2].map((i) => Math.min(...brushes.map((one) => one.box[i][0])));
+    const max = [0, 1, 2].map((i) => Math.max(...brushes.map((one) => one.box[i][1])));
+    const textures = [...new Set(brushes.flatMap((one) => one.brush.faces.map((face) => face.texture)))].slice(0, 3);
+    return `${brushes.length} brushes from ${place(min)} to ${place(max)} (${textures.join(", ")})`;
+  });
 }
 
 /** The brushes: each a sound solid, inside the engine's range, its planes on the grid, its pictures laid flat. */
@@ -468,7 +524,8 @@ function checkEntities(map, { range, starts }, { errors, warnings, facts }, used
  * texture name over 15 letters or in none of the .wad files, a point entity with no origin, an entity with
  * no classname, a key or value the formats cannot hold, no place to start.
  * Warnings: planes off the grid, no `wad` key, nothing that lights the map, a texture light no face wears,
- * an entity inside a brush, and the leak hint: a way out to the void, with where it gets out.
+ * an entity inside a brush, func_detail that touches nothing else seen (it hangs in the air), and the leak
+ * hint: a way out to the void, with where it gets out.
  * With `mod` or `definitions`, also what `checkEntities` finds: a class that does not exist (an error), a
  * key its class does not have, a value of the wrong kind, a name nothing answers to, a broken rule of the
  * mod, a file the game does not have.
@@ -521,6 +578,12 @@ export function checkPlan(map, options = {}) {
       buried.push(`entity ${index + 1} (${entity.classname}) at ${place(origin)} is inside ${inside.named}`);
   });
   if (buried.length) warnings.push(`${buried.length} entities are inside a world brush: ${some(buried)}`);
+
+  const loose = looseDetail(listed, shapes);
+  if (loose.length)
+    warnings.push(
+      `${loose.length} pieces of func_detail touch nothing else solid: they hang in the air (a lamp or a sign in a doorway, a bracket off its wall): ${some(loose)}`,
+    );
 
   let hint = null;
   if (leak && world.length) {

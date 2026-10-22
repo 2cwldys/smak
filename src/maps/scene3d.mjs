@@ -60,6 +60,8 @@ const THIN = 16;
 const DROPPED = /(item|treasure|weapon_|ammo_|chest)/i;
 /** A thing with a side this near a wall hangs on it, and does not float (units). */
 const ON_WALL = 8;
+/** The share of that side that has to have wall behind it. */
+const HUNG = 0.6;
 /** Classes whose way they face says nothing: lights, sounds, sprites, info markers. */
 const NO_FACING =
   /^(light|ambient_|env_sound|env_sprite|env_glow|info_target|info_null|info_texlights|path_|multi_|trigger_|game_)/i;
@@ -541,8 +543,22 @@ export function propsOf(map, options = {}) {
       warnings.push(`${percent}% of its box is in solid: it is buried in a wall or the floor`);
     else if (inSolid > IN_SOLID)
       notes.push(`${percent}% of its box is in solid: partly in a wall or the floor`);
-    // a thing with a side against a wall hangs on it (a painting, a sign, a lamp on a bracket): it does not float
-    const onWall = Object.values(clear).some((distance) => distance !== null && distance <= ON_WALL);
+    // a thing with a side against a wall hangs on it (a painting, a sign, a lamp on a bracket): it does not float.
+    // Most of that side has wall behind it, looked at over the side's breadth and height: one in a doorway has
+    // the jamb near one edge and the opening behind the rest (Meridian's pictures hung in its doorways)
+    const onWall = Object.values(ways).some(([dx, dy]) => {
+      const half = (Math.abs(dx) * (max[0] - min[0])) / 2 + (Math.abs(dy) * (max[1] - min[1])) / 2;
+      const breadth = (Math.abs(dy) * (max[0] - min[0])) / 2 + (Math.abs(dx) * (max[1] - min[1])) / 2;
+      let behind = 0;
+      for (let i = 0; i < SAMPLES; i++)
+        for (let k = 0; k < SAMPLES; k++) {
+          const across = breadth * (((i + 0.5) * 2) / SAMPLES - 1);
+          const up = min[2] + inset[2] + ((max[2] - min[2] - 2 * inset[2]) * (k + 0.5)) / SAMPLES;
+          const out = half + ON_WALL;
+          if (solid([centre[0] + dx * out - dy * across, centre[1] + dy * out + dx * across, up])) behind++;
+        }
+      return behind / (SAMPLES * SAMPLES) >= HUNG;
+    });
     const far = floats !== null && floats >= FLOOR_REACH ? `more than ${FLOOR_REACH}` : floats;
     // a prop on a table, a shelf or a crate that is a model of its own stands on it
     const standsOn =

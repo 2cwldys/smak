@@ -3,6 +3,33 @@
 The newest first. A version that changes what a model's file looks like, or that a model made before needs
 mending for, says so under **Mind**.
 
+## Unreleased
+
+What Havoc9's first play of h9_te_meridian found, and the checks that would have told it before:
+- **`fitted` makes words read on every side unless told** (`readable` is true unless `readable: false`): a sign
+  fitted to a north or a west face read backwards (Meridian's RECORDS did). A picture is never meant mirrored.
+- **`checkPlan` tells func_detail that hangs in the air**: a piece of detail brushes (those that touch one another)
+  that touches no seen brush of the world or of another entity, with where it is and what it wears: a lamp in a
+  doorway, a sign with no bracket, pipes off their wall, a light in a stair's well. Meridian had eight.
+- **`propsOf` (`map-props`) has a thing hang on a wall only when most of a side has wall behind it**, looked at
+  over that side's breadth and height. It took one point near the floor before, so a picture in a doorway with a
+  jamb by its edge passed as hung.
+- **RCBot's waypoints, as the bots played them** (bots ran at crates, scraped walls, and the msr side dropped into
+  Meridian's truck pit):
+  - The file's first 50 waypoints are open floor and starts, spread farthest-first. RCBot picks its roaming goals
+    among the first 50 only (`WaypointFindRandomGoal`), and those had been jump takeoffs and crate tops.
+  - A path's line keeps 8 units of room beside the body, short of what a narrow way offers. A line where the body
+    only just fits is used only where no other way joins the two waypoints, and is marked `tight`.
+  - Waypoints stand off the walls: corners are found on a walk that keeps from them, and are moved into room.
+  - Drops are no shortcuts: one is left out where a walk of about its length reaches the same place. A crate top a
+    jump reaches is a side trip, and nothing on what breaks is waypointed.
+  - Where the nearest waypoint a place sees is on another floor (a bot that lost its way walks at it), a waypoint is
+    put on that place's own floor.
+  - On Meridian: lines a body does not fit along 199 to 27, one-way drops 585 to 98.
+
+**Mind:** a map that fits a picture to a north or a west face with no `readable` now shows it flipped from before
+(words read; a pattern that was mirrored is not). Pass `readable: false` to keep the old way.
+
 ## 0.25.0 (2026-10-21)
 
 - **The Specialists' map spec** (`profiles/specialists.mjs`, `SPEC`): a map spec with `"mod"` The Specialists is

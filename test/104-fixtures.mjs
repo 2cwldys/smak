@@ -62,3 +62,13 @@ test("stairs open: a tread of the thickness asked at each step, nothing under it
   }
   sure(/open is a tread's thickness/.test(refused), refused);
 });
+
+test("checkPlan: a sconce on its wall is held; one in the air (as in a doorway) is told, where it is", () => {
+  const room = carve([{ min: [0, 0, 0], max: [256, 256, 256] }], 16, "WALL");
+  const lamp = (at) => sconce({ at, facing: 0, glass: "~LAMP", metal: "BRASS" }).brushes;
+  const plan = (brushes) => checkPlan({ worldspawn: { wad: "x.wad" }, brushes: room, entities: [smak.maps.brushEntity("func_detail", brushes), smak.maps.playerStart([64, 64, 0])] }, { leak: false });
+  const loose = (p) => p.warnings.filter((w) => /touch nothing else solid/.test(w));
+  sure(loose(plan(lamp([0, 128, 96]))).length === 0, loose(plan(lamp([0, 128, 96]))).join("; "));
+  const told = loose(plan([...lamp([0, 128, 96]), ...lamp([128, 128, 96])]));
+  sure(told.length === 1 && /^1 pieces/.test(told[0]) && /from 12[0-9] /.test(told[0]) && /~LAMP|BRASS/.test(told[0]), told.join("; "));
+});

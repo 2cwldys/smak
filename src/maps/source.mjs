@@ -226,13 +226,14 @@ export function textureFor(texture, normal) {
  *              tiles at the scale given), "v" up only
  *   repeat     [across, up]: so many pictures across and up each face, in place of one (`whole` true)
  *   scale      the scale where a way is not fitted (1: a texel a unit)
- *   readable   true: the north and west faces, where the world's grid runs the picture right to left as seen,
- *              are flipped, so words read and a picture is not mirrored on any side
+ *   readable   true (the default): the north and west faces, where the world's grid runs the picture right to
+ *              left as seen, are flipped, so words read and a picture is not mirrored on any side; false lays
+ *              them on the grid as it runs (a sign on a north face then reads backwards, as one in Meridian did)
  *   faces      the faces that wear it ("top", "bottom", "north", "south", "east", "west"); the others wear
  *              `rest` (the picture laid on the world's grid unless told)
  * It returns `{ top, bottom, north, south, east, west }` for `box` and any builder that takes a texture.
  */
-export function fitted(name, size, min, max, { whole = false, repeat, scale = 1, readable = false, faces, rest } = {}) {
+export function fitted(name, size, min, max, { whole = false, repeat, scale = 1, readable = true, faces, rest } = {}) {
   if (typeof name !== "string" || !name) throw new Error("fitted: the texture's name");
   if (!(Array.isArray(size) && size.length === 2 && size.every((v) => v > 0))) throw new Error(`fitted: the picture's size is [width, height] in texels, not ${JSON.stringify(size)}`);
   for (let i = 0; i < 3; i++) if (!(max[i] > min[i])) throw new Error(`fitted: the box has no size along ${AXIS_NAMES[i]}`);

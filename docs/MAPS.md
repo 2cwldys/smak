@@ -831,21 +831,39 @@ edge of a seen floor counts with it). First the places a
 waypoint has to be: each start; each ladder's foot and top; for each piece of floor of 4096 square units or
 more that only a jump reaches, where the jump is made from (a little way back) and where it lands (a little
 way in); the two ends of each flight of stairs or ramp rising 40 or more; the middle of each opening. Then the
-rest of the floor, the roomiest places first: a waypoint wherever none is within `spacing` units of walk (160).
+rest of the floor, the roomiest places first: a waypoint wherever none is within `spacing` units of walk (160),
+the last of them, by the walls, moved within 48 to where a body has room.
 Each piece of floor is then given to its nearest waypoint by walk, and two whose pieces touch are joined both
-ways when a body walks the straight line between them, place by place, never more than a step up or down; a
-line that drops is joined one way (`drop`, 250 at the most: a fall of 250 costs about 11 health). Where two do
-not see their way (a corner), a waypoint goes at the place of the walk between them farthest off their line,
-and where the walk got into a piece only by dropping, at the top of that drop and where it lands; the pieces
-are given out again, eight times at the most. Then any two within 1.5 x `spacing` whose line is walked or
-dropped are joined, the nearest first, to `paths` (16) out of one. Floor where only a crouching body fits and
+ways when a body walks the straight line between them, place by place, never more than a step up or down, with
+room beside it: at each place of the grid 8 units of floor either side of the body (`ROOM`), past what a
+wall, a prop's clip or an edge leaves, wherever the floor across the line has that much (through a doorway
+only a little wider than the body, its middle line), and opening out from a waypoint that stands in less room
+as a cone. A line that drops is joined one way (`drop`, 250 at the most: a fall of 250 costs about 11 health).
+Where two do not see their way (a corner) and no third waypoint joins them, a waypoint goes at the place
+farthest off their line of a walk between them that keeps off the walls (a place with less room costs more to
+walk), moved within 48 into more room; where the walk got into a piece only by dropping, one at the top of
+that drop and one where it lands; the pieces are given out again, eight times at the most, and a last time
+taking a line the body only just fits along, where the paths do not already go round (`tight` on the path).
+Then any two within 1.5 x `spacing` whose line is walked with room are joined, the nearest first, to `paths`
+(16) out of one, but not where two shorter paths it has go nearly the same way (within 10%), and no drop
+here. Floor where only a crouching body fits and
 that is the shorter way between two places a standing one walks (by more than twice, or the only way: a vent,
 a low passage; not the nook under a table or a stair) gets crouching waypoints, 96 apart, joined along the
 crawl. Where the paths still do not join what the walk does, a jump up (45 at most) out of a place a path gets
 into with no way back, and a drop into a place no path gets to, are added, the lowest first, and the pieces given
-out again (six rounds at most). Last, only the waypoints that a path from a start gets to and that lead back to
+out again (six rounds at most). Where the nearest waypoint a place sees is on another floor (higher or lower
+than a jump) and is not walked to, a waypoint (`near`) goes on the place's own floor, three rounds at most: a
+bot that has lost its way takes the nearest waypoint it sees, by straight distance (`NearestWaypoint`), and
+beside a pit that would be one at its bottom. A drop is then taken out where the walk goes to the same
+waypoint within 1.5 times its length and 64: RCBot weighs a path by its length alone, so it takes any drop
+that is shorter, and finds itself below with the long way back. The top of a crate or a sill a jump gets onto
+is a side trip, down only to where the jump was made or beside it; the top of what gives way (a crate that
+breaks) is not waypointed. Last, only the waypoints that a path from a start gets to and that lead back to
 one are kept: a bot sent anywhere else would never arrive or never leave (the warnings name those left out,
-`leftOut` lists them). Over `most` (1024) the
+`leftOut` lists them). And the order of the file is the bot's plan: RCBot's bots roam to a goal picked at random among
+the FIRST 50 waypoints of the file (`WaypointFindRandomGoal`: `indexes[50]`), so the first 50 are open floor
+and places to start with 16 of room about them, spread over the map, the farthest from those taken first; the
+jumps, ledges, landings and crouching places come last. Over `most` (1024) the
 spacing is made wider until they fit, and that is said.
 
 | Option | |
@@ -855,26 +873,33 @@ spacing is made wider until they fit, and that is said.
 | `paths` (16), `drop` (250), `most` (1024) | paths out of one waypoint; the highest drop a path goes down; the most waypoints |
 | `mod`, `doors`, `open`, `shut`, `walls`, `from`, `bodies`, `exits` | as `reachOf` takes them |
 
-It returns `{ waypoints: [{ origin, flags, paths, ways, kind }], leftOut, facts, warnings, spacing, cell, reach }`:
-`ways` says what each path is (`walk`, `drop`, `ladder`, `jump`), `kind` why the waypoint is there (`start`,
-`ladder`, `jump`, `landing`, `flight`, `opening`, `floor`, `corner`, `ledge`, `drop`, `crouch`).
+It returns `{ waypoints: [{ origin, flags, paths, ways, tight, kind }], leftOut, facts, warnings, spacing, cell,
+reach }`: `ways` says what each path is (`walk`, `drop`, `ladder`, `jump`), `tight` whether a body only just fits
+along it, `kind` why the waypoint is there (`start`, `ladder`, `jump`, `landing`, `flight`, `opening`, `floor`,
+`corner`, `ledge`, `drop`, `near`, `crouch`).
 
-**What it is worth.** It is the walk test's geometry, not the bot: a line a body fits along is no proof that
-the bot's steering keeps to it near a wall, a jump is the arc of `reachOf` with the engine's numbers, and doors
-are open. Lifts (`func_plat`) and teleports are not waypointed (warnings say so), and what only a lift reaches is
-left out; nor are the bot's other kinds (cover, sniping, health, team). Held against the waypoints people made by
-hand for four of The Specialists' maps (Havoc9's files, 2026-10-21; 8 seconds a map or so, `ts_dojo` 35):
+**What it is worth.** It is the walk test's geometry, not the bot: a line with room beside it is no proof that
+the bot's steering keeps to it, a jump is the arc of `reachOf` with the engine's numbers, and doors are open.
+Lifts (`func_plat`) and teleports are not waypointed (warnings say so), and what only a lift reaches is left
+out; nor are the bot's other kinds (cover, sniping, health, team). Held against the waypoints people made by
+hand for four of The Specialists' maps (Havoc9's files, 2026-10-21) and against this kit's before 2026-10-22
+(0.25.0), each path walked on the level measured on the compiled map, the standing body moved along its line
+every 6 units and to either side:
 
 ```
-map            hand   these   paths   each hand-made one to the nearest of these (median, 90%, most)
-ts_hammertime   162     354    2148   44, 80, 138
-ts_dojo         154     341    2296   64, 145, 299
-ts_bikini       215     852    5401   53, 85, 135
-ts_lobby        251     365    2263   66, 766, 1316   (its top floors are got to and left by lift only)
+map            waypoints              paths          one way down     body does not fit    under 8 beside it
+               hand   0.25.0  now     0.25.0  now    hand 0.25.0 now  hand 0.25.0 now      hand 0.25.0 now
+ts_hammertime   162    354    371     2148   1582     36   186   22    82   139   13       133   455   44
+ts_dojo         154    341    335     2296   1668     28   186   62    75    85   19        97   237   27
+ts_bikini       215    852    967     5401   5228    109   520  304   186   227   94       206   765  210
+ts_lobby        251    365    407     2263   1976     54   109   25    77    64    5        94   192   25
 ```
 
-They are denser than a person's and reach every place a person's do but those of lifts. Play the map with bots
-and watch where one stands still or runs into a wall (`rcbot waypoint on` shows them).
+(The lines are counted once for both ways; a hand-made line measured so is often a waypoint a person dropped
+an inch inside a wall's clip.) 0.25.0 also put the bots' goals on the tops of crates: its first 50 waypoints
+were the starts and then the jumps and their landings, in the order it laid them. They are still denser than a
+person's and reach every place a person's do but those of lifts. Play the map with bots and watch where one
+stands still or runs into a wall (`rcbot waypoint on` shows them).
 
 ## Decompiling (`src/maps/decompile.mjs`, `fidelity.mjs`, `texlights.mjs`)
 
