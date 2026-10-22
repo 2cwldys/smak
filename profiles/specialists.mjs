@@ -301,6 +301,8 @@ export const SPEC = {
     glass: { texture: "glass_bright" },
     // the lamps (lamps, below): every room's fixture, and words for a spec's own
     fixture: { texture: "+0~fifties_lgt2" },
+    // a dimmed lamp's (composed light, below): halflife.wad's tube of the same size, lit low
+    fixture_dim: { texture: "+0~fifts_lght3" },
     ts_lamp: { texture: "+0~fifties_lgt2" },
     ts_lamp_warm: { texture: "~trn_lt1" },
     ts_lamp_cool: { texture: "+0~light3a" },
@@ -323,7 +325,16 @@ export const SPEC = {
     "+0drkmtl_scrn": [124, 143, 255, 36200], // 2
     yellow: [255, 226, 160, 3000], // 2
     "~spotyellow": [255, 255, 181, 23100], // 2
+    // the dim fixture: no map of the game's wears it; lit at a quarter of fifties_lgt2, a dimmed lamp
+    "+0~fifts_lght3": [252, 255, 234, 650],
   },
+  // how a map of the game's is lit where the spec says nothing (src/spec/map.mjs): a room's lamp is its fixture
+  // alone (`lamp`: the brightness of a light entity under it; the game's maps light their rooms by texture lights:
+  // ts_trident has one light entity and 58 lamp faces), and the light composed, a lamp in three dimmed (its fixture
+  // the dim tube) so that the rooms are lit in pools. Measured on a spec of a lobby, an office and a warehouse: with
+  // Valve's lamps of 250 under the fixtures their floors were lit at 218 of 255 (the game's compact maps: 62 to 102,
+  // its arenas 52 to 90); the fixtures alone, 91; composed, as below, in the band
+  lighting: { lamp: 0, composed: { rhythm: 3, dim: 0.3, goal: 1.6, spill: 0, fade: 2, bounce: 2 } },
   // what breaks (src/spec/map.mjs BREAKABLE_MATERIALS): the keys each material takes in the game's maps
   breakable: {
     keys: { respawntime: 45 },

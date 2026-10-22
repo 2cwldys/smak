@@ -1031,7 +1031,11 @@ profile, which says where each word was read from) gives:
   lit it (the light on its own faces in their maps: fifties_lgt2 252 255 234), and the brightness this kit's Valve
   list gives it; any of them a spec wears is lit so. Words for a spec's own lamps: `ts_lamp`, `ts_lamp_warm`
   (`~trn_lt1`), `ts_lamp_cool` (`+0~light3a`), `ts_sodium` (`+0~tnnl_lgt4`, 255 185 124), `ts_screen`
-  (`+0drkmtl_scrn`). The dressing's share of brushes wearing a lamp comes to Valve's (11 to 21 in 100);
+  (`+0drkmtl_scrn`). The dressing's share of brushes wearing a lamp comes to Valve's (11 to 21 in 100); a room's lamp is its
+  fixture alone, with no light entity under it, and the light is composed unless the spec says `lighting: false`: one
+  lamp in three dimmed, its fixture the dim tube `+0~fifts_lght3` (the profile's `spec.lighting`: `{ lamp, composed }`).
+  Valve's lamps of 250 under the fixtures lit the rooms' floors at 218 of 255; so lit, a lobby, an office and a
+  warehouse come to 83, within the game's own maps' 52 to 102;
 - what breaks, as the game's maps make it (1006 `func_breakable` in 27 of its 29 maps): glass (`material` 0) in
   render mode 2 at 100 and `health` 1, wood (crates) at 15, metal at 50; every one with `respawntime` 45, since no
   stock map sets it (0 is the game's 30 seconds, under 0 never, per `ts/mapping.txt`) and the Havoc9 matchmode

@@ -3,7 +3,7 @@
 // it (an info_texlights, hlrad's own list), and any other of the profile's lamps a spec wears lit too; a frame that
 // says fixtures: false has none. The dressing's share of brushes that wear a lamp is then Valve's. On a game of the
 // test's own; compiled where the compilers are, the lamps' faces lit by themselves.
-import { mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import * as smak from "../src/index.mjs";
 import { buildMapSpec } from "../src/spec/map.mjs";
@@ -19,6 +19,7 @@ const mod = specialists({ game: fakeSpecialists(folder) });
 const none = { compilers: { found: false, message: "" } };
 const compilers = process.env[COMPILERS_VARIABLE] ? findCompilers() : { found: false };
 const LAMP = SPEC.textures.fixture.texture.toUpperCase();
+const DIM = SPEC.textures.fixture_dim.texture.toUpperCase();
 
 const spec = (more = {}) => ({
   spec: "smak.map/1",
@@ -32,17 +33,19 @@ const spec = (more = {}) => ({
   entities: [{ class: "info_player_deathmatch", room: "hall", at: "corner sw", facing: "east" }],
   ...more,
 });
-const lampBrushes = (map) => map.entities.filter((e) => e.classname === "func_detail").flatMap((e) => e.brushes).filter((b) => b.faces.some((f) => f.texture.toUpperCase() === LAMP));
+const lampBrushes = (map, name = LAMP) => map.entities.filter((e) => e.classname === "func_detail").flatMap((e) => e.brushes).filter((b) => b.faces.some((f) => f.texture.toUpperCase() === name));
 
 test("The Specialists' rooms lit by the game's lamps: each lamp two tubes of +0~fifties_lgt2 on the ceiling, a texture light in its makers' colour; the sky has none", () => {
   const { report, files } = buildMapSpec(spec(), { out: join(folder, "lit"), mod, ...none });
   sure(report.errors.length === 0 && !report.faults.some((f) => !/not compiled/.test(f)), [...report.errors, ...report.faults].join("; "));
   const map = smak.maps.readMap(readFileSync(files.map, "utf8"));
-  const lights = map.entities.filter((e) => e.classname === "light");
-  const tubes = lampBrushes(map);
-  // two tubes for each lamp of a roofed room, none under the sky
-  const roofed = lights.filter((e) => Number(e.origin.split(" ")[0]) < report.rooms.yard.min[0]);
+  const tubes = [...lampBrushes(map), ...lampBrushes(map, DIM)];
+  // two tubes for each lamp of a roofed room (one lamp in three of a room dimmed: its tubes the dim ones), none under
+  // the sky; and no light entity under them: the game's maps light their rooms by their lamps' texture lights alone
+  const roofed = Array.from({ length: Number(/lamps: (\d+) lamps in fixtures/.exec(report.facts.join(" "))?.[1] ?? 0) });
   sure(roofed.length >= 3 && tubes.length === 2 * roofed.length, `${tubes.length} tubes for ${roofed.length} lamps`);
+  sure(lampBrushes(map, DIM).length === 2 && map.entities.filter((e) => e.classname === "light").length === 0, `${lampBrushes(map, DIM).length} dim tubes, ${map.entities.filter((e) => e.classname === "light").length} lights`);
+  sure(report.facts.some((f) => /^lighting: composed: 1 lamps dimmed to 0.3 \(one in 3\)/.test(f)), report.facts.filter((f) => /lighting/.test(f)).join(" | "));
   for (const tube of tubes) {
     const { min, max } = smak.maps.shapeOf(tube);
     // on the ceiling, 2 thick, the size of its picture (the fake game's are 64 by 64), the picture once on its face
@@ -81,3 +84,28 @@ if (compilers.found)
     sure(Object.values(report.rooms).every((r) => r.light > 24), JSON.stringify(report.rooms));
   });
 else console.log("skip  The Specialists' lamps compiled\n      skipped: the compilers are not found (VHLT_DIR)");
+
+test("The Specialists' light as its maps are lit: composed unless the spec says not, a room's own light still a light entity", () => {
+  // lighting: false: every lamp its two bright tubes, none dimmed
+  const plain = buildMapSpec(spec({ lighting: false }), { out: join(folder, "plain"), mod, ...none });
+  const map = smak.maps.readMap(readFileSync(plain.files.map, "utf8"));
+  sure(lampBrushes(map, DIM).length === 0 && !plain.report.facts.some((f) => /^lighting: composed/.test(f)), plain.report.facts.filter((f) => /lighting/.test(f)).join(" | "));
+  // a room that asks its own light: a light entity of that brightness, its fixture with it
+  const own = buildMapSpec(spec({ rooms: spec().rooms.map((r) => (r.id === "hall" ? { ...r, light: { count: 1, brightness: 180 } } : r)) }), { out: join(folder, "own"), mod, ...none });
+  const lights = smak.maps.readMap(readFileSync(own.files.map, "utf8")).entities.filter((e) => e.classname === "light");
+  sure(lights.some((e) => /180$/.test(e._light)), JSON.stringify(lights.map((e) => e._light)));
+});
+
+// where the game is installed and the compilers are: a lobby, an office and a warehouse built with its profile are lit as
+// the game's own maps (the floor's mean 52 to 102 over its arenas and compact maps), not as Valve's lamps lit them (218)
+const game = [process.env.SMAK_HALF_LIFE, "C:/Program Files (x86)/Steam/steamapps/common/Half-Life"].find((g) => g && existsSync(join(g, "ts", "specialists.wad")));
+if (compilers.found && game)
+  test("The Specialists' rooms built with the installed game are lit as its maps are: the floor's mean 60 to 90 of 255", () => {
+    const real = specialists({ game });
+    const rooms = { spec: "smak.map/1", name: "ts_lit", rooms: [{ id: "lobby", size: [448, 320, 160], use: "lobby" }, { id: "office", size: [384, 320, 128], place: { east_of: "lobby" }, use: "office" }, { id: "store", size: [512, 384, 192], place: { north_of: "lobby" }, use: "warehouse" }], links: [{ between: ["lobby", "office"], kind: "door" }, { between: ["lobby", "store"], kind: "opening" }], entities: [{ class: "info_player_deathmatch", room: "lobby", at: "centre" }] };
+    const { report, files } = buildMapSpec(rooms, { out: join(folder, "real"), mod: real, compilers });
+    sure(files.bsp, [...report.errors, ...report.faults].join("; "));
+    const { floor } = smak.maps.lightReport(smak.maps.readBsp(readFileSync(files.bsp)));
+    sure(floor.mean >= 60 && floor.mean <= 90, `the floor lit ${floor.mean} on average`);
+  });
+else console.log("skip  The Specialists' rooms built with the installed game are lit as its maps are\n      skipped: the game or the compilers are not found (SMAK_HALF_LIFE, VHLT_DIR)");

@@ -772,7 +772,13 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
       }
   }
   /** the map's light composed (COMPOSED, the spec's over it), or null */
-  const composed = spec.lighting ? { ...COMPOSED, ...(typeof spec.lighting === "object" ? spec.lighting : {}) } : null;
+  // a mod's own light (its profile's `spec.lighting`): composed as the mod's maps are lit unless the spec says
+  // otherwise (`composed`, over COMPOSED), and a room's lamp in a fixture of the game's light texture lit at `lamp`,
+  // the fixture's texture light doing the rest (0: the fixture alone). Valve's lamps of 250 under The Specialists'
+  // texture lights lit its rooms' floors at 196 to 235 of 255, where its maps' are lit at 60 to 85
+  const modLighting = profile?.spec?.lighting ?? {};
+  const composedAsked = spec.lighting ?? (modLighting.composed ? true : undefined);
+  const composed = composedAsked ? { ...COMPOSED, ...(modLighting.composed ?? {}), ...(typeof spec.lighting === "object" ? spec.lighting : {}) } : null;
   /** a room's framing, or null: its own `frame` over the map's, over FRAME */
   const frameOf = (room) => {
     const own = room.spec.frame;
@@ -2043,6 +2049,8 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
   const gameFixture = Boolean(materials.fixture && typeof materials.fixture === "object" && (materials.fixture.texture || materials.fixture.pick));
   const fixturesIn = (room) => !room.spec.sky && (frameOf(room)?.fixtures ?? (gameFixture && Boolean(profile?.spec?.lamps)));
   const fixtureOf = (dim) => {
+    // a mod's dim fixture (its profile's `fixture_dim`, a weaker light texture of the game's) for a dimmed lamp
+    if (dim && gameFixture && materials.fixture_dim && typeof materials.fixture_dim === "object" && materials.fixture_dim.texture) return textureOf("fixture_dim");
     if (!dim || gameFixture) return textureOf("fixture");
     const glass = materialOf(materials.fixture, "fixture");
     materials.fixture_dim ??= { ...(typeof materials.fixture === "object" ? materials.fixture : {}), base: glass.base ?? "glass", tone: glass.tone.map((v) => v * 0.6), flags: ["fullbright"], glow: Math.round((materials.fixture?.glow ?? GLOW) / 5) };
@@ -2196,7 +2204,8 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
       const clear = Math.max(room.min[2] + LAMP_HIGHEST, ...over.map((f) => f.top + PLAYER.high - 4));
       const lampZ = Math.min(room.max[2] - LAMP_UNDER, clear);
       // composed: a lamp in each `rhythm` dimmed, the goal room's brighter, each pooling under itself
-      let brightness = options.brightness ?? LAMP_BRIGHTNESS;
+      const inFixture = gameFixture && fixturesIn(room) && room.max[2] - lampZ <= LAMP_UNDER + 8;
+      let brightness = options.brightness ?? (inFixture && modLighting.lamp !== undefined ? modLighting.lamp : LAMP_BRIGHTNESS);
       const keys = {};
       let dim = false;
       if (composed) {
@@ -2204,7 +2213,7 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
         if (composed.goalRoom === room.id) brightness *= composed.goal;
         if (composed.fade > 0) keys._fade = composed.fade;
       }
-      entities.push(light([Math.round(cx), Math.round(cy), lampZ], { brightness: Math.round(brightness), color: options.color ?? [255, 240, 220], ...keys }));
+      if (brightness > 0) entities.push(light([Math.round(cx), Math.round(cy), lampZ], { brightness: Math.round(brightness), color: options.color ?? [255, 240, 220], ...keys }));
       hang(room, [Math.round(cx), Math.round(cy), lampZ], { dim });
     }
     // a framed room's fill: a weak light low over its floor, so that a lower floor is not left black
