@@ -3,6 +3,17 @@
 The newest first. A version that changes what a model's file looks like, or that a model made before needs
 mending for, says so under **Mind**.
 
+## 0.25.2 (2026-10-24)
+
+- **`house` builds a house one goes into** (`inside: true`): its storeys one room up to the roof's beams, walls 16
+  thick (plaster within, `within` of the set; boards on the floor, `boards`), the doorway open with its leaf swung
+  in against the wall, tie beams a bay apart under the attic. It returns `room` (`min`, `max`, `floor`, `ceiling`,
+  `door`, `toMap`, `turn`) to furnish it by. `doorAt` puts the door at a place along the front (the seed's
+  otherwise; the seed's draws are kept in their order, so a house without it is as before). Made for Moria's
+  Captain's hall (msr-web, the Old Orchard's third version).
+- **`render` takes `near`**: what is nearer the eye than it is cut off (GoldSrc cuts at 4), for first-person views
+  of a view model.
+
 ## 0.25.1 (2026-10-22)
 
 What Havoc9's first play of h9_te_meridian found, and the checks that would have told it before:

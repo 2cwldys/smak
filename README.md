@@ -149,6 +149,8 @@ pictures fitted to their brushes, sconces and chandeliers.
 running at crates, keep room along their paths and do not take drops as shortcuts. Signs read on every side.
 `checkPlan` tells detail that hangs in the air. `map-props` no longer takes a picture in a doorway as hung.
 
+0.25.2: `house` can build a house one goes into (`inside`), with its room's measures returned to furnish it by.
+
 Every version's changes, the newest first: [CHANGELOG.md](CHANGELOG.md).
 
 ## Where it comes from

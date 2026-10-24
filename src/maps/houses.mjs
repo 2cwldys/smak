@@ -24,6 +24,9 @@ export const HOUSE_SET = {
   door: { name: "door_36", size: [96, 128] },
   steps: "pk_dodkerb04b",
   chimney: "pi_outwall2t",
+  // a house one goes into (`inside`): its walls within, its floorboards, the beams under its roof
+  within: "pk_dodwall03a",
+  boards: "ms_wood04",
 };
 
 /** The size of a bay (one window and its wall) and of a storey on the facade textures (texels, scale 1). */
@@ -64,10 +67,15 @@ function fitted(name, normal, { min, top, row = 0, scale = [1, 1] }) {
  *   pitch     the roof's slope, degrees (the kind's, varied within its middle half by the seed)
  *   chimney   true, false, or by the seed (one house in two)
  *   set       the textures (HOUSE_SET, or any of its keys changed)
- * Returns `{ brushes, box, door, floor, spots, lamp }`: the brushes (all of them for a func_detail: a house is
- * solid, not entered), the box it stands in on the plan (to keep strewn things off), the point before its door
+ *   inside    true: a house one goes into, its storeys one room up to the roof (its walls 16 thick, plaster
+ *             within, boards underfoot, tie beams under the attic), its door open and its leaf swung in
+ *   doorAt    where along the front the door's middle stands, from the front's middle (by the seed if not given)
+ * Returns `{ brushes, box, door, floor, spots, lamp, room }`: the brushes (all of them for a func_detail: a house
+ * is solid unless `inside`), the box it stands in on the plan (to keep strewn things off), the point before its door
  * on the ground (where a way should come to), the floor's height, places by its walls (`[{ at, yaw, where }]`,
  * where: front, side, back) for things a house has about it, and where a lamp over its door goes ([x, y, z]).
+ * `room` (an `inside` house): `{ min, max, floor, ceiling, door, toMap, turn }`, its floor's box in the house's
+ * own frame (x out of the front), the door's middle on the inner face [x, y], and `toMap(x, y)` into the map.
  */
 export function house({
   at,
@@ -82,6 +90,8 @@ export function house({
   chimney,
   set = {},
   seed = 1,
+  inside = false,
+  doorAt,
 }) {
   const rand = rng(seed);
   const pick = (list) => (Array.isArray(list) ? list[Math.floor(rand() * list.length)] : list);
@@ -107,7 +117,9 @@ export function house({
   const wood = t.wood;
 
   // the footing: stone, a little wider than the walls, from under the lowest ground to the floor
-  brushes.push(box([-hd - 4, -hw - 4, low - 24], [hd + 4, hw + 4, floor], t.footing));
+  brushes.push(box([-hd - 4, -hw - 4, low - 24], [hd + 4, hw + 4, floor], inside ? (n) => (n[2] > 0.5 ? t.boards : t.footing) : t.footing)); // prettier-ignore
+  // the storeys' bodies: whole boxes, or for a house one goes into their walls, laid once the door is placed
+  const bodies = [];
 
   let eave; // the walls' top, where the roof sits
   let outer; // how far the top storey's front and back stand from the middle
@@ -117,7 +129,7 @@ export function house({
     const top = floor + STOREY;
     const lower = (n) =>
       Math.abs(n[2]) > 0.5 ? wood : fitted(t.lower, n, { min, top: floor + FACADE, row: 0 });
-    brushes.push(box(min, [hd, hw, top], lower));
+    bodies.push([min, [hd, hw, top], lower]);
     // the upper storey, out over the front and the back by the jetty; its sides plain timber and plaster
     outer = hd + jetty;
     const umin = [-outer, -hw, top];
@@ -128,7 +140,7 @@ export function house({
       if (Math.abs(n[0]) > 0.5) return fitted(n[0] > 0 ? front : back, n, { min: umin, top: top + STOREY });
       return fitted(t.side, n, { min: umin, top: top + STOREY });
     };
-    brushes.push(box(umin, [outer, hw, top + STOREY], upper));
+    bodies.push([umin, [outer, hw, top + STOREY], upper]);
     // the jetty's beam along the front and the back, under the overhang
     for (const sign of [1, -1]) brushes.push(box(sign > 0 ? [hd, -hw, top - 8] : [-outer, -hw, top - 8], sign > 0 ? [outer, hw, top] : [-hd, hw, top], wood)); // prettier-ignore
     eave = top + STOREY;
@@ -138,7 +150,7 @@ export function house({
     const top = floor + 160;
     const face = pick(t.cottage);
     const wall = (n) => (Math.abs(n[2]) > 0.5 ? wood : fitted(Math.abs(n[0]) > 0.5 ? face : t.side, n, { min, top })); // prettier-ignore
-    brushes.push(box(min, [hd, hw, top], wall));
+    bodies.push([min, [hd, hw, top], wall]);
     outer = hd;
     eave = top;
   }
@@ -206,12 +218,39 @@ export function house({
   // a cottage's door between its windows (a facade's windows stand either side of its middle); a ground
   // storey of brick has none, so its door may stand anywhere along it
   const bays = Math.floor(wide / FACADE);
-  const dy =
+  const seeded =
     storeys >= 2 || bays < 1
       ? (rand() - 0.5) * Math.max(0, wide - BAY - dw) * 0.8
       : -hw + FACADE * Math.floor(rand() * bays) + FACADE / 2;
+  const dy = doorAt ?? seeded;
   const leaf = (n) => (n[0] > 0.5 ? { ...doorFit(dy, dw, dh, floor, t.door.size), name: t.door.name } : wood);
-  brushes.push(box([hd, dy - dw / 2, floor], [hd + 4, dy + dw / 2, floor + dh], leaf));
+  const WALL = 16;
+  const [ix, iy] = [hd - WALL, hw - WALL]; // the room's half sizes, within the walls
+  if (!inside) {
+    for (const [min, max, tex] of bodies) brushes.push(box(min, max, tex));
+    brushes.push(box([hd, dy - dw / 2, floor], [hd + 4, dy + dw / 2, floor + dh], leaf));
+  } else {
+    // each storey's four walls round the room, plaster within; the door's way through the lowest one's front
+    const within = (tex, toward) => (n) => (n[0] * toward[0] + n[1] * toward[1] > 0.5 ? t.within : tex(n));
+    for (const [k, [min, max, tex]] of bodies.entries()) {
+      const [z0, z1] = [min[2], max[2]];
+      const front = (y0, y1, za, zb) => brushes.push(box([ix, y0, za], [max[0], y1, zb], within(tex, [-1, 0])));
+      if (k === 0) {
+        const jamb = (n) => (Math.abs(n[1]) > 0.5 ? wood : within(tex, [-1, 0])(n));
+        brushes.push(box([ix, min[1], z0], [max[0], dy - dw / 2, z1], jamb));
+        brushes.push(box([ix, dy + dw / 2, z0], [max[0], max[1], z1], jamb));
+        brushes.push(box([ix, dy - dw / 2, floor + dh], [max[0], dy + dw / 2, z1], (n) => (n[2] < -0.5 ? wood : within(tex, [-1, 0])(n)))); // prettier-ignore
+      } else front(min[1], max[1], z0, z1);
+      brushes.push(box([min[0], min[1], z0], [-ix, max[1], z1], within(tex, [1, 0])));
+      brushes.push(box([-ix, min[1], z0], [ix, -iy, z1], within(tex, [0, 1])));
+      brushes.push(box([-ix, iy, z0], [ix, max[1], z1], within(tex, [0, -1])));
+    }
+    // the leaf swung in against the wall, by the door's side
+    const swung = (n) => (Math.abs(n[1]) > 0.5 ? { ...fitted(t.door.name, n, { min: [ix - dw, dy + dw / 2, floor], top: floor + dh, scale: [dw / t.door.size[0], dh / t.door.size[1]] }) } : wood); // prettier-ignore
+    brushes.push(box([ix - dw, dy + dw / 2, floor], [ix, dy + dw / 2 + 4, floor + dh], swung));
+    // tie beams across the room under the attic, a bay apart
+    for (let y = -hw + BAY; y < hw; y += BAY) brushes.push(box([-ix, y - 6, eave - 12], [ix, y + 6, eave], wood));
+  }
   // its frame: posts and a lintel
   brushes.push(box([hd, dy - dw / 2 - 8, floor], [hd + 6, dy - dw / 2, floor + dh + 8], wood));
   brushes.push(box([hd, dy + dw / 2, floor], [hd + 6, dy + dw / 2 + 8, floor + dh + 8], wood));
@@ -243,7 +282,9 @@ export function house({
   for (const y of [-hw / 2, hw / 2]) spot(-reach - out, y, 180, "back");
   // a lamp over the door, as the towns light theirs (about 100 over the floor, warm)
   const lamp = [...toMap(hd + 20, dy + dw / 2 + 28).map(Math.round), floor + 100];
+  const room = inside ? { min: [-ix, -iy], max: [ix, iy], floor, ceiling: eave - 12, door: [ix, Math.round(dy)], toMap: (x, y) => toMap(x, y).map(Math.round), turn } : undefined; // prettier-ignore
   return {
+    room,
     brushes: placed,
     box: {
       min: [Math.min(...xs) - 32, Math.min(...ys) - 32],
