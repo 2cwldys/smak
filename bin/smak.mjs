@@ -3402,7 +3402,7 @@ function mapDecompile({ command, file, flags, listed }) {
  * pictures' paths at the end.
  */
 async function playMap({ command, file: url, flags, listed }) {
-  const { playOf, playPartOf, messagesOf, playwrightFrom, browserDriver, playSession, patternOf } = smak.play;
+  const { playOf, playPartOf, messagesOf, playwrightFrom, browserDriver, playSession, patternOf, HARDWARE_GL } = smak.play;
   const { serveSession, attachSession, closeSession, sessionState, expectationLine, fightLine, summaryLines, SESSION_PORT } =
     smak.play;
   /** The steps of a file, or the command stopped: a file that is not there, or is no JSON. */
@@ -3502,7 +3502,7 @@ async function playMap({ command, file: url, flags, listed }) {
     const height = numberOf(flags, "height") ?? high;
     const playwright = playwrightFrom(flags.playwright ?? process.env.PLAYWRIGHT_DIR);
     const driver = browserDriver(
-      defined({ url, playwright, width, height, messages: messagesOf(mod), headless: flags.show !== true }),
+      defined({ url, playwright, width, height, messages: messagesOf(mod), headless: flags.show !== true, args: flags.gpu ? HARDWARE_GL : undefined }), // prettier-ignore
     );
     if (wide && (width !== wide || height !== high))
       console.log(`WARN  the profile's clicks were measured on a page of ${wide} by ${high}, and this one is ${width} by ${height}`); // prettier-ignore
@@ -4148,7 +4148,7 @@ const COMMANDS = {
     address: true,
     help: `  play <url> --map <name> [--steps steps.json] [-o <folder>] [--mod <profile>] [--game <folder> ...] [--playwright <folder>]
                               [--width 1024] [--height 768] [--loads ms] [--expect <pattern> ...] [--expect-not <pattern> ...]
-                              [--put <place>=<file> ...] [--no-sheet] [--show]
+                              [--put <place>=<file> ...] [--no-sheet] [--show] [--gpu]
                                             the map seen in the game itself: a browser build of Xash3D at that address is opened,
                                             the map loaded, the game entered as the mod's profile says, and the steps done
                                             (steps.json: a list such as [{ "walk": 3000, "shot": "gate" }, { "face": 90, "look": -20 },

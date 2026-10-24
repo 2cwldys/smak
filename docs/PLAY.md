@@ -53,7 +53,8 @@ run in a session after 6, where the fixed waits of 0.11 took 79.
 - `--port <n>` (with `--serve`): several sessions side by side, each with its own engine and port, for
   several agents testing at once.
 - `--expect <pattern>`, `--expect-not <pattern>`: lines the whole run is held to.
-- `--no-sheet`, `--show` (the browser's window seen), `--loads <ms>`, `--width`, `--height`.
+- `--no-sheet`, `--show` (the browser's window seen), `--gpu` (with `--show`: WebGL on the graphics card, smooth
+  enough to film; the pictures then depend on the card), `--loads <ms>`, `--width`, `--height`.
 
 **A long run** (a fight of ten minutes) is answered as it goes: the session sends its answer's headers at
 once, a line for each thing done, and a beat (`{ "beat": seconds }`) every 30 seconds in which the run says
@@ -87,6 +88,8 @@ A JSON list. Each step is an object with at most one thing to do:
 | `{ "hold": "w", "ms": 2000 }`, `{ "press": "Enter" }`, `{ "click": [512, 330] }` | a key held, a key pressed, a click on the page |
 | `{ "goto": [512, 96, 36] }` | the player put at that place (the middle of his box: the floor and 36), by the profile's command, the profile's `lift` over it (Master Sword: 4, so that he drops onto a path brush two units high instead of being set into it); then read back, and the run stops if he is not there |
 | `{ "census": 6000 }` | the living monsters within that radius (`true`: 6000) counted as the profile's `play.census` asks, and printed as a table in the log, of the kind `census`: `census (step 3): 2 within 6000, 1 an enemy`, then a line each: name, health, place, and whose enemy |
+| `{ "face": 270, "ms": 4000 }` | (with `look` too) the view eased there over that time, the shorter way round: a camera's pan, for a clip |
+| `{ "record": "plaza" }` | the page filmed from here as a clip of that name until the next `record` or the run's end, written as `NN_plaza.mp4` (H.264, 30 a second, through ffmpeg) numbered with the pictures; `{ "record": false }` ends it. The browser's driver films what the page draws (its screencast): in a window on the graphics card (`--show --gpu`) a map is drawn smoothly, in software at a few frames a second |
 | `{ "where": "gate" }` | a line in the log: `where gate: origin 512 96 36, yaw 90, pitch -30` |
 | `{ "map": "road" }` | another map loaded and entered, in the same run |
 | `{ "travel": true }` | through the way to another map the player stands in: the profile's `play.travel` commands (Master Sword: `accept`), its line of the next map's server (`Spawn Server: <map>`), the map's `loaded` line and the profile's `enter` steps. `"travel": "barrowroad"` stops the run if the way led elsewhere; `within` is the longest each wait is (the profile's `loads`) |

@@ -59,7 +59,7 @@ import { sheetOf } from "./play-sheet.mjs";
 import { MOUSE_BUTTONS } from "./play-browser.mjs";
 import { ASIDE, CENSUS_RADIUS, LOOSED, aimOf, besideOf, censusOf, censusTable, fightOptionsOf, fightPartOf, leftOf, placeOf, progressOf } from "./play-fight.mjs"; // prettier-ignore
 
-export { SOFTWARE_GL, playwrightFrom, browserDriver } from "./play-browser.mjs";
+export { SOFTWARE_GL, HARDWARE_GL, playwrightFrom, browserDriver } from "./play-browser.mjs";
 export { sheetOf } from "./play-sheet.mjs";
 export { serveSession, attachSession, sessionState, closeSession, SESSION_PORT } from "./play-session.mjs";
 
@@ -67,10 +67,12 @@ export { serveSession, attachSession, sessionState, closeSession, SESSION_PORT }
 const KINDS = [
   ...["command", "say", "walk", "turn", "button", "hold", "press", "click"],
   ...["mouse", "mouseDown", "mouseUp", "tap", "look", "face", "faceAt", "goto", "where", "map"],
-  ...["expect", "expectNot", "repeat", "fight", "section", "travel", "census"],
+  ...["expect", "expectNot", "repeat", "fight", "section", "travel", "census", "record"],
 ];
 /** What a step may hold beside its kind, and which kinds take `ms` and `to`. */
 const BESIDE = ["wait", "shot", "ms", "to", "until", "within", "every", "since", "times", "for", "radius", "already", "onFail", "keep"]; // prettier-ignore
+/** Milliseconds between two settings of the view in a pan (`look` or `face` with `ms`): a frame's at 60. */
+const PAN_EVERY = 16;
 /** What a step whose line was heard before it began does (`already`), and what a step that fails does (`onFail`). */
 const ALREADY = ["pass", "warn", "wait"];
 const ON_FAIL = ["stop", "continue"];
@@ -78,7 +80,7 @@ const ON_FAIL = ["stop", "continue"];
 const KEPT = /\$\{(\w+)\}/g;
 /** The section the steps before any `section` step are in. */
 const OPENING = "(start)";
-const TAKES_MS = ["button", "hold", "mouse", "tap"];
+const TAKES_MS = ["button", "hold", "mouse", "tap", "look"];
 /** The kinds that hold steps of their own and end by a line, a count or a time. */
 const LOOPS = ["repeat", "fight"];
 /** The lines of a fight a profile's `play.fight` may give the pattern of. */
@@ -107,7 +109,7 @@ const FLURRY = 3;
 const LET_BE_AFTER = 4;
 const LET_BE = 20000;
 /** The kinds that only read: nothing is done to the game, so no wait follows them unless one is given. */
-const READS = ["where", "expect", "expectNot", "section", "census"];
+const READS = ["where", "expect", "expectNot", "section", "census", "record"];
 /** Where a walk goes, as the client library's buttons name it (the SDK's cl_dll/input.cpp). */
 const WALKS = { forward: "forward", back: "back", left: "moveleft", right: "moveright" };
 /** Milliseconds waited after a step that does something, unless the step says: a frame or two to show it. */
@@ -449,6 +451,14 @@ function sayCommands(part, text, where) {
  *                                     the run's `fights`
  *   { census: 6000 }                  the living monsters within that radius counted as the profile's
  *                                     `play.census` does, and written as a table (`true`: 6000)
+ *   { face: 270, ms: 4000 }           (with look too) the view eased there over that time, the shorter way
+ *                                     round: a camera's pan, for a clip
+ *   { record: "plaza" }               the page filmed from here, as a clip of that name, until the next
+ *                                     `record` or the run's end: `NN_plaza.mp4` (H.264, 30 a second, through
+ *                                     ffmpeg), numbered with the pictures. `{ record: false }` ends it. The
+ *                                     browser's driver films what the page draws (its screencast); a window
+ *                                     on the graphics card (`--show --gpu`) draws a map smoothly, software
+ *                                     at a few frames a second
  * and any step may also carry:
  *   until: "Skeleton .* dies"         after it, a line the game says is waited for (and not the clock). A
  *                                     step that DOES a thing hears from when it began doing it; one that
@@ -532,7 +542,7 @@ function actionOf(step, where, part, pause) {
   const waits = step.wait !== undefined || step.shot !== undefined || step.until !== undefined;
   if (!kind && !waits) refuse(`does nothing: ${shown(step)}`);
   if (step.ms !== undefined && !TAKES_MS.includes(kind))
-    refuse("has ms, which goes with hold or button only, and with mouse");
+    refuse("has ms, which goes with hold or button only, with mouse and tap, and with look or face (a pan)");
   if (step.to !== undefined && kind !== "walk") refuse("has to, which goes with walk only");
   if (step.wait !== undefined && !isCount(step.wait))
     refuse(`waits ${shown(step.wait)}: wait is a number of milliseconds`);
@@ -648,6 +658,8 @@ function actionOf(step, where, part, pause) {
       refuse(`faces ${shown(step.face)}: a yaw in degrees, 0 along +x and 90 along +y`);
     if (step.face !== undefined) action.yaw = step.face;
     if (step.look !== undefined) action.pitch = step.look;
+    // a pan: the view eased there over that time, by the shorter way round (a camera's move, for a clip)
+    if (step.ms !== undefined) action.ms = held(step.ms, "turns the view over");
   } else if (kind === "face") {
     if (!isNumber(step.face))
       refuse(`faces ${shown(step.face)}: a yaw in degrees, 0 along +x and 90 along +y`);
@@ -661,6 +673,10 @@ function actionOf(step, where, part, pause) {
   } else if (kind === "hold") {
     if (!isText(step.hold)) refuse(`holds ${shown(step.hold)}: a key, such as "w" or "Space"`);
     Object.assign(action, { key: step.hold, ms: held(step.ms ?? HOLD, "holds its key for") });
+  } else if (kind === "record") {
+    if (!(step.record === false || (typeof step.record === "string" && SHOT_NAME.test(step.record))))
+      refuse(`records ${shown(step.record)}: a clip's name (letters, digits, _ and -), or false to end the clip`);
+    action.clip = step.record || null;
   } else if (kind === "press") {
     if (!isText(step.press)) refuse(`presses ${shown(step.press)}: a key, such as "e" or "Enter"`);
     action.key = step.press;
@@ -1112,6 +1128,22 @@ export function playSession({ driver, mod, pause: sessionPause, tell: sessionTel
     const sections = [];
     let current = null;
     const early = new Set();
+    /** The clip being filmed (`record`), by its name, and those written: `NN_name.mp4`, numbered with the pictures. */
+    let clip = null;
+    const clips = [];
+    const endClip = async () => {
+      const name = clip;
+      clip = null;
+      const frames = await driver.recordStop();
+      const { encodeTimed } = await import("./video.mjs");
+      const file = join(out, `${String(pictures.length + clips.length).padStart(2, "0")}_${name}.mp4`);
+      writeFileSync(file, await encodeTimed(frames));
+      clips.push(file);
+      const seconds = frames.length > 1 ? (frames[frames.length - 1].at - frames[0].at) / 1000 : 0;
+      const said = `clip ${file}: ${frames.length} frames drawn in ${seconds.toFixed(1)} s (${(frames.length / Math.max(seconds, 0.001)).toFixed(0)} a second)`; // prettier-ignore
+      note(OWN, said);
+      tell?.(said);
+    };
     const picture = async (name) => {
       const file = join(out, `${String(pictures.length).padStart(2, "0")}_${name}.png`);
       await driver.shot(file);
@@ -1856,6 +1888,14 @@ export function playSession({ driver, mod, pause: sessionPause, tell: sessionTel
           } finally {
             await driver.keyUp(action.key);
           }
+        } else if (action.kind === "record") {
+          if (clip) await endClip();
+          if (action.clip) {
+            if (typeof driver.recordStart !== "function")
+              throw new Error("play: this driver cannot film a clip (the browser's driver can: recordStart)");
+            await driver.recordStart();
+            clip = action.clip;
+          }
         } else if (action.kind === "press") await driver.press(action.key);
         else if (action.kind === "click") await driver.click(action.x, action.y);
         else if (action.kind === "mouse") {
@@ -1894,7 +1934,18 @@ export function playSession({ driver, mod, pause: sessionPause, tell: sessionTel
           const to = {};
           if (action.yaw !== undefined) to.yaw = action.yaw;
           if (action.pitch !== undefined) to.pitch = action.pitch;
-          await driver.look(to);
+          if (action.ms && typeof driver.view === "function") {
+            const from = await driver.view();
+            const turn = to.yaw === undefined ? 0 : ((((to.yaw - from.yaw) % 360) + 540) % 360) - 180;
+            const tilt = to.pitch === undefined ? 0 : to.pitch - from.pitch;
+            const began = Date.now();
+            for (let done = 0; done < 1; ) {
+              done = Math.min(1, (Date.now() - began) / action.ms);
+              const eased = done < 0.5 ? 2 * done * done : 1 - 2 * (1 - done) ** 2;
+              await driver.look({ yaw: from.yaw + turn * eased, pitch: from.pitch + tilt * eased });
+              if (done < 1) await driver.wait(PAN_EVERY);
+            }
+          } else await driver.look(to);
         } else if (action.kind === "where") {
           const { yaw, pitch, origin } = await driver.view();
           note(
@@ -2094,6 +2145,11 @@ export function playSession({ driver, mod, pause: sessionPause, tell: sessionTel
     } catch (error) {
       failure = error;
     }
+    // a clip still being filmed is ended and written: a run that stopped keeps what was filmed of it
+    if (clip)
+      await endClip().catch((error) => {
+        failure ??= error;
+      });
     shut("stopped");
     // whatever is still held is let go: the next run begins with free hands
     for (const button of down) await Promise.resolve(driver.mouseUp(button)).catch(() => {});

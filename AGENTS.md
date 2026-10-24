@@ -255,6 +255,9 @@ file into a repository: its licence almost always forbids it.
   real game shows a sprite). Their counts are in the fight's line. `docs/PLAY.md`, "A fight".
 - A session (`--serve`) keeps a fight of any length; `--over msc=<folder>` puts a model rebuilt since the
   game started.
+- To film it, run with `--show --gpu` (a window on the graphics card: software draws a town at a few frames a
+  second) and put `{ "record": "name" }` ... `{ "record": false }` round the steps to film; `face` and `look`
+  with `ms` pan the view. Each clip is written `NN_name.mp4` beside the pictures (needs ffmpeg).
 - `map-measure new.bsp game.bsp --every --mod <profile>` and `map-compare new.bsp game.bsp -o same.png --z
   100,-` set a new map beside the game's.
 

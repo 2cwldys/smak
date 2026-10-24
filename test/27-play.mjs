@@ -374,3 +374,68 @@ test("smak play refuses in a sentence: no map, wrong steps, no Playwright, no ad
     sure(!/\n\s+at /.test(run.err), "no stack trace");
   }
 });
+
+// ── clips and pans (0.26.0) ──
+
+test("record starts a clip by its name and record: false ends it; a pan is a look with ms", () => {
+  const [start, end, pan] = playOf([{ record: "plaza" }, { record: false }, { face: 270, look: -10, ms: 3000 }]);
+  sure(start.kind === "record" && start.clip === "plaza", `record "plaza" made ${JSON.stringify(start)}`);
+  sure(end.kind === "record" && end.clip === null, `record false made ${JSON.stringify(end)}`);
+  sure(start.wait === 0 && end.wait === 0, "a clip's start and end wait no time: they do nothing to the game");
+  sure(pan.kind === "look" && pan.yaw === 270 && pan.pitch === -10 && pan.ms === 3000, `the pan made ${JSON.stringify(pan)}`); // prettier-ignore
+  sure(/records "a b": a clip's name/.test(refusal(() => playOf([{ record: "a b" }]))), "a clip's name with a space is refused"); // prettier-ignore
+  sure(/has ms, which goes with/.test(refusal(() => playOf([{ walk: 100, ms: 5 }]))), "ms on a walk is still refused");
+});
+
+await testAsync("a pan sets the view in steps, eased to where it was told, by the shorter way round", "play: a pan", async () => {
+  const driver = fakeDriver();
+  let view = { yaw: 170, pitch: 0, origin: [0, 0, 0] };
+  const looks = [];
+  driver.view = async () => ({ ...view });
+  driver.look = async (to) => {
+    looks.push(to);
+    view = { ...view, ...to };
+    return { ...view };
+  };
+  driver.wait = (ms) => new Promise((done) => setTimeout(done, Math.min(ms, 2)));
+  await play({ driver, map: "orchard", out: inFolder("pan"), mod: GAME, steps: [{ face: -170, look: 20, ms: 60 }] });
+  sure(looks.length > 2, `the pan set the view ${looks.length} times`);
+  const last = looks[looks.length - 1];
+  sure(Math.abs(last.yaw - 190) < 1e-6 && Math.abs(last.pitch - 20) < 1e-6, `it ended at ${JSON.stringify(last)}: 190 (the same as -170) and 20`); // prettier-ignore
+  sure(looks.every((to) => to.yaw >= 170 - 1e-6 && to.yaw <= 190 + 1e-6), "it went the 20 degrees across 180, not the 340 the other way"); // prettier-ignore
+});
+
+const { hasFfmpeg, encodeTimed } = await import("../src/video.mjs");
+if (hasFfmpeg()) {
+  const { spawnSync } = await import("node:child_process");
+  const jpeg = (colour) => spawnSync("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", `color=${colour}:s=64x48`, "-frames:v", "1", "-f", "mjpeg", "-"]).stdout; // prettier-ignore
+  const frames = [{ at: 1000, jpeg: jpeg("red") }, { at: 1500, jpeg: jpeg("blue") }, { at: 2000, jpeg: jpeg("green") }];
+
+  await testAsync("encodeTimed holds each picture until the next was drawn, at a steady rate", "video: a timed clip", async () => {
+    const mp4 = await encodeTimed(frames, { fps: 10 });
+    sure(mp4.length > 200 && mp4.includes(Buffer.from("ftyp")), "an MP4 came back");
+    const probe = spawnSync("ffprobe", ["-v", "error", "-count_frames", "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", "-"], { input: mp4 }); // prettier-ignore
+    const count = Number(String(probe.stdout).trim());
+    sure(count === 11, `a second at 10 a second, its ends included, is 11 frames: it had ${count}`);
+  });
+
+  await testAsync("a clip is filmed through the driver and written NN_name.mp4; one left open ends with the run", "play: clips", async () => { // prettier-ignore
+    const driver = fakeDriver();
+    driver.recordStart = async () => driver.calls.push("recordStart");
+    driver.recordStop = async () => (driver.calls.push("recordStop"), frames);
+    const out = inFolder("clips");
+    const run = await play({ driver, map: "orchard", out, mod: GAME, steps: [{ record: "gate" }, { wait: 5 }, { record: false }, { shot: "after" }, { record: "open" }] }); // prettier-ignore
+    sure(run.passed !== false, `the run failed: ${run.failure?.message}`);
+    sure(existsSync(join(out, "02_gate.mp4")), "the first clip is 02_gate.mp4, numbered after the two pictures of the entry");
+    sure(existsSync(join(out, "04_open.mp4")), "the clip still open at the end is written as 04_open.mp4");
+    sure(driver.calls.filter((call) => call === "recordStop").length === 2, "each clip was ended once");
+  });
+}
+
+await testAsync("a clip on a driver that cannot film stops the run and says so", "play: no clip", async () => {
+  const said = await play({ driver: fakeDriver(), map: "orchard", out: inFolder("noclip"), mod: GAME, steps: [{ record: "x" }] }).then( // prettier-ignore
+    (run) => run.failure?.message ?? "",
+    (error) => error.message,
+  );
+  sure(/this driver cannot film a clip/.test(said), `the run said ${said}`);
+});

@@ -216,6 +216,34 @@ export function frameStep(a, b) {
   return s / (a.rgba.length * 0.75);
 }
 
+/**
+ * Pictures that came with their moments (a browser's screencast: a JPEG each time the page was drawn, `[{ at,
+ * jpeg }]`, `at` in milliseconds) as an MP4 at a steady rate: each moment of the rate shows the last picture
+ * drawn by then, so a stretch the page drew slowly is held and none is played fast. Needs ffmpeg.
+ */
+export async function encodeTimed(frames, { fps = 30, crf = 20 } = {}) {
+  if (!frames.length) throw new Error("encodeTimed: no frames: was the page drawn while it was filmed?");
+  if (!hasFfmpeg()) throw new Error("encodeTimed: a clip is made with ffmpeg, and there is none on the PATH");
+  const out = [];
+  let err = "";
+  const ff = spawn("ffmpeg", ["-v", "error", "-f", "image2pipe", "-c:v", "mjpeg", "-framerate", String(fps), "-i", "-", "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2", "-c:v", "libx264", "-crf", String(crf), "-pix_fmt", "yuv420p", "-movflags", "+faststart+frag_keyframe+empty_moov", "-f", "mp4", "-"], { stdio: ["pipe", "pipe", "pipe"] }); // prettier-ignore
+  ff.stdout.on("data", (d) => out.push(d));
+  ff.stderr.on("data", (d) => (err += d));
+  const closed = new Promise((done) => ff.on("close", (status) => done(status)));
+  const sorted = [...frames].sort((a, b) => a.at - b.at);
+  const step = 1000 / fps;
+  const end = sorted[sorted.length - 1].at;
+  let shown = 0;
+  for (let t = sorted[0].at; t <= end; t += step) {
+    while (shown + 1 < sorted.length && sorted[shown + 1].at <= t) shown++;
+    if (!ff.stdin.write(sorted[shown].jpeg)) await new Promise((r) => ff.stdin.once("drain", r));
+  }
+  ff.stdin.end();
+  const status = await closed;
+  if (status) throw new Error(`ffmpeg: ${err.trim().split("\n").slice(-2).join(" ")}`);
+  return Buffer.concat(out);
+}
+
 /** Whether ffmpeg is on the machine. */
 export const hasFfmpeg = () => spawnSync("ffmpeg", ["-version"], { stdio: "ignore" }).status === 0;
 

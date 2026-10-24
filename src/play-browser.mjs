@@ -51,6 +51,12 @@ export const SOFTWARE_GL = [
   "--enable-unsafe-swiftshader",
   "--ignore-gpu-blocklist",
 ];
+/**
+ * Chromium drawing WebGL on the machine's graphics card, in a window of its own (`headless: false`): smooth
+ * enough to film a map at the game's own frame rate, where software draws a town at a few frames a second.
+ * The pictures then depend on the card: for checks, SOFTWARE_GL.
+ */
+export const HARDWARE_GL = ["--ignore-gpu-blocklist", "--enable-gpu-rasterization"];
 /** Milliseconds between two looks at whether the engine is up. */
 const READY_EVERY = 250;
 /** A message the engine does not know yet is looked for again this often, and this many times. */
@@ -295,6 +301,10 @@ function readInPage([engine, path]) {
  *   read(path)         a file of the engine's file system, as bytes: what the game wrote there (a save)
  *   leave()            the map left (`disconnect`), so that the game writes what it writes at a map's end
  *                      before files are put, and not over them
+ *   recordStart({ quality })   the page filmed from now: the browser's screencast, a JPEG (quality 90) each
+ *                      time the page is drawn, with the moment it was drawn
+ *   recordStop()       the filming ended: `[{ at, jpeg }]`, `at` in milliseconds (video.mjs `encodeTimed`
+ *                      makes them an MP4 at a steady rate)
  * `log()` is the console's lines and the page's errors, which begin `PAGE ERROR:`, as before.
  */
 export function browserDriver({
@@ -330,6 +340,8 @@ export function browserDriver({
   let page = null;
   let unheard = [...messages];
   let pointed = false;
+  /** The screencast being filmed: its DevTools session and the frames it has sent. */
+  let cast = null;
   let tries = 0;
   let tried = 0;
   const fail = (sentence) => {
@@ -439,7 +451,29 @@ export function browserDriver({
     unheard: () => [...unheard],
     log: () =>
       heard.filter((each) => each.text !== undefined && each.kind !== "play").map((each) => each.text),
+    async recordStart({ quality = 90 } = {}) {
+      if (cast) fail("a clip is being filmed already: recordStop() ends it first");
+      const cdp = await opened().context().newCDPSession(page);
+      const frames = [];
+      cdp.on("Page.screencastFrame", (frame) => {
+        const at = frame.metadata?.timestamp ? frame.metadata.timestamp * 1000 : Date.now();
+        frames.push({ at, jpeg: Buffer.from(frame.data, "base64") });
+        // the next frame comes only once this one is taken
+        cdp.send("Page.screencastFrameAck", { sessionId: frame.sessionId }).catch(() => {});
+      });
+      await cdp.send("Page.startScreencast", { format: "jpeg", quality, maxWidth: width, maxHeight: height, everyNthFrame: 1 }); // prettier-ignore
+      cast = { cdp, frames };
+    },
+    async recordStop() {
+      if (!cast) return [];
+      const { cdp, frames } = cast;
+      cast = null;
+      await cdp.send("Page.stopScreencast").catch(() => {});
+      await cdp.detach().catch(() => {});
+      return frames;
+    },
     async close() {
+      cast = null;
       await browser?.close();
       browser = null;
       page = null;

@@ -1,165 +1,100 @@
 # SMAK: Studio Model Agent Kit
 
-Tools for making and changing GoldSrc models (`.mdl`: Half-Life and its mods), built to be driven by an AI
-coding agent such as Claude Code. You say what you want; the agent writes small scripts with this kit, draws the
-result into pictures to check its own work, and hands you a `.mdl` to try in the game.
+A toolkit an AI coding agent (Claude Code, or any agent that runs commands and looks at pictures) uses to make
+content for **GoldSrc games**, Half-Life and its mods: models, animations, textures and maps. The agent writes
+short scripts with it, draws what it made to check its own work, and plays the result in the game.
 
-Version 0.24.0. An early release, made for an agent to work. For the person it has two pages in the browser: a
-**viewer** that shows any two models side by side, turning and playing their animations together, and an
-**editor** for touching up a model by hand (its animations, events and textures; not its shape), on a project
-file the agent can work on too (`editor/README.md`).
+![version](https://img.shields.io/badge/version-0.26.0-blue)
+![tests](https://img.shields.io/badge/tests-755%20passing-brightgreen)
+![node](https://img.shields.io/badge/node-18%2B-339933)
+![dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)
+![licence](https://img.shields.io/badge/licence-MIT-lightgrey)
+![engines](https://img.shields.io/badge/engines-GoldSrc%20%C2%B7%20Xash3D-orange)
 
-## What it does
+[![SMAK's showcase: Moria in Master Sword Classic, made and filmed with the kit](docs/media/demo.gif)](https://github.com/Deoroot/smak/releases/download/v0.26.0/smak-demo.mp4)
 
-- **Textures**: takes them out of a model, puts new ones in (PNG or BMP), recolours, or paints them by rule.
-- **Shapes**: replaces a weapon or item inside an existing model, keeping its hands, skeleton and animations;
-  or writes a whole new model for a prop or pickup, from triangles or from a Wavefront `.obj` file made in
-  any other tool (`smak obj`).
-- **Animations**: reads them, changes them, replaces them in place or adds new ones, with their sound events.
-- **By place**: paints wear, damage or markings where a point is on the body, across every texture it has, or a
-  garment on chosen islands of a picture, in passes and with soft edges, over layers that say what the old picture
-  is (mail, plate, a strap) and how far their edges are; adds a body again in another texture; finds
-  a model's loose pieces (a pack, a pouch, a helmet) and takes them off; moves a part from one model to another
-  that shares its skeleton.
-- **Items**: adds a new weapon, shield or bow to the files a game already shows its kind from, as new
-  submodels after the ones it has, laid on the game's own, with the numbers its script needs (`smak item`).
-- **Bought models**: an .fbx, .glb/.gltf or .obj made a prop, a weapon in a game's own files, or a model with
-  its skeleton and animations (`smak import`, `smak item mace.fbx ...`; docs/IMPORT.md).
-- **Checking**: tells whether a model stays inside what GoldSrc, or Xash3D, can load.
-- **Pictures**: draws any model from any side, or as the player sees a weapon, so the agent can see what it made.
-- **Maps**: reads a compiled map (`.bsp`) and draws it, checks its entities against a mod's profile, measures
-  how it plays; writes maps from a script or a drawing, with makers for what the game's own maps are made of:
-  ground that rises and falls, cliffs, paths, grass and trees strewn, sounds, houses and fences, rooms dressed
-  for their use (docs/MAPS-MAKING.md).
+**[Watch the 3-minute showcase](https://github.com/Deoroot/smak/releases/download/v0.26.0/smak-demo.mp4)**: every
+model, map and shot in it was made by an agent with SMAK.
 
-It reads and writes the `.mdl` file directly. No decompiler, no studiomdl, no Blender, no `.smd` or `.qc`.
+## What it can do (measured)
 
-## What you need
+![commands](https://img.shields.io/badge/commands-80-555)
+![functions](https://img.shields.io/badge/public%20functions-706-555)
+![docs](https://img.shields.io/badge/guides-13-555)
+![profiles](https://img.shields.io/badge/game%20profiles-Master%20Sword%20%C2%B7%20The%20Specialists%20%C2%B7%20Half--Life-555)
 
-- [Node.js](https://nodejs.org) 18 or later. Nothing to install after that: the kit has no dependencies.
-- An AI coding agent that can run commands and look at images (Claude Code, or similar).
-- Your mod's own model files.
+![models](https://img.shields.io/badge/Models-read%20%C2%B7%20write%20%C2%B7%20re--skin%20%C2%B7%20paint%20by%20place-2ea44f)
+![animation](https://img.shields.io/badge/Animation-poses%20%C2%B7%20walks%20%C2%B7%20events%20%C2%B7%20new%20skeleton%20proportions-2ea44f)
+![import](https://img.shields.io/badge/Import-.obj%20%C2%B7%20.fbx%20%C2%B7%20.glb%20%C2%B7%20rigged%20models-2ea44f)
+![items](https://img.shields.io/badge/Items-swords%20%C2%B7%20axes%20%C2%B7%20blunt%20%C2%B7%20bows%20from%20kits-2ea44f)
 
-## Starting
+![maps read](https://img.shields.io/badge/Maps-read%20.bsp%20%C2%B7%20plan%20%C2%B7%20views%20%C2%B7%20sections-1f6feb)
+![maps make](https://img.shields.io/badge/Map%20making-script%20%E2%86%92%20compile%20%C2%B7%20drawings%20%C2%B7%20JSON%20specs-1f6feb)
+![checks](https://img.shields.io/badge/Checks-walk%20test%20%C2%B7%20entities%20vs%20the%20mod%20%C2%B7%20engine%20limits-1f6feb)
+![bots](https://img.shields.io/badge/Bots-RCBot%20waypoints%20%C2%B7%20team%20spawns-1f6feb)
 
-1. Unpack this folder somewhere, for example next to your working folder.
-2. Check it runs: `node test/selftest.mjs` should end with `0 failed`.
-3. Open your agent in a working folder and tell it where the kit is:
+![play](https://img.shields.io/badge/In%20the%20game-play%20%C2%B7%20fight%20%C2%B7%20test%20by%20its%20lines%20%C2%B7%20film-8957e5)
+![assets](https://img.shields.io/badge/Assets-textures%20%28.wad%29%20%C2%B7%20sounds%20%C2%B7%20sprites%20%C2%B7%20video-8957e5)
+![judges](https://img.shields.io/badge/Judges-figure%20style%20%C2%B7%20texture%20%C2%B7%20shape%20vs%20the%20game-8957e5)
 
-   > Read `smak/AGENTS.md`. I want to work on models for my GoldSrc mod; its models are in `C:\…\ts\models`.
+## What it has made
 
-   Agents that read `AGENTS.md` or `CLAUDE.md` on their own pick it up if you start them inside the `smak` folder.
-4. Ask for what you want, with the model's file name. For example:
-   - "Show me what is in `v_katana.mdl`."
-   - "Make the blade texture of `v_katana.mdl` darker and more worn."
-   - "Replace the knife in `v_knife.mdl` with a longer combat knife with a black cord grip."
-   - "Slow the draw animation of `v_katana.mdl` down a little and add a sound at the frame the blade clears."
-   - "Make three versions of this player model, more battle-worn each time, and one without its backpack."
-5. The agent gives you a new `.mdl` and pictures of it. Copy the `.mdl` into your mod's `models` folder (keep a
-   copy of the original) and look at it in the game.
+![A monster from nothing, a walled town from a script, the town's defence in the game, and a team arena for The Specialists](docs/media/showcase.jpg)
 
-Start with a texture change. It is the smallest step and proves the whole route on your game before anything
-larger.
+- **Moria**, for Master Sword Classic: a walled town with an orchard, a hall to walk into, cellars, a four-round
+  defence with militia and archers, and a boss who falls, rises and falls again. Written as a script, compiled,
+  walk-tested, and played in the game by the agent before anyone else.
+- **Monsters and props**: a scarecrow made from nothing (bones, body, paint and walk), game monsters re-skinned by
+  rules, apple trees, weapons from the kits, a rigid robot on a soldier's skeleton.
+- **The Specialists**: a team arena with bot waypoints and a role-play city.
 
-## Trying it yourself
+## How it works
 
-```
-node bin/smak.mjs info  path/to/model.mdl
-node bin/smak.mjs sheet path/to/model.mdl -o sheet.png
-node bin/smak.mjs strip path/to/v_model.mdl -o draw.png --seq 0 --view first
-node bin/smak.mjs check path/to/model.mdl
-node bin/smak.mjs view  path/to/a/folder/of/models
-node examples/01-new-model.mjs out
-```
+1. You say what you want: "a darker, more worn katana", "a walled town with an orchard", "a new monster".
+2. The agent reads `AGENTS.md`, writes a short script with the kit, and runs it.
+3. SMAK builds the model or map, checks it against the engine's limits and the game's own rules, and draws it.
+4. The agent looks at the pictures, fixes what is wrong, and plays it in the game when a browser build is there.
 
-`view` prints an address (http://127.0.0.1:8098/) to open in the browser. It lists every model in the folders
-you give it; press A or B beside two of them, drag to turn, pick an animation. Give it your originals' folder
-and the agent's output folder together to compare before and after.
+It reads and writes the game's files directly: no decompiler, no studiomdl, no Blender, nothing to install.
 
-For a map: `node bin/smak.mjs map-info path/to/map.bsp`, `map-plan path/to/map.bsp -o plan.png` and
-`map-views path/to/map.bsp -o views.png` say what is in it and draw it.
+## Start
 
-For a new item, a mod's scripts and a map's light:
+1. Install [Node.js](https://nodejs.org) 18 or later.
+2. Check the kit: `node test/selftest.mjs` ends with `0 failed`.
+3. Start your agent inside the `smak` folder, or tell it: *"Read `smak/AGENTS.md`. My mod's models are in
+   `C:\…\mymod\models`."* Then ask for something small first, such as a texture change.
 
 ```
-node bin/smak.mjs item   piece.mjs --mod profile.mjs --game <mod> --family <name> --name club -o out --pictures
-node bin/smak.mjs scripts <your scripts> <map.bsp> --mod profile.mjs --game <mod>
-node bin/smak.mjs map-light map.bsp [--rooms rooms.json]
+node bin/smak.mjs info   model.mdl                 what is in a model
+node bin/smak.mjs sheet  model.mdl -o sheet.png    six views of it
+node bin/smak.mjs check  model.mdl                 would the engine load it
+node bin/smak.mjs map-plan map.bsp -o plan.png     a map from above, every entity marked
+node bin/smak.mjs map-reach map.bsp -o walk.png    the walk test: what a player can reach
+node bin/smak.mjs view   a/folder/of/models         two models side by side, in the browser
+node bin/smak.mjs help                              every command
 ```
 
-`node bin/smak.mjs help` lists every command. If a picture comes out empty, the model keeps a blank submodel at
-body 0: `info` shows the body numbers, and `--body N` picks one.
-
-## What is in the folder
+## Guides
 
 | | |
 | --- | --- |
-| `AGENTS.md` | The briefing for the agent: how a model is put together, the rules, the recipes. Worth a read yourself. |
-| `docs/API.md` | Every function. |
-| `docs/ENGINES.md` | GoldSrc against Xash: limits and differences. |
-| `docs/MAPS.md` | Maps: a compiled map (`.bsp`) read, checked, its entities changed, its textures and `.wad` files, pictures of it (a plan, views from inside, a side section, its storeys), and the walk test. |
-| `docs/MAPS-MAKING.md` | Maps: brush source (`.map`) written from a script, checked, drawn, and compiled with VHLT, an outside program. |
-| `docs/MAPS-SKETCH.md` | A map from a drawing: an Inkscape SVG or a Paint PNG made a sealed `.map` (`smak sketch`). |
-| `docs/MAPS-DESIGN.md` | Maps a player likes: rules of thumb read from a game's own 100 maps (shape, height, light, dressing, monsters, rewards). |
-| `docs/MAPS-CHECKS.md` | More checks of a map with no game running, added after agents built a series of maps. |
-| `docs/PLAY.md` | A map played in the game and tested by what the game says (`smak play`): steps, fights, the run's report. |
-| `docs/ITEMS.md` | A new weapon, shield or bow added to a game's own files (`smak item`). |
-| `docs/SPEC.md` | Specs in JSON built by `smak build`: a map of rooms laid out by words (compiled, walked, drawn), a model of parts (a prop, a character on a game's skeleton, a weapon in a game's place), textures for maps (a .wad painted, worn, in relief, from photographs, previewed on a map), and the kinds of the other docs. |
-| `docs/SOUNDS.md` | Sounds made from layers (`smak sound`) and music tracks (`smak music`): GoldSrc's files, checked, measured against the game's own. |
-| `docs/SPRITES.md` | Sprites made by rule (`smak sprite`): glows, flames, explosions, sparks and beams written as `.spr`, measured against Half-Life's own. |
-| `docs/IMPORT.md` | Bought models (.fbx, .glb/.gltf, .obj) made props, weapons or rigged models (`smak import`). |
-| `CHANGELOG.md` | What changed, version by version. |
-| `bin/smak.mjs` | The command line. |
-| `src/` | The library: the model reader and writer, pictures, fitting, drawing, checking, working by place, and the workshop for building shapes and painting textures. |
-| `src/maps/` | Maps, exported as `maps`: reading and checking a `.bsp`, entities, `.wad` files, brush source, the compile, pictures of a map, and the walk test. |
-| `kits/` | Builders for swords and knives, axes, blunt weapons and bows. |
-| `viewer/` | The page that shows models side by side, and its small server. |
-| `editor/` | The page for re-timing and re-posing animations, events and textures by hand, its server, and the same edits from a terminal. |
-| `examples/` | Seven scripts, one for each kind of work; the seventh makes a small map. |
-| `scripts/` | `no-game-files.mjs`: every file the repository tracks (`--history`: every version ever committed) held against a game's folders, by their bytes, every texture of their `.wad` files and models by its pixels, and every sound by its samples. Run it before a push. |
-| `profiles/` | Two mods' profiles (Master Sword Classic's, and The Specialists' with its role-play cities), as examples of what a mod's own is: what its maps' entities are checked against. No part of the kit's core, and they hold no game content. |
-| `mcp/` | The kit as an MCP server, for a client with no shell: `mcp/README.md`. |
-| `test/` | The kit checking itself: `selftest.mjs` runs the files beside it, one an area. `test/fixtures/` holds the kit's own small map. |
+| [AGENTS.md](AGENTS.md) | The agent's briefing: how a model is put together, the rules, the recipes. |
+| [docs/API.md](docs/API.md) | Every function. |
+| [docs/MAPS.md](docs/MAPS.md), [MAPS-MAKING.md](docs/MAPS-MAKING.md), [MAPS-DESIGN.md](docs/MAPS-DESIGN.md) | Reading, making and designing maps. |
+| [docs/PLAY.md](docs/PLAY.md) | Playing a map in the game and testing it by what the game says; filming it. |
+| [docs/SPEC.md](docs/SPEC.md) | Maps, models, textures and videos described in JSON and built by `smak build`. |
+| [docs/IMPORT.md](docs/IMPORT.md), [docs/ITEMS.md](docs/ITEMS.md) | Bought models, and new weapons in a game's own files. |
+| [docs/ENGINES.md](docs/ENGINES.md) | GoldSrc against Xash3D. |
+| [CHANGELOG.md](CHANGELOG.md) | What changed, version by version. |
 
-## Limits worth knowing first
+## Limits
 
-- GoldSrc models only (version 10). Not Source.
-- A new model written from nothing has no hit boxes and no attachments. For a weapon's first-person model, the
-  kit replaces the shape inside the model your mod already has, which keeps both.
-- One bone a vertex, as the format has it.
-- Animations kept in separate `name01.mdl` files cannot be edited.
-- The kit's pictures and its viewer use a plain light of their own. Shape, size, texture and pose are true;
-  brightness is not.
-- Written for GoldSrc's limits by default, so the same files load in Xash3D. See `docs/ENGINES.md`.
-- It was built for another GoldSrc mod (Master Sword). Thirteen player models of The Specialists have been read,
-  changed and drawn with it, but **nothing it made has been loaded by The Specialists yet**: your first model in
-  the game is the real test.
-- Many models give the left and right side of the body the same pixels of a texture. A mark painted on one side
-  then shows on the other; the kit reports how much of each texture is shared.
-
-## What is new
-
-0.25.0 makes maps for The Specialists: its profile builds a map spec in the game's manner (its textures,
-`ts_model` props clipped where they are solid, rooms furnished by their use, breakables, its lamps as texture
-lights) delivered as the .bsp alone; `smak map-teams` replays a team plugin's split of the spawns and writes its
-spawn file; `smak map-waypoints` writes RCBot's waypoints from the walk test; and new pieces for any map: marble,
-pictures fitted to their brushes, sconces and chandeliers.
-
-0.25.1 mends what the first play of a map made with it found. RCBot's bots now roam open floor rather than
-running at crates, keep room along their paths and do not take drops as shortcuts. Signs read on every side.
-`checkPlan` tells detail that hangs in the air. `map-props` no longer takes a picture in a doorway as hung.
-
-0.25.2: `house` can build a house one goes into (`inside`), with its room's measures returned to furnish it by.
-
-Every version's changes, the newest first: [CHANGELOG.md](CHANGELOG.md).
-
-## Where it comes from
-
-SMAK is the model tooling of the msr-web project, taken out so that it stands on its own. The kits for swords,
-axes, blunt weapons and bows were made for that project's medieval weapons; for firearms and anything else the
-agent builds shapes from the workshop's parts (`AGENTS.md`, "Making a shape").
+- GoldSrc models and maps only (model version 10, map version 30): not Source.
+- One bone a vertex, as the format has it. Animations kept in `name01.mdl` files are read, not edited.
+- The kit's pictures use a plain light of their own: shape, size, texture and pose are true, brightness is not.
+- It does not ship any game's content. A game's models and textures belong to its authors.
 
 ## Licence
 
-MIT (see `LICENSE`): use it, change it and pass it on freely, for any purpose. That covers the kit's code only.
-The models and textures of a game belong to that game's authors, and what you make from them is theirs to allow.
+MIT (see `LICENSE`) for the kit's code. What you make from a game's files is that game's authors' to allow.
+SMAK began as the tooling of the msr-web project (Master Sword Classic in the browser).

@@ -3,6 +3,22 @@
 The newest first. A version that changes what a model's file looks like, or that a model made before needs
 mending for, says so under **Mind**.
 
+## 0.26.0 (2026-10-24)
+
+The game filmed by the tool that tests it: SMAK's showcase video was made this way (docs/media).
+- **`record`, a step of `smak play`**: `{ "record": "plaza" }` films the page from there as a clip of that name,
+  until the next `record` or the run's end, written `NN_plaza.mp4` beside the pictures (H.264 at 30 a second,
+  through ffmpeg); `{ "record": false }` ends it. The browser's driver films what the page draws (Chromium's
+  screencast: a JPEG each time it is drawn, with its moment) through `recordStart()` and `recordStop()`, and a
+  clip left open when a run stops is still written.
+- **`encodeTimed(frames, { fps })`** (video.mjs): pictures that came with their moments made an MP4 at a steady
+  rate, each moment showing the last picture drawn by then (a slow stretch is held, never played fast).
+- **Pans**: `face` and `look` take `ms`, the view eased there over that time by the shorter way round.
+- **`--gpu`** with `--show`: WebGL on the graphics card (`HARDWARE_GL`), a map drawn smoothly enough to film
+  (a walled town at 40 to 90 frames a second where software drew 3 to 7). The pictures then depend on the card:
+  checks stay on `SOFTWARE_GL`.
+- README: shorter, with what the kit has made and its measures.
+
 ## 0.25.2 (2026-10-24)
 
 - **`house` builds a house one goes into** (`inside: true`): its storeys one room up to the roof's beams, walls 16
