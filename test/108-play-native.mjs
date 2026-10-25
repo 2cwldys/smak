@@ -1,6 +1,7 @@
 // The Steam game's driver (src/play-native.mjs): the console loop it starts the game with, a command run once
 // however often the loop reads its file, a map waited for until the player is in, the game's own screenshot
-// made a PNG, the log read from where the run began, and its refusals.
+// made a PNG, the log read from where the run began, and its refusals; keys and the mouse (with input: true)
+// sent through a fake window helper only while the game's window is in front and the person's hands are off.
 //
 // No game: the game here is a fake engine in this process that reads the driver's files as GoldSrc's command
 // buffer does (alias, exec, wait, echo, a map, status, screenshot, quit) and writes qconsole.log. That the
@@ -188,7 +189,8 @@ await testAsync("the native driver's refusals: a server joined, a key, a game th
   sure(/ready\(\) comes first/.test(await refusalOf(() => live.command("echo x"))), "a command before ready");
   await live.ready();
   sure(/would join a server/.test(await refusalOf(() => live.command("connect 10.0.0.1:27015"))), "connect was sent");
-  sure(/by its console alone, and a key/.test(await refusalOf(() => live.keyDown("w"))), "a key was pressed");
+  sure(/only with input: true \(--input\)/.test(await refusalOf(() => live.keyDown("w"))), "a key was pressed without input");
+  sure(live.mouseDown === undefined, "a mouse without input: its steps would not be refused before the start");
   sure(/one line of the console/.test(await refusalOf(() => live.command("echo a\nquit"))), "two lines in one command");
   await live.close();
   const deaf = nativeDriver({ halfLife: game, mod: "ts", spawn: fakeGame({ deaf: true }).spawn, readyWithin: 300 });
@@ -200,4 +202,85 @@ await testAsync("the native driver's refusals: a server joined, a key, a game th
   await lonely.close();
   sure(!readdirSync(join(game, "ts")).some((name) => /^smak_/.test(name)), "the driver's files were left");
   sure(playOf([{ walk: 100 }]).length === 1, "a walk is a step");
+});
+
+/**
+ * A window helper as src/play-window.mjs answers, for a game that is in front from the start: `idle` is what the
+ * keyboard and mouse have been left alone, read in turn (the last kept); `touchedAfter` inputs, the person
+ * takes the mouse; `box` is a box the game shows.
+ */
+const fakeWindows = ({ idle = [9000], front = true, touchedAfter = Infinity, box = null } = {}) => {
+  const asked = [];
+  let held = 0;
+  let sent = 0;
+  const make = ({ pid, quiet }) => ({
+    async ask(line) {
+      asked.push(line);
+      const [verb, how] = line.split(" ");
+      if (verb === "state") return { window: true, front, idle: idle.length > 1 ? idle.shift() : idle[0], pid, quiet };
+      if (verb === "windows")
+        return { windows: [{ cls: "SDL_app", title: "Half-Life", w: 800, h: 600 }, ...(box ? [{ cls: "#32770", title: "Fatal Error", text: box, w: 300, h: 120 }] : [])] }; // prettier-ignore
+      if (verb === "release") return { released: held, ...((held = 0), {}) };
+      if (verb === "shot") {
+        writeFileSync(line.slice(5), pngOfTga(TGA));
+        return { how: "print", w: 2, h: 2, mean: 120 };
+      }
+      if (how === "up") return { sent: held > 0, ...(held > 0 && (held--, {})) };
+      if (sent++ >= touchedAfter) return { refused: "person" };
+      if (verb !== "move") held++;
+      return { sent: true };
+    },
+    async close() {
+      asked.push("closed");
+    },
+  });
+  return { make, asked };
+};
+
+await testAsync("keys and the mouse to the Steam game (input: true): sent once the hands are off, by scan code, a button held and let go, the window's own pictures", "native input", async () => {
+  const game = halfLifeOf("input");
+  const { spawn } = fakeGame();
+  const windows = fakeWindows({ idle: [200, 800, 6000] });
+  const driver = nativeDriver({ halfLife: game, mod: "ts", spawn, input: true, quiet: 5000, pictures: "window", windows: windows.make }); // prettier-ignore
+  const run = await play({
+    ...{ driver, map: "ts_lobbyduel", out: join(tmp, "native", "input-out"), pause: 0 },
+    steps: [{ command: "slot7" }, { tap: "left", times: 2, every: 20, ms: 10 }, { hold: "w", ms: 20 }, { press: "Enter" }, { shot: "in" }], // prettier-ignore
+  });
+  sure(run.passed, `the run failed: ${JSON.stringify(run.summary?.failure ?? run.expectations)}`);
+  // the picture play takes as the map is entered comes first
+  const asked = windows.asked.filter((line) => line !== "state").slice(1);
+  // W is scan code 17, Enter 28; the buttons by name; everything held let go; the helper closed with the game
+  sure(asked.join(" | ").startsWith("button down left | button up left | button down left | button up left | key down 17 0 | key up 17 0 | key down 28 0 | key up 28 0 | shot "), asked.join(" | ")); // prettier-ignore
+  sure(asked.slice(-2).join(" | ") === "release | closed", asked.join(" | "));
+  // the first input waited for the hands off: three readings, the last over `quiet`
+  sure(windows.asked.filter((line) => line === "state").length === 3, `read ${windows.asked.filter((line) => line === "state").length} times`); // prettier-ignore
+  sure(run.pictures.length === 2 && unpng(readFileSync(run.pictures[0])).width === 2, run.pictures.join(", "));
+});
+
+await testAsync("input to the Steam game stops: the person takes the mouse, the window not in front, a key not known; a box the game shows is said", "native input refused", async () => {
+  const game = halfLifeOf("input-refused");
+  const touched = fakeWindows({ touchedAfter: 1 });
+  const driver = nativeDriver({ halfLife: game, mod: "ts", spawn: fakeGame().spawn, input: true, windows: touched.make }); // prettier-ignore
+  const stopped = await refusalOf(() =>
+    play({
+      ...{ driver, map: "ts_lobbyduel", out: join(tmp, "native", "touched-out"), pause: 0 },
+      steps: [{ mouseDown: "left" }, { hold: "w", ms: 20 }],
+    }),
+  );
+  sure(/the person used the keyboard or the mouse during the run/.test(stopped), `not stopped: ${stopped}`);
+  // the button held was let go, by the helper and by the run
+  sure(touched.asked.includes("release") && touched.asked.includes("button up left"), touched.asked.join(" | "));
+  const behind = nativeDriver({ halfLife: game, mod: "ts", spawn: fakeGame().spawn, input: true, quietWithin: 600, windows: fakeWindows({ front: false }).make }); // prettier-ignore
+  await behind.ready();
+  sure(/was not in front for 0.6 seconds.*click on it/.test(await refusalOf(() => behind.press("w"))), "a key sent to a window behind"); // prettier-ignore
+  sure(/"Win" is no key the driver knows: a letter or a digit/.test(await refusalOf(() => behind.press("Win"))), "an unknown key"); // prettier-ignore
+  sure(/left, right or middle/.test(await refusalOf(() => behind.mouseDown("fourth"))), "a fifth button");
+  await behind.close();
+  // a game that stops answering, and shows a box: its words are in the sentence
+  const { spawn: deafSpawn } = fakeGame({ deaf: true });
+  const withPid = (...args) => Object.assign(deafSpawn(...args), { pid: 4242 });
+  const boxed = nativeDriver({ halfLife: game, mod: "ts", spawn: withPid, readyWithin: 300, windows: fakeWindows({ box: "Could not load library client" }).make }); // prettier-ignore
+  const said = await refusalOf(() => boxed.ready());
+  sure(/a box "Fatal Error" saying "Could not load library client"/.test(said), said);
+  await boxed.close();
 });

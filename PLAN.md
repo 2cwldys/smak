@@ -116,6 +116,23 @@ universal-modder:
 Most of what a test needs is a console command (`setpos`, `give`, `impulse`, the mod's own), so this may
 never be needed.
 
+**3b and 3c done 2026-10-25**, in one helper (`src/play-window.mjs`): C# compiled by PowerShell, so nothing is
+installed, reaching only the windows of the `hl.exe` the run started (by its id: the window is that process's,
+not a launcher's). Measured on TS, `h9_te_neuropolis`:
+- **3b.** PrintWindow with PW_RENDERFULLCONTENT draws the game's window as the person sees it, the same
+  picture as the console's `screenshot` (Steam's overlay in both), in 36 ms (the first, with the helper
+  compiled, 0.5 s). So `screenshot` stays the default and `--window-pictures` is there for what the console
+  cannot take: a game that stopped answering, whose sentence now says what its windows show (a box's words).
+- **3c.** `--input`: a real left click let the player past "Press Fire To Play!", which the console's
+  `+attack` never did (3a), and W and D moved the free-look camera. The guard held: the first input waited for
+  5 s of hands off, and the game's own cursor recentring does not count as the person's input. The first try
+  did nothing, and the reason was not the kit: TS's `config.cfg` had been `unbindall` and three binds since
+  before 3a, so W was bound to nothing (the person bound the keys again). Asked of the person before each live
+  run, and their `config.cfg` came back byte for byte.
+- TS wants a second click to put the player in (the person's, by hand): `tap` with `times: 2`.
+- Not done: a run walked as the player from start to end, the mouse moved to look (`look` stays the
+  browser's), a fight.
+
 ## Phase 4: before sharing
 
 **`smak check --publish <folder> --game <game folder>`** fails on:

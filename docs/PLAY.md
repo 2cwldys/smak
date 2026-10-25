@@ -34,7 +34,7 @@ smak play native --map h9_te_neuropolis --mod ts --steps steps.json -o work/run1
 ```
 
 The same run in the game Steam installed, GoldSrc's own engine, with nothing but Node: no browser, no
-Playwright, no window capture, no key pressed. The game is started as `hl.exe -game <folder> -insecure
+Playwright, and no key pressed unless asked for (`--input`, below). The game is started as `hl.exe -game <folder> -insecure
 -windowed -condebug +exec smak_run.cfg` and driven by its console alone (src/play-native.mjs, which says how):
 a command is put in a `.cfg` the game reads every few frames, and answered in a tenth of a second; what the
 game says is read from `qconsole.log`; a picture is its own `screenshot`. A run is in the map 2 seconds after
@@ -44,9 +44,20 @@ the start and over in 4 to 9 (Neuropolis in TS, 2026-10-24).
   folder is the profile's (`ts`, `msc`), or `--game-folder`, or `valve`. Steam is running (without it was not
   tried); one game at a time.
 - `-insecure` keeps it off VAC, and a run never joins a server: `connect` and `retry` are refused.
-- It has no keys, no mouse and no view: a walk (`+forward`), a turn by time, `command`, `say`, `until`,
-  `expect` and `shot` work; `look`, `face`, `where`, `goto` with a check, a fight's aim, `press`, `click` and
-  `tap` do not, and say so. `--put`, `--over`, `--serve` and `record` are the browser's.
+- It has no view: a walk (`+forward`), a turn by time, `command`, `say`, `until`, `expect` and `shot` work;
+  `look`, `face`, `where`, `goto` with a check and a fight's aim do not, and say so. `--put`, `--over`,
+  `--serve` and `record` are the browser's.
+- **Keys and the mouse** (`hold`, `press`, `click`, `mouse`, `tap`, `mouseDown`) only with `--input`, and
+  only once the person has said yes: they are real keys and buttons (Windows' `SendInput`, by scan code, so
+  the person's own binds apply), and they take the keyboard and mouse while the run lasts. They are sent only
+  while the game's window is in front, never brought there; the first waits until the keyboard and mouse have
+  been left alone `--quiet` milliseconds (5000), for up to a minute; the person touching either after that
+  stops the run, and whatever was held is let go. Only the windows of the process the run started are
+  reached, by its id. Keys are Playwright's names (`"w"`, `"Enter"`, `"Space"`, `"ArrowUp"`); `click` is in
+  the window's pixels.
+- **Pictures of the window** (`--window-pictures`): each `shot` is the game's window as the person sees it
+  (PrintWindow, which draws a window of the graphics card), in place of the game's own `screenshot`. When the
+  game does not answer, the sentence says what its windows show, a box's words first ("Fatal Error ...").
 - Its log is the mod's own words, including what it could not load: a missing sound, sky or model is a line
   (`Warning:  Unable to open ...`, `R_LoadSkys: Couldn't load ...`), so `--expect-not` holds a map to having
   every file it names.
@@ -54,8 +65,15 @@ the start and over in 4 to 9 (Neuropolis in TS, 2026-10-24).
   quits, so the run keeps the file as it was and puts it back (a step's `bind` does not stay).
 - In The Specialists the player begins as a spectator with the buy menu open. `slot7` takes its Random and
   closes it; "Press Fire To Play!" then wants the key bound to `+attack`, which TS's client reads itself, and
-  `+attack` from the console does not let him in (measured 2026-10-24). So a TS run looks round its map as a
-  spectator and is held to what the game says (a missing file, a script's line), not walked.
+  `+attack` from the console does not let him in (measured 2026-10-24). With `--input`, `{ "tap": "left" }`
+  is that key, when the person has MOUSE1 bound to `+attack`: the first click takes the prompt away and a second
+  puts the player in (`{ "tap": "left", "times": 2, "every": 2000 }`; measured 2026-10-25, `h9_te_neuropolis`,
+  the second by the person; real W and D moved the free-look camera before it). Without `--input` a TS run looks round its map as a spectator and is held to
+  what the game says (a missing file, a script's line), not walked.
+- Real keys are the person's binds: a key they have not bound does nothing, and says nothing. TS's
+  `config.cfg` on this machine was found with `unbindall` and three binds left (2026-10-24; not by a run), and
+  every key step did nothing until the person bound them again. When a key seems to do nothing, read the
+  mod's `config.cfg` first.
 - Two starts of `ts_lobbyduel` in seven ended by themselves as the player connected (code 0, no line): the run
   stops and says the game ended; run it again.
 

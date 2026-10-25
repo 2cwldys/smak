@@ -3675,7 +3675,13 @@ async function playMap({ command, file: url, flags, listed }) {
     // the game's folder: --game-folder, else the profile's (ts, msc), else Half-Life's own
     const gameFolder = flags["game-folder"] ?? maps.mapProfileOf(flags.mod)?.folder ?? "valve";
     const driver = native
-      ? smak.play.nativeDriver(defined({ halfLife: flags["half-life"], mod: gameFolder, width, height }))
+      ? smak.play.nativeDriver(
+          defined({
+            ...{ halfLife: flags["half-life"], mod: gameFolder, width, height },
+            ...{ input: flags.input === true, quiet: numberOf(flags, "quiet") },
+            pictures: flags["window-pictures"] === true ? "window" : undefined,
+          }),
+        )
       : browserDriver(
           defined({ url, playwright: playwrightFrom(flags.playwright ?? process.env.PLAYWRIGHT_DIR), width, height, messages: messagesOf(mod), headless: flags.show !== true, args: flags.gpu ? HARDWARE_GL : undefined }), // prettier-ignore
         );
@@ -4345,10 +4351,14 @@ const COMMANDS = {
                                             It needs Playwright, an outside program: --playwright names the folder that holds its
                                             node_modules (or PLAYWRIGHT_DIR)
   play native --map <name> [--mod ts] [--half-life <folder>] [--game-folder ts] [--steps ...] [-o ...] [--expect ...]
+              [--input [--quiet 5000]] [--window-pictures]
                                             the same run in the game Steam installed (hl.exe, -insecure, never a server), by its
-                                            console alone: no keys, no mouse, no view read or set; walks and turns by time, commands,
-                                            what it says and its own screenshots. The Half-Life folder is found in Steam's libraries
-                                            (or --half-life, SMAK_HALF_LIFE); the game's folder is the profile's (or --game-folder)
+                                            console: no view read or set; walks and turns by time, commands, what it says and its
+                                            own screenshots. The Half-Life folder is found in Steam's libraries (or --half-life,
+                                            SMAK_HALF_LIFE); the game's folder is the profile's (or --game-folder). --input: real
+                                            keys and mouse buttons to its window (ask the person first): only while it is in front,
+                                            after the keyboard and mouse are left alone --quiet ms, and stopped if they are touched.
+                                            --window-pictures: the pictures are of its window, as the person sees it
   play <url> --serve [--port 8098] [--over <place>=<folder> ...] [--mod ...] [--playwright ...]
                                             the game started and KEPT: a session served on this machine, for runs that pay for
                                             their map and not for the engine. --over: a folder laid over the game's (msc=mine/msc),

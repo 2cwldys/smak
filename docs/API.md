@@ -770,13 +770,18 @@ holds its `node_modules`; `engine` and `readyFlag` are the page's names for the 
 for the flag it sets when the engine takes commands. Nothing is opened before `ready()`.
 
 `play.nativeDriver({ halfLife, mod = "valve", exe = "hl.exe", width = 1024, height = 768, args = [],
-readyWithin = 90000, enterWithin = 120000, answerWithin = 20000, spawn })` → a driver for the person's own game
-from Steam, by its console alone (`smak play native`; src/play-native.mjs says how). `halfLife` is the
+readyWithin = 90000, enterWithin = 120000, answerWithin = 20000, input = false, quiet = 5000, quietWithin = 60000,
+pictures = "console", spawn, windows })` → a driver for the person's own game from Steam, by its console
+(`smak play native`; src/play-native.mjs says how). `halfLife` is the
 Half-Life folder (unless told, `findHalfLife`'s), `mod` the game's folder in it. `command(text)` resolves when
 the game has run it, a `map` once the player is in (the driver then says `SMAK entered <map>`, its `loaded`,
 which a session waits for in place of the profile's line); `shot(file)` is the game's own screenshot as a PNG;
-keys and the mouse throw; `close()` quits the game, or ends it by its process id, and takes its `smak_*.cfg`
-files out of the mod's folder. `spawn` is how the program is started (a test's fake engine).
+`windowShot(file)` is its window as the person sees it (every `shot`, with `pictures: "window"`); keys and
+the mouse are real ones only with `input: true` (the person asked first), sent while its window is in front
+once the hands have been off `quiet` ms, and the run stopped when they touch the machine; without it a key
+throws and there is no `mouseDown`; `close()` quits the game, or ends it by its process id, and takes its `smak_*.cfg`
+files out of the mod's folder. `spawn` is how the program is started (a test's fake engine), `windows` how the
+window helper is made (src/play-window.mjs's `windowHelper`; a test's fake).
 `play.pngOfTga(bytes)` → a TGA screenshot (24 or 32 bits, raw or run-length) as a PNG's bytes.
 
 `play.playwrightFrom(folder)` → the Playwright module of that folder's `node_modules`, looked for there and

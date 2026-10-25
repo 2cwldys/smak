@@ -3,6 +3,20 @@
 The newest first. A version that changes what a model's file looks like, or that a model made before needs
 mending for, says so under **Mind**.
 
+## 0.28.0 (2026-10-25)
+
+The Steam game's window (PLAN.md, phases 3b and 3c), by `src/play-window.mjs`: a helper of C# that PowerShell
+compiles (nothing installed), for the windows of the one process a run started, by its id.
+- `smak play native --window-pictures`: each picture is the game's window as the person sees it (PrintWindow,
+  which draws a window of the graphics card: 36 ms a picture). A game that does not answer is said with what
+  its windows show, a box's words first.
+- `smak play native --input [--quiet 5000]`: `hold`, `press`, `click`, `mouse`, `tap` and `mouseDown` as real
+  keys and buttons (SendInput, scan code and key), only while the game's window is in front (never brought
+  there), only after the keyboard and mouse have been left alone `--quiet` ms, and the run stopped, and what
+  it held let go, when the person touches either. Without `--input`, a mouse step is refused before the game
+  starts and a key step says how. Measured in TS: a real left click takes "Press Fire To Play!" away and a
+  second puts the player in; W and D move the camera.
+
 ## 0.27.0 (2026-10-25)
 
 Art from a generator (PLAN.md, phase 5): `docs/IMPORT.md`, "Art from a generator": a generated texture as a
