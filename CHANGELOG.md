@@ -5,6 +5,18 @@ mending for, says so under **Mind**.
 
 ## Unreleased
 
+What nine agents tripped on (PLAN.md, "Which model does the work"):
+- **`findCompilers`** finds SDHLT's programs under the folder it unpacks to (`tools/Win64`, `tools/Linux`), so
+  `VHLT_DIR` or `--vhlt` may name that folder as it is.
+- **`smak build`** of a map with `--game <Half-Life>/valve` and no FGD holds its entities to the kit's own
+  profile of Half-Life (`--mod goldsrc`), which ships no `.fgd`; the no-FGD warning names the flags that give one.
+- **A room's own texture** given in place (`surfaces: { floor: { texture } }`) is reported by its room
+  (`rooms gallery.surfaces.floor: ...`), not as `[object Object]`.
+- **`smak item`** ends with a `PASS`/`FAIL` line, and the picture to look at.
+- **`check`'s warning on animations kept in other files** says the engine finds them by the file's own name, so a
+  copy under a new name needs them copied under it too.
+- **`AGENTS.md`**: a script imports the kit by its `file://` URL.
+
 Before sharing (PLAN.md, phase 4): `smak check --publish <folder>`.
 - **`publishCheck`** fails a folder that holds a file of the game's byte for byte, one of the game's textures
   inside a `.wad` or a `.bsp` of it (by its pixels and palette, under any name), a path into the person's own

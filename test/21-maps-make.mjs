@@ -871,6 +871,13 @@ test("without the compilers, every function that needs them says so in one sente
   for (const name of ["sdHLCSG", "sdHLBSP", "sdHLVIS", "sdHLRAD"]) writeFileSync(join(seedee, name), "");
   const sdhlt = findCompilers({ folder: seedee, env: {} });
   sure(sdhlt.found && sdhlt.tools.hlrad === join(seedee, "sdHLRAD"), JSON.stringify(sdhlt.tools));
+  // the release's own folder named, its programs found where it keeps them (tools/Win64, tools/Linux)
+  const release = join(tmp, "sdhlt-release");
+  const kept = join(release, "tools", process.platform === "win32" ? (process.arch === "ia32" ? "Win32" : "Win64") : "Linux");
+  mkdirSync(kept, { recursive: true });
+  for (const name of ["sdHLCSG", "sdHLBSP", "sdHLVIS", "sdHLRAD"]) writeFileSync(join(kept, name), "");
+  const fromRelease = findCompilers({ folder: release, env: {} });
+  sure(fromRelease.found && fromRelease.folder === kept, fromRelease.message);
   const mapFile = join(mapsFolder, "unbuilt.map");
   writeFileSync(mapFile, writeMap({ brushes: sealedRoom(), entities: roomEntities() }));
   const result = compileMap(mapFile, { compilers: none, wads: [wadFile] });

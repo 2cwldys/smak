@@ -142,6 +142,46 @@ installed in the game's folder is said `--ours`, or it is the game's file byte f
 
 From there SMAK's own import, fit and checks take over. Nothing of a paid service goes into the kit.
 
+## Which model does the work (measured 2026-10-25)
+
+Three of 1a's usual tasks, each given to Haiku, Sonnet and Opus as subagents with the same prompt and only
+`AGENTS.md` to start from: Barney's shirt made dark olive (re-skin), a flanged mace in Master Sword's
+one-handed blunt family (item from a kit), and a corridor, hall, raised gallery by stairs and storeroom behind
+a door, compiled with SDHLT (map from a spec). Every run passed its checks; the pictures were judged by Opus.
+
+| Task | Model | Tokens | Tools | Time | Runs | The pictures |
+| --- | --- | --- | --- | --- | --- | --- |
+| re-skin | Haiku | 90,700 | 24 | 106 s | 1 | right; green lighter than asked. Alone with Opus in naming the `barney01`-`03` files a renamed model needs |
+| re-skin | Sonnet | 66,900 | 15 | 70 s | 1 | right; passed the same warning without a word |
+| re-skin | Opus | 84,000 | 24 | 171 s | 3 | right; recoloured the palette, so the textures' unused margins cannot bleed blue at seams |
+| item | Haiku | 93,300 | 23 | 113 s | 2 | **wrong**: a ball with six spikes, not flanges, and it described the spikes without seeing it |
+| item | Sonnet | 60,000 | 13 | 61 s | 1 | right, the best of the three |
+| item | Opus | 66,500 | 19 | 116 s | 1 | right; head broader than the game's, said so |
+| map | Haiku | 101,400 | 27 | 118 s | 2 | right, and the closest to the brief (concrete floors, pale walls) |
+| map | Sonnet | 70,300 | 18 | 84 s | 3 | layout right; materials off the brief (busy lab panels), said so |
+| map | Opus | 79,500 | 16 | 112 s | 3 | right; two floors tile where metal was asked, said so |
+
+What it says:
+- **Haiku is not cheaper here.** It took the most tokens on every task (about 1.4 times Sonnet's), in more
+  rounds of small helper scripts. The checks kept every run sound; Haiku's one miss is the kind only a
+  picture shows, and it looked at the picture and did not see it.
+- **Sonnet is the cheapest and fastest**, and was right on shape; it was the least careful with what the
+  person asked of the look, and with a warning it should have passed on.
+- **Opus found the most about the kit itself** (below), and the subtlest risk (the margins).
+- So: Sonnet for work a check and one look decide; Opus to judge the pictures, to talk to the person, and for
+  anything that touches their machine (3c). Haiku is not given SMAK's work.
+
+What the runs found wrong with the kit (all fixed the same day; CHANGELOG "Unreleased"):
+- 4 of 9 runs first imported the kit by a bare `C:/` path; Node on Windows needs a `file://` URL, and no
+  guide says so.
+- All 3 map runs first set `VHLT_DIR` to SDHLT's folder; the programs are in `tools/Win64`. The build should
+  look there itself.
+- `smak item` ends with no `PASS`/`FAIL` line (1b missed it).
+- A room's own floor texture is reported as `fact [object Object]: ...`.
+- No Half-Life `.fgd` is found on a machine without one; one map run took Master Sword's and got a false fault.
+- The sequence-group warning on a model with `01`-`03` files does not say that a renamed model needs them
+  renamed too.
+
 ## Order and size
 
 | Phase | For | Size |

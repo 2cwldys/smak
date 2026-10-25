@@ -26,7 +26,8 @@ rock; you add what stands in them from a small vocabulary; you check, compile an
   their `zhlt.wad`), or SDHLT, seedee's fork of them that builds on Linux with CMake (`sdHLCSG`... and
   `sdhlt.wad`, found under either name). They are an outside program and no part of this kit. The person installs them once and
   names their folder in the `VHLT_DIR` environment variable (or puts them on the PATH, or you pass
-  `findCompilers({ folder })`). Without them the map is still written, read and checked; `compileMap` says in
+  `findCompilers({ folder })`, or `--vhlt <folder>`). SDHLT's own folder may be named as it unpacks: its programs are
+  found under `tools/Win64` (`tools/Linux`) by themselves. Without them the map is still written, read and checked; `compileMap` says in
   one sentence that it needs them. Ask the person where they are before assuming there are none.
 
 ## The loop

@@ -43,6 +43,16 @@ export const COMPILERS_VARIABLE = "VHLT_DIR";
  */
 const FILE_NAMES = (tool) =>
   [tool, `sd${tool.toUpperCase()}`].flatMap((name) => [`${name}_x64.exe`, `${name}.exe`, `${name}_x64`, name]);
+/**
+ * Where SDHLT's release keeps its programs under the folder it unpacks to (`sdhlt/tools/Win64/sdHLCSG_x64.exe`),
+ * so the folder of the release can be named as it is.
+ */
+const RELEASE_FOLDERS =
+  process.platform !== "win32"
+    ? ["tools/Linux", "Linux"]
+    : process.arch === "ia32"
+      ? ["tools/Win32", "Win32"]
+      : ["tools/Win64", "Win64", "tools/Win32", "Win32"];
 /** What the compilers are, said wherever they are missing. */
 const WHAT_THEY_ARE =
   "the map compilers VHLT (Vluzacn's ZHLT v34: hlcsg, hlbsp, hlvis, hlrad), an outside program that is not part of this kit";
@@ -102,8 +112,10 @@ const LOG_LIMIT = 64 * 1024 * 1024;
  */
 export function findCompilers({ folder, env = process.env } = {}) {
   const places = [];
-  if (folder) places.push(resolve(folder));
-  if (env[COMPILERS_VARIABLE]) places.push(resolve(env[COMPILERS_VARIABLE]));
+  /** A folder named, and the folders SDHLT's release keeps its programs in under it. */
+  const withRelease = (place) => [place, ...RELEASE_FOLDERS.map((sub) => join(place, sub))];
+  if (folder) places.push(...withRelease(resolve(folder)));
+  if (env[COMPILERS_VARIABLE]) places.push(...withRelease(resolve(env[COMPILERS_VARIABLE])));
   for (const place of (env.PATH ?? env.Path ?? "").split(delimiter)) if (place) places.push(place);
   const searched = [...new Set(places)];
   /** The compilers a folder has: `{ hlcsg: path, ... }` for those that are there. */

@@ -305,6 +305,7 @@ export default () => ({ tris: [...face([0, 0, 0], [0, 1, 0], [10, 1, 0], [10, 0,
   sure(/added models\/v_things\.mdl slat_ref: submodel 2/.test(said), said);
   sure(/const MODEL_VIEW_IDX 2/.test(said) && /const MODEL_BODY_OFS 3/.test(said), "its script's lines");
   sure(!/FAIL|ERROR/.test(said), said);
+  sure(/^PASS: slat added to 2 files; each checks for goldsrc and xash and keeps what it had$/.test(said.trim().split(/\r?\n/).pop()), said); // prettier-ignore
   const written = readFileSync(join(out, "models", "p_things.mdl"));
   sure(smak.readMdl(written).bodyparts[0].models.map((model) => model.name).slice(3).join() === "slat_rhand,slat_lhand,slat_floor", "the world file"); // prettier-ignore
   sure(existsSync(join(out, "pictures", "slat_v_things.png")), "the pictures");

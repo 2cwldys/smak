@@ -33,7 +33,10 @@ or held by the wrong end, and only the picture shows it.
 
 1. **Look at what is there.** `node bin/smak.mjs info model.mdl`, then `sheet` or `strip` to see it.
 2. **Write a script** in a working folder of your own (not inside this kit) that reads the model, changes it and
-   writes the result to a **new** file.
+   writes the result to a **new** file. It imports the kit by its file URL:
+   `import * as smak from "file:///C:/path/to/smak/src/index.mjs"` (and a kit as `.../smak/kits/bluntkit.mjs`).
+   A bare `C:/...` path fails on Windows, where Node reads `C:` as a URL's scheme, and the guides' `"smak"`
+   resolves only in a project that has the kit installed as a package.
 3. **Check it.** `check(mdl, "goldsrc")` in the script, or `node bin/smak.mjs check out.mdl`. Fix every error.
 4. **Draw it and look at the PNG.** Compare with the picture from step 1. Iterate on the script.
 

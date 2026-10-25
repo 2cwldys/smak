@@ -865,7 +865,7 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
   const catalog = wadFiles.length ? wadCatalog(wadFiles) : [];
   const gameTextures = new Map();
   const picked = new Map();
-  const fromWads = (word, material) => {
+  const fromWads = (word, material, called = word) => {
     if (picked.has(word)) return picked.get(word);
     let name = null;
     if (material.texture) {
@@ -873,16 +873,16 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
       if (!found) throw new Error(`texture ${word}: ${material.texture} is in none of the .wad files given (${wadFiles.map((file) => basename(file)).join(", ") || "none"})`);
       gameTextures.set(found.name, found.file);
       name = found.name;
-      report.facts.push(`${word}: ${found.name} of ${found.wad}, as named`);
+      report.facts.push(`${called}: ${found.name} of ${found.wad}, as named`);
     } else {
       const choice = pickTexture(catalog, material.pick);
       if (choice.pick) {
         gameTextures.set(choice.pick.name, choice.pick.file);
         name = choice.pick.name;
-        report.facts.push(`${word}: picked ${choice.pick.name} of ${choice.pick.wad} (colour off ${choice.off.toFixed(2)}${choice.others.length ? `; next: ${choice.others.join(", ")}` : ""})`);
+        report.facts.push(`${called}: picked ${choice.pick.name} of ${choice.pick.wad} (colour off ${choice.off.toFixed(2)}${choice.others.length ? `; next: ${choice.others.join(", ")}` : ""})`);
       } else {
         const instead = material.pick.else ?? { base: "plaster", tone: material.pick.tone };
-        report.facts.push(`${word}: a GAP in the .wad files given (${choice.gap}${choice.others.length ? `; nearest: ${choice.others.join(", ")}` : ""}): made into the map's own .wad`);
+        report.facts.push(`${called}: a GAP in the .wad files given (${choice.gap}${choice.others.length ? `; nearest: ${choice.others.join(", ")}` : ""}): made into the map's own .wad`);
         picked.set(word, null);
         return null;
       }
@@ -891,13 +891,14 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
     return name;
   };
   const nameOfKey = (key) => textureName(key, liquids.has(key), meshed.has(key));
-  const textureOf = (word, { liquid = false } = {}) => {
+  // `called`: what the report calls it, for a material given in place (a room's `surfaces.floor: { texture }`)
+  const textureOf = (word, { liquid = false, called } = {}) => {
     if (word === "sky") return used.set("sky", { base: "glass", tone: spec.night ? [0.05, 0.06, 0.1] : [0.45, 0.6, 0.85] }) && "sky";
     let material = materials[word] ?? word;
     // a theme's word may name one of the spec's own textures (`outside: "siding_blue"`): that is the texture
-    if (typeof material === "string" && material !== word && spec.textures?.[material] !== undefined) return textureOf(material, { liquid });
+    if (typeof material === "string" && material !== word && spec.textures?.[material] !== undefined) return textureOf(material, { liquid, called });
     if (material && typeof material === "object" && (material.texture || material.pick)) {
-      const name = fromWads(word, material);
+      const name = fromWads(word, material, called ?? (typeof word === "string" ? word : "a texture given in place"));
       if (name) return name;
       material = material.pick.else ?? { base: "plaster", tone: material.pick.tone };
     }
@@ -1332,7 +1333,7 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
       if (banded) pieces = pieces.flatMap((piece) => banded.map((b) => ({ min: [piece.min[0], piece.min[1], Math.max(piece.min[2], b.z0)], max: [piece.max[0], piece.max[1], Math.min(piece.max[2], b.z1)], band: b })).filter((p) => p.max[2] - p.min[2] > 0.5));
       // a lined wall's picture stands on its room's floor (or its band's foot), as the rock's does (source.mjs onFloor)
       const textureFor = (piece) => {
-        const name = piece.band?.wall ?? textureOf(word);
+        const name = piece.band?.wall ?? textureOf(word, typeof word === "string" ? {} : { called: `rooms ${room.id}.surfaces.${face}` });
         const z = piece.band?.z0 ?? room.min[2];
         const walls = face === "walls" ? { east: onFloor(name, z, room.min[1]), west: onFloor(name, z, room.min[1]), north: onFloor(name, z, room.min[0]), south: onFloor(name, z, room.min[0]) } : null;
         return walls ? { top: name, bottom: name, sides: name, ...walls } : name;
@@ -2424,7 +2425,7 @@ export function buildMapSpec(given, { out, compilers, folder, fgd = [], wads = [
   const plan = checkPlan(delivered, { textures, definitions, ...(profile ? { mod: profile } : {}) });
   if (definitions) report.facts.push(`entities checked against ${definitions.from.join(", ")} (${Object.keys(definitions.classes).length} classes)`);
   else if (profile) report.facts.push(`entities checked against the profile of ${profile.title ?? profile.name}`);
-  else warnings.push("no FGD given: the entities' classes and keys were not checked against the game's definitions");
+  else warnings.push("no FGD given: the entities' classes and keys were not checked against the game's definitions (--fgd <the mod's .fgd>, or --mod <profile>; --mod goldsrc for Half-Life's own classes)");
   report.faults.push(...plan.errors);
   warnings.push(...plan.warnings);
   if (plan.leak) report.faults.push("the plan's flood finds a way out to the void: the map leaks");

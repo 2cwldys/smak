@@ -1567,6 +1567,17 @@ async function item({ command, file, flags, listed }) {
   }
   console.log(`its script${family.script ? ` (after ${family.script})` : ""}:`);
   for (const line of smak.itemConstants(result)) console.log(`  ${line}`);
+  // the last line says what decides, as a checking command's does; the pictures are what the checks cannot see
+  console.log(
+    flags.pictures
+      ? `look at ${join(to, "pictures")}: the checks cannot tell whether it is the shape asked for`
+      : "no pictures: --pictures draws each new submodel beside the one it was laid on, to look at",
+  );
+  console.log(
+    wrong
+      ? `FAIL: ${wrong} faults in ${name} (above)`
+      : `PASS: ${name} added to ${result.files.size} files; each checks for ${ENGINES.join(" and ")} and keeps what it had`,
+  );
   process.exit(wrong ? 1 : 0);
 }
 
@@ -2838,7 +2849,10 @@ async function mapSpecCommand({ command, file, flags, listed }) {
   };
   const readFile = (given) => readFileSync(existing(resolve(folder, String(given).replace(/^(work|models):/, ""))));
   // a mod's profile: --mod, or the spec's own `mod` (a profile's file beside the spec, or goldsrc)
-  const modGiven = flags.mod ?? (typeof spec.mod === "string" ? (spec.mod === "goldsrc" ? "goldsrc" : resolve(folder, spec.mod)) : undefined);
+  // and a map for Half-Life itself (--game <Half-Life>/valve, no FGD named) is held to the kit's own profile of it,
+  // since Half-Life ships no .fgd of its own to hold it to
+  const forHalfLife = (listed.game ?? []).length > 0 && listed.game.every((given) => basename(resolve(given)).toLowerCase() === "valve") && !flags.fgd && !spec.fgd; // prettier-ignore
+  const modGiven = flags.mod ?? (typeof spec.mod === "string" ? (spec.mod === "goldsrc" ? "goldsrc" : resolve(folder, spec.mod)) : forHalfLife ? "goldsrc" : undefined); // prettier-ignore
   const mod = await profileOf({ ...flags, mod: modGiven }, listed);
   const { report, files } = buildMapSpec(spec, {
     out,

@@ -404,7 +404,7 @@ function inspect(src, engine, info, report) {
   const elsewhere = seqs.filter((s) => s.group);
   if (elsewhere.length)
     warnings.push(
-      `${elsewhere.length} animations are kept in other files (name01.mdl...): they cannot be read or changed here`,
+      `${elsewhere.length} animations are kept in other files (name01.mdl...): they cannot be read or changed here, and the engine finds them by this file's own name, so a copy under a new name needs them copied under it too (barney_olive.mdl takes barney_olive01.mdl...)`,
     );
   if (!info.textures.length && info.bodyparts.some((bp) => bp.models.some((m) => m.meshes.length)))
     warnings.push(
