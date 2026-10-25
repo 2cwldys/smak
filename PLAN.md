@@ -80,10 +80,17 @@ First targets:
 - a map of ours for The Specialists, then Half-Life;
 - `msc` is installed in the Steam folder too.
 
-To find out first:
-- where this build writes the console file (`qconsole.log` in the game folder or the mod's);
-- whether `wait` and `echo` in a `.cfg` are enough to sequence the steps;
-- whether Steam has to be running.
+Found by hand, 2026-10-24 (TS, `h9_te_neuropolis`, build 8684, Steam running):
+- the console file is `qconsole.log` in the Half-Life folder, not the mod's, and each run **adds** to it: a run
+  reads only what follows its own start;
+- `+exec` runs while the map is still loading (the player not in yet), so a step that needs the player waits
+  first: 1,500 `wait` lines brought the player in (`status` showed them at 1616 1056 38, 14 s in). Frames, not
+  seconds: the run should wait on a line in the log instead where it can;
+- `screenshot` writes `HalfLife00.tga` (1024×768, 24-bit, bottom-up) in the mod's folder: a picture of the real
+  game with no window capture, so 3b may not be needed;
+- `quit` at the end closes it cleanly (18 s for the whole run);
+- the log already tells faults: Neuropolis lacks `sound/callhascome.wav` and its sky `gfx/env/neurort.tga`;
+- with Steam running it starts with no prompt; without Steam was not tried.
 
 Measure: a map that passes `maps check` is played in TS from Steam by one command, and its log decides.
 
