@@ -99,6 +99,23 @@ A new checker (anything that answers PASS/FAIL, or reports errors or warnings) c
 inputs in `test/broken/` with exactly one thing wrong each and the sentence it must give, and its line in
 `test/broken/checkers.mjs`. The self-test fails while a checker has neither a case nor a reason written there.
 
+## Handing work to another agent
+
+When you give a task to a worker (a subagent, another model), as measured in `PLAN.md` ("Which model does the
+work"):
+- **One task to each worker**, with the guide and the template it needs named, and the person's words about
+  the look given as they were said. A worker that has to find its guide from this index spends most of its
+  tokens doing so.
+- **The worker's report quotes every `WARN` line as the kit gave it**, says what each check answered, and names
+  the files and the pictures. A warning left unsaid is the most common miss.
+- **You look at the pictures yourself**, against what the person asked, not against the worker's account:
+  every check can pass on a shape or a material that is not what was asked, and a worker can describe what it
+  meant to draw rather than what it drew.
+- **Keep for yourself**: talking to the person, and anything that reaches their machine beyond the working
+  folder (`smak play native --input` above all: ask them before each run).
+
+In Claude Code, `.claude/agents/smak-worker.md` is such a worker, on Sonnet.
+
 ## Reporting to the person
 
 They cannot read the model; you can. When you hand work over, say what file to put where, what you changed in

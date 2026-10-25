@@ -3,6 +3,12 @@
 The newest first. A version that changes what a model's file looks like, or that a model made before needs
 mending for, says so under **Mind**.
 
+## Unreleased
+
+`AGENTS.md`, "Handing work to another agent": one task a worker, its guide named, every `WARN` quoted in its
+report, the pictures looked at by the agent that gave the task, against what the person asked; and
+`.claude/agents/smak-worker.md`, such a worker for Claude Code, on Sonnet (PLAN.md, "Which model does the work").
+
 ## 0.28.0 (2026-10-25)
 
 The Steam game's window (PLAN.md, phases 3b and 3c), by `src/play-window.mjs`: a helper of C# that PowerShell
