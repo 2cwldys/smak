@@ -13,6 +13,7 @@ export * from "./render.mjs";
 export * from "./anim-gif.mjs";
 export * from "./icon.mjs";
 export * from "./check.mjs";
+export * from "./publish.mjs";
 export * from "./qem.mjs";
 export * from "./sound.mjs";
 export * from "./layout.mjs";

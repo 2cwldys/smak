@@ -98,8 +98,10 @@ Measure: a map that passes `maps check` is played in TS from Steam by one comman
 ran in 4.0 s and failed by the log, as it should: Neuropolis lacks its sky. Commands are not put in a `.cfg`
 once: the start `.cfg` keeps a loop that reads a file every 5 frames, and each command is a file of its own that
 runs once and answers (`SMAK_ACK n`) in 0.1 to 0.2 s, so a run is driven step by step like the browser's.
-A map is in when `status` names the player. Test 108 holds the protocol against a fake engine. Not done: the TS
-profile's steps into a team (a walk in TS moves the player only after them).
+A map is in when `status` names the player. Test 108 holds the protocol against a fake engine. TS cannot be
+entered by the console: after `slot7` (Random) its client lets the player in only on the key bound to `+attack`
+(it prints "MOUSE1 is unbound" for the console's `+attack`), so a TS run is a spectator's; walking it needs 3c's
+real input. A step's `bind` was found saved into the person's config.cfg: the driver now puts the file back.
 
 **3b. Pictures of the native game** (only after 3a works). A picture of the game's window through Windows'
 own capture (`Windows.Graphics.Capture`; ordinary capture comes out black for GPU games), with a PowerShell
@@ -124,6 +126,13 @@ never be needed.
 
 It warns on large archives and on a missing readme. Measure: it fails on a broken folder made for it (see 2a)
 and passes a map we have released.
+
+**Done 2026-10-24.** Four broken cases (a game's sound copied, a game's texture in one's own `.wad`, a path into
+the home folder, a GitHub token) fail for their reason, and their twin passes. The released map did not pass,
+and was right not to: `h9_te_neuropolis.bsp`, as handed to Havoc9, carries 11 of `valve/halflife.wad`'s
+textures inside it (`C1A3FLOOR02`, `CRATE05`, ...), which TS players have already, being Half-Life's. Its
+plugin's `ts_matchmode.cfg` names `D:\Downloads\TSM` in a comment (theirs): a warning. A map of one's own
+installed in the game's folder is said `--ours`, or it is the game's file byte for byte.
 
 ## Phase 5: art from a generator (a recipe, not code)
 

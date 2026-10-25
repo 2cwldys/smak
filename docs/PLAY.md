@@ -50,8 +50,14 @@ the start and over in 4 to 9 (Neuropolis in TS, 2026-10-24).
 - Its log is the mod's own words, including what it could not load: a missing sound, sky or model is a line
   (`Warning:  Unable to open ...`, `R_LoadSkys: Couldn't load ...`), so `--expect-not` holds a map to having
   every file it names.
-- In The Specialists the player begins as a spectator with the buy menu open: a walk moves him only once the
-  profile's steps have got him into a team.
+- The person's settings are theirs: the game saves its binds and settings into the mod's `config.cfg` as it
+  quits, so the run keeps the file as it was and puts it back (a step's `bind` does not stay).
+- In The Specialists the player begins as a spectator with the buy menu open. `slot7` takes its Random and
+  closes it; "Press Fire To Play!" then wants the key bound to `+attack`, which TS's client reads itself, and
+  `+attack` from the console does not let him in (measured 2026-10-24). So a TS run looks round its map as a
+  spectator and is held to what the game says (a missing file, a script's line), not walked.
+- Two starts of `ts_lobbyduel` in seven ended by themselves as the player connected (code 0, no line): the run
+  stops and says the game ended; run it again.
 
 ## The commands
 

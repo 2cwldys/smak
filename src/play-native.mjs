@@ -22,7 +22,14 @@
 //   - `screenshot` writes `HalfLife<nn>.tga` (24 bits, rows from the bottom) in the mod's folder and says
 //     `Wrote HalfLife<nn>.tga`: the picture is the game's own, at the window's size;
 //   - `quit` closes it.
-// Without Steam running was not tried.
+// Without Steam running was not tried. The game writes the person's binds and settings to the mod's
+// config.cfg as it quits, so a step's `bind` would stay theirs: the driver keeps the file as it was before the
+// run and puts it back. Two starts in seven of ts_lobbyduel ended by themselves (code 0, no line, no dump) as
+// the player connected; Neuropolis never did. The run then says the game ended.
+//
+// THE SPECIALISTS lets the player in ("Press Fire To Play!") by the key bound to +attack, read by its client
+// library, and not by `+attack` from the console ("MOUSE1 is unbound"): its player stays a spectator here.
+// `slot7` takes the buy menu's Random and closes it.
 //
 // What it has not: keys, the mouse, `view` and `look` (the console tells where the player stands, `status`,
 // and not where he looks). A walk (`+forward`) and a turn by time are console commands and work; a step that
@@ -157,6 +164,10 @@ export function nativeDriver({
   let next = 1;
   /** The lines between the driver's own SMAK_ASK and SMAK_ASKED are its own too. */
   let asking = false;
+  /** The person's settings as the game had them before the run: a `bind` or a setting a step changes is
+   * saved into config.cfg as the game quits, and put back as it was. */
+  const settings = join(folder, "config.cfg");
+  let kept = null;
 
   const note = (kind, text) => heard.push({ at: Date.now(), kind, text });
   const read = () => {
@@ -232,7 +243,8 @@ export function nativeDriver({
       if (!existsSync(program)) fail(`there is no ${exe} in ${game}`);
       if (!existsSync(folder)) fail(`there is no ${mod} in ${game}: the mod's folder, as -game takes it`);
       for (const name of ours()) unlinkSync(join(folder, name));
-      offset = existsSync(logFile) ? statSync(logFile).size : 0;
+      kept = existsSync(settings) ? readFileSync(settings) : null;
+      offset =existsSync(logFile) ? statSync(logFile).size : 0;
       writeFileSync(join(folder, "smak_in.cfg"), "");
       writeFileSync(join(folder, "smak_run.cfg"), startCfg());
       const given = ["-game", mod, "-insecure", "-windowed", "-w", String(width), "-h", String(height), "-condebug", ...args, "+exec", "smak_run.cfg"]; // prettier-ignore
@@ -290,6 +302,8 @@ export function nativeDriver({
       }
       read();
       for (const name of ours()) unlinkSync(join(folder, name));
+      if (kept && Buffer.compare(kept, existsSync(settings) ? readFileSync(settings) : Buffer.alloc(0)) !== 0)
+        writeFileSync(settings, kept);
       child = null;
     },
   };

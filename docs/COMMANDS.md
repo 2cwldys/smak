@@ -40,6 +40,12 @@ node bin/smak.mjs info <mdl> [--json] [--hitboxes] [--boxes]   bones, bodyparts 
                                                    (activity, travel and speed), events, attachments, hit boxes
 node bin/smak.mjs check <mdl> [--engine xash]      errors and warnings; exit code 1 on an error
                                                    (--source original.mdl: what the original has too is marked "inherited")
+node bin/smak.mjs check --publish <folder> [--game <Half-Life folder>] [--ours ts/maps/mymap.bsp ...]
+                                                   before a folder is shared: FAIL on a file that is the game's byte for byte, one
+                                                   of the game's textures inside a .wad or .bsp of it, a path into the person's own
+                                                   folder (text, a map's entities), a key or a token; WARN on another absolute path,
+                                                   an archive over 50 MB, no readme. The game is the Half-Life folder Steam has
+                                                   unless told; --ours: a file of the person's installed in it (a map of theirs)
 node bin/smak.mjs sheet <mdl> -o s.png             six views in one picture
 node bin/smak.mjs render <mdl> -o r.png --yaw 30 --pitch 15 [--view first|side|front|top] [--ground]
 node bin/smak.mjs strip <mdl> -o a.png --seq reload --count 12 [--view first]   (a walk: --view side --ground)

@@ -20,6 +20,7 @@ export const CHECKERS = [
     at: "src/bodies.mjs putBody, src/reskin.mjs ownPixels",
     none: "a tool's note on what it did (a texture of that name kept, a picture copied smaller), not a check of an input",
   },
+  { name: "publishCheck", at: "src/publish.mjs publishCheck" },
   // ── maps ──
   { name: "checkPlan", at: "src/maps/plan.mjs checkPlan" },
   { name: "leakHint", at: "src/maps/plan.mjs leakHint" },

@@ -148,6 +148,7 @@ const VALUE_FLAGS = [
 // the flags of the map commands that may be given more than once: each time adds to a list
 const LISTED_FLAGS = [
   "game",
+  "ours",
   "focus",
   "dll",
   "wad",
@@ -560,6 +561,27 @@ function check({ file, src, flags }) {
     shown: [...errors, ...warnings],
   });
   process.exit(report.errors.length ? 1 : 0);
+}
+
+/**
+ * check --publish: a folder about to be shared, held against the game's files (--game, else the Half-Life
+ * folder Steam has) for what is not the person's to share (src/publish.mjs).
+ */
+function checkPublish({ file, flags, listed }) {
+  if (!statSync(file).isDirectory()) fail(`check --publish: ${file} is a file: give the folder that is to be shared`);
+  const game = listed.game?.[0] ?? maps.findHalfLife();
+  const report = smak.publishCheck(file, { game: game ?? undefined, ours: listed.ours ?? [] });
+  const errors = report.errors.map((error) => `ERROR ${error}`);
+  const warnings = report.warnings.map((warning) => `WARN  ${warning}`);
+  const unheld = game ? "" : " (no game's folder was found: its files and textures were not held against; --game <folder>)";
+  answered("check-publish", file, flags, {
+    detail: [...report.facts.map((fact) => `      ${fact}`), ...errors, ...warnings],
+    passed: !errors.length,
+    said: errors.length ? `${errors.length} ${errors.length === 1 ? "thing" : "things"} not to share${unheld}` : `fit to share${warnings.length ? `, with ${warnings.length} warnings` : ""}${unheld}`, // prettier-ignore
+    shown: [...errors, ...warnings],
+    look: "no picture to look at: the files decided",
+  });
+  process.exit(errors.length ? 1 : 0);
 }
 
 // ── pictures of the model ──────────────────────────────────────────────────
@@ -4338,6 +4360,11 @@ ${Object.values(COMMANDS)
 
 // ── the start ──────────────────────────────────────────────────────────────
 const { flags, args, listed } = parseArgs(process.argv.slice(2));
+// `check --publish <folder>`: the folder was taken for the flag's value
+if (args[0] === "check" && typeof flags.publish === "string") {
+  args.splice(1, 0, flags.publish);
+  flags.publish = true;
+}
 const [command, file, ...rest] = args;
 if (!command || command === "help" || flags.help) {
   console.log(HELP);
@@ -4349,6 +4376,15 @@ if (!file) fail(HELP);
 const entry = Object.hasOwn(COMMANDS, command) ? COMMANDS[command] : null;
 // `address: true`: what follows the command is a page's address, not a file
 if (!entry?.address && !existsSync(file)) fail(`no such file: ${file}`);
+// check --publish is handed a folder to be shared, not a model
+if (command === "check" && flags.publish) {
+  checkFlags(flags);
+  try {
+    checkPublish({ file, flags, listed });
+  } catch (error) {
+    fail(`check --publish: ${sayOf(error)}`);
+  }
+}
 // a page is handed a folder as readily as a model; every other command reads a file
 if (!entry?.page && !entry?.folder && !entry?.address) existing(file);
 checkFlags(flags);

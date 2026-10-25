@@ -181,6 +181,15 @@ format's numbers by name (`ACTIVITY` only those read off Half-Life's own models:
 
 `smak contract <mdl> [--json] [--against reference.mdl]` prints it, or what the model breaks (exit code 1).
 
+## Before sharing (`src/publish.mjs`)
+
+`publishCheck(folder, { game, ours = [], home })` → `{ errors, warnings, facts }`, each a sentence naming the
+file. Errors: a file that is one of `game`'s byte for byte (found by size, then hashed), one of the game's
+textures (the same pixels and palette, whatever its name) inside a `.wad` or a `.bsp` of the folder, a path into
+`home` or any person's folder (`C:\Users\<name>`, `/home/<name>`) in a text or a map's entities, a key or a
+token. Warnings: another absolute path in a text or a map, an archive over 50 MB, no readme. `ours`: paths in
+the game's folder that are the person's own and not held against. `smak check --publish <folder>`.
+
 ## Animations written as poses (`src/animate.mjs`, exported as `animate`)
 
 A pose is `{ q, p }`: for each bone a turn and a place, plain data that no call changes.

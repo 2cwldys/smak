@@ -5,6 +5,14 @@ mending for, says so under **Mind**.
 
 ## Unreleased
 
+Before sharing (PLAN.md, phase 4): `smak check --publish <folder>`.
+- **`publishCheck`** fails a folder that holds a file of the game's byte for byte, one of the game's textures
+  inside a `.wad` or a `.bsp` of it (by its pixels and palette, under any name), a path into the person's own
+  folder (in a text or a map's entities) or a key or a token; it warns of another absolute path, an archive over
+  50 MB and a missing readme. The game is the Half-Life folder Steam has unless `--game`; `--ours` names a file
+  of the person's installed there. The whole Half-Life folder (16,805 files, 8,861 textures) costs 3 seconds.
+  Its four broken cases are in `test/broken/publish.mjs`.
+
 The Steam game played by its console (PLAN.md, phase 3a): `smak play native`.
 - **`smak play native --map <name> --mod ts`** plays the game Steam installed, GoldSrc's own engine, with
   nothing but Node: `hl.exe -game <folder> -insecure -windowed -condebug +exec smak_run.cfg`, a loop in that
@@ -12,6 +20,8 @@ The Steam game played by its console (PLAN.md, phase 3a): `smak play native`.
   (0.1 to 0.2 s), the console read from `qconsole.log` from where the run began, a map waited for until
   `status` names the player, the game's own `screenshot` made a PNG (`pngOfTga`), `quit` at the end. A run of
   Neuropolis in TS is in the map in 2 s and over in 4. It never joins a server; it has no keys, mouse or view.
+  The person's `config.cfg` is put back as it was after the run (the game saves a step's `bind` into it).
+  In TS the player stays a spectator: its client lets him in only on the key bound to `+attack`.
 - `play.nativeDriver`, and a driver's `loaded`: the line a session waits for after `map` in place of the
   profile's (the Steam game never says Xash's "Custom resource propagation complete").
 

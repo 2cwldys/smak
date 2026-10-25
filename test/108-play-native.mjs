@@ -21,6 +21,7 @@ const halfLifeOf = (name) => {
   mkdirSync(join(game, "ts"), { recursive: true });
   writeFileSync(join(game, "hl.exe"), "");
   writeFileSync(join(game, "qconsole.log"), "a line of an earlier run\nsmak_probe\n");
+  writeFileSync(join(game, "ts", "config.cfg"), 'bind "ESCAPE" "cancelselect"\n');
   return game;
 };
 
@@ -65,6 +66,7 @@ const fakeGame = ({ deaf = false, lonely = false } = {}) => {
     let map = null;
     let inFor = 0;
     let shots = 0;
+    const binds = [];
     const timer = setInterval(() => {
       if (map && inFor > 0) inFor--;
       for (let count = 0; buffer.length && count < 500; count++) {
@@ -89,7 +91,10 @@ const fakeGame = ({ deaf = false, lonely = false } = {}) => {
           const file = `HalfLife${String(shots++).padStart(2, "0")}.tga`;
           writeFileSync(join(mod, file), TGA);
           say(`Wrote ${file}`);
-        } else if (name === "quit") {
+        } else if (name === "bind") binds.push(command);
+        else if (name === "quit") {
+          // as the game does, the person's binds written as it quits
+          writeFileSync(join(mod, "config.cfg"), `${binds.join("\n")}\n`);
           clearInterval(timer);
           setTimeout(() => child.emit("exit", 0), 5);
           return;
@@ -140,7 +145,7 @@ test("pngOfTga: a screenshot of 24 bits from the bottom, and the same run-length
 });
 
 await testAsync(
-  "a run in the Steam game by its console: the map waited for until the player is in, a picture, a command once, the log from the run's start",
+  "a run in the Steam game by its console: the map waited for until the player is in, a picture, a command once, the log from the run's start, the person's settings put back",
   "a native run",
   async () => {
     const game = halfLifeOf("run");
@@ -149,7 +154,7 @@ await testAsync(
     const out = join(tmp, "native", "run-out");
     const run = await play({
       ...{ driver, map: "ts_lobbyduel", out, pause: 0 },
-      steps: [{ shot: "start" }, { command: "echo smak_probe", until: "smak_probe" }, { walk: 50 }, { expect: "smak_probe" }],
+      steps: [{ shot: "start" }, { command: "echo smak_probe", until: "smak_probe" }, { walk: 50 }, { command: 'bind "MOUSE1" "+attack"' }, { expect: "smak_probe" }], // prettier-ignore
       expectNot: ["a line of an earlier run"],
     });
     sure(run.passed, `the run failed: ${run.expectations.map((each) => each.line).join("; ")}`);
@@ -164,6 +169,9 @@ await testAsync(
     const said = readFileSync(run.logFile, "utf8");
     sure(!/console\s+(SMAK_(ACK|UP|ASK)|1 users)/.test(said) && /console\s+SMAK entered ts_lobbyduel/.test(said), said); // prettier-ignore
     sure(!readdirSync(join(game, "ts")).some((name) => /^smak_|\.tga$/.test(name)), `left in the mod's folder: ${readdirSync(join(game, "ts"))}`); // prettier-ignore
+    // the bind a step made was the game's to save, and the person's settings are as they were
+    const settings = readFileSync(join(game, "ts", "config.cfg"), "utf8");
+    sure(settings === 'bind "ESCAPE" "cancelselect"\n', `config.cfg is now ${JSON.stringify(settings)}`);
   },
 );
 
