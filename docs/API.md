@@ -740,6 +740,42 @@ and `docs/MAPS-DESIGN.md` (what makes a map good to look at and to play, as rule
 map's monsters come: `spawnsOf`, `spawnsTable`; its character in numbers: `characterOf`, `characterAgainst`,
 `learnCharacter`).
 
+## The Source engine (`src/source/`, exported as `source`)
+
+`import { source } from "smak"`. What a port keeps, changes and leaves, and why: `docs/SOURCE.md`.
+
+- `portToGmod(file, { out, name, folder, collision, studiomdl, gmod, compile, picture })` → `{ passed, faults,
+  warnings, said, qc, files, modelname, picture }`: the whole port of a GoldSrc model. It reads the model (its
+  `t.mdl` and `01.mdl` files beside it), writes the files, compiles them, holds the compiled model to the
+  original and draws it (`picture`, a sheet).
+- `portToSource(src, { name, folder = "smak", groups, collision = "auto" })` → `{ name, modelname, qc, files:
+  [{ path, data }], warnings, facts }`: the compiler's files of a model, with no disk and no compiler.
+  - `facts`: what the compiled model must have again (bones, sequences, materials, bodygroups, skins,
+    attachments, hitboxes, corners).
+  - `writePort(port, out)` writes the files and returns the QC's path.
+  - `vmtOf(path, flags)`: the VMT of a GoldSrc texture's flags.
+  - `sourceName(name)`: a name as Source's files want it.
+- `findStudiomdl({ file, env })`, `findGmod({ env })`, `compileQc(qcFile, { studiomdl, out, gmod, timeout })` →
+  `{ files, warnings, said, took }`: GMod's compiler, run in a game folder of its own. It throws, with the
+  compiler's `ERROR` lines, on a failure.
+- `comparePort(facts, compiled, triangles)` → `{ passed, faults, said }`: the compiled model (`readSourceMdl`)
+  and, with `triangles`, its corners held to the port's facts.
+- `readSourceMdl(bytes)` → `{ version, name, bones, sequences, materials, cdmaterials, skins, bodyparts,
+  attachments, hitboxes, eyes, hull, view }`: Source's `.mdl`, versions 44 to 49.
+- `readVvd(bytes)`, `readVtx(bytes)`, `sourceTriangles(mdl, vvd, vtx)` → `[{ bodypart, model, mesh, material,
+  corners: [{ p, n, uv, bones }] }]`: its triangles at rest, in model space (LOD 0).
+- `sourceFiles({ folders, vpks })` and `gmodFiles(gmod, { more })` → `{ has, read }`: a game's files, the folders
+  before the packs.
+  - `readSourceModel(path, files)` → `{ mdl, triangles, materials, missing }`: a model with its VMTs and VTFs.
+  - `readVmt(text)` → `{ shader, keys }`.
+  - `sourceTris(model, { body, skin })`: its triangles as `render` takes them (`render(null, { tris })`).
+  - `renderSource(model, { sheet, ...render's options })`.
+- `openVpk(dirFile)` → `{ files, has, read }`: Valve's packs, versions 1 and 2.
+- `writeVtf({ width, height, rgba }, { alpha, flags })`, `readVtf(bytes)` → `{ width, height, rgba, format, flags,
+  mips }`, `powerOfTwo(picture, { alpha })`, `VTF_FORMAT`, `VTF_FLAG`: Source's textures. Written uncompressed
+  (BGR888, BGRA8888 with one-bit alpha); DXT1, DXT3 and DXT5 are read too.
+- `smdOf({ bones, frames, triangles })`: the compiler's text of a mesh or an animation.
+
 ## Playing a map in the game (`src/play.mjs`, exported as `play`)
 
 `import { play } from "smak"` (or `"smak/play"`). What it needs and the steps' format: `docs/MAPS-MAKING.md`,

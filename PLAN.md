@@ -169,6 +169,110 @@ light divided out, and the report warned of too little grain (0.016, Valve's con
 says to read. Writing it found the guide's example wrong first (there is no `concrete` base). Not yet tried: a
 real generator's picture or mesh.
 
+## Phase 6: the Source engine (Garry's Mod), models first
+
+Started 2026-10-25. What is out there was read first. There are converters that call the same outside programs:
+- [G2SConverter](https://github.com/mrglaster/G2SConverter), 2022, with mdldec, VTFCmd and studiomdl, plus AI
+  upscaling;
+- the decompile-then-compile guides (Valve's wiki, the Steam guides);
+- for maps, [goldsrctosource](https://github.com/GameChaos/goldsrctosource), unfinished.
+
+Nothing writes Source models without Valve's compiler, and every source found only reads them. SMAK's way: it
+reads the GoldSrc model itself and writes the compiler's input. The compiler is GMod's own studiomdl, an
+outside program the person has with the game, the way the map compilers are VHLT.
+
+Measured by hand first (2026-10-25):
+- GMod's `bin/win64/studiomdl.exe` compiles a QC from the command line. With `-game` pointed at a folder that
+  holds a `gameinfo.txt`, it writes `models/` there and nothing into GMod.
+- It writes MDL 48, VVD 4 and VTX 7.
+- A missing file is an `ERROR:` line and a nonzero exit.
+- The same `bin/` has vtex, vbsp, vvis, vrad, hlmv and hammer.
+
+**6a. A GoldSrc model ported to GMod.**
+- Bones, rest pose and every animation go out as SMD, each frame's six values as the GoldSrc file holds them.
+- Each bodypart and submodel becomes a `$bodygroup` (an empty submodel `blank`), skin families a
+  `$texturegroup`.
+- Attachments and hit boxes are carried over.
+- An animation's travel taken out of its frames (LX LY) is put back and taken out again by Source's own
+  `LX LY`. Activities and events keep their numbers.
+- Each texture becomes a VTF, written by the kit (power of two, mipmapped; the masked colour as one-bit alpha),
+  and a VMT: VertexLitGeneric, alpha-tested, additive or unlit by the GoldSrc texture's flags.
+- A model with one bone gets a box to collide with, so it can be a physics prop.
+- The result is an addon folder (`models/`, `materials/`) beside the sources, compiled in a folder of its own.
+- What Source has no place for is warned of, one line each: bone controllers (a pose parameter in Source),
+  a second blend, chrome.
+- Measure: Half-Life's own models (a scientist, a monster with animations in another file, a weapon's v_ and
+  w_, a prop) compile with no error, and the compiled file holds the bones, animations, materials and
+  bodygroups the original had.
+
+**6a done 2026-10-25**: `smak gmod-port`, `source.portToGmod`, `docs/SOURCE.md`. All 210 of Half-Life's models
+compile and hold every bone, animation, material, bodygroup, skin, attachment and hit box. They also hold
+every corner, within 0.05 units and on the same place of its picture.
+
+What the 210 found:
+- `$origin 0 0 0 -90`: Source's compiler turns what it reads by 90 degrees, as GoldSrc's did. Measured on a
+  test triangle.
+- The corners written the other way round: GoldSrc's files keep them clockwise against their normals.
+- After the compile they wind as Valve's own do. Kleiner, the oil drum and the crate in GMod's packs:
+  6498 of 6520, 252 of 252, 200 of 200.
+- Source refuses, where GoldSrc took:
+  - bones with no name (31 models);
+  - two animations of one name (houndeye's `run`, the scientist's `crouch_idle3`);
+  - fps 0 (shotgunshell);
+  - activity weight 0 (hgrunt).
+- Source merges two bones of one name in any case. Chumtoad's `Bone10`, and its unnamed bone 10 named
+  `bone10`, lost a bone.
+- Source drops triangles of no area (128 of osprey_tailgibs' 230).
+- The garg's toes, a quarter turn about y, come out 0.01 units off. Hence the 0.05 tolerance.
+- `ACTIVITY` had 47 wrong. The table was filled from `activity.h`'s order and held to the 301 files'
+  sequence names.
+
+**Seen in GMod by the person, 2026-10-25 (6c by hand).** Two Sonnet workers made the models with
+`AGENTS.md`'s brief, and the orchestrator looked at their pictures and put the addons in `garrysmod/addons/`:
+- **The barrel, made from scratch:** built from a spec, then `--collision box`. It spawns as a physics prop
+  with collisions and looks right, "not far off a low-poly Source prop".
+  - It is heavy: `$automass` of a box at the `default` surfaceprop.
+  - The worker found that a model with no hit boxes failed the check, because Source's compiler makes one
+    itself. Fixed: only fewer hit boxes is a fault.
+- **The grunt, ported:** it spawns and is drawn right.
+  - With `gm_spawneffect` it stands still in one pose, with no collisions and no AI.
+  - What it needs is a ragdoll, and an entity that plays its animations or an NPC that asks for them by activity.
+
+Next, in order:
+1. ragdolls for ported figures (6e's `$collisionjoints`, from the hit boxes);
+2. a surfaceprop and mass (the spec's material when the kit built it);
+3. a hull to collide with in place of the box;
+4. then 6d.
+
+**6b. Source models read and drawn.** Begun with 6a, to check it:
+- `readSourceMdl`, `readVvd`, `readVtx`, `sourceTriangles`;
+- VTF read (DXT1, DXT3, DXT5);
+- VMT read, and `openVpk`;
+- `render` taking another kind of model's triangles;
+- `smak source-info`, `source-render`, `source-sheet`.
+
+A port drawn from its compiled files matches the original's picture, but for chrome. Kleiner draws from
+Half-Life 2's packs. Left: animations (the .ani and the animation data), and the judges calibrated on Half-Life
+2's models.
+- MDL, VVD and VTX read, VTF read, and GMod's VPKs read for its own models.
+- The port is drawn beside its original and they match.
+- The loop holds for Source as it does for GoldSrc: look, change, check, draw.
+
+**6c. Seen in GMod.** The model spawned in the game by its console, with a picture of it, as `play native`
+does for Half-Life.
+
+**6d. New models made for Source.** Its limits are not GoldSrc's:
+- more triangles and bones a submodel;
+- larger textures, with normal maps and the other material parameters;
+- a collision model, and a ragdoll for a figure;
+- pose parameters and blends.
+
+`check` gets a `source` profile, and the spec builder writes SMD and QC for a Source target. Its judges are
+calibrated on Half-Life 2's own models, read from GMod's VPKs.
+
+**6e. What a port leaves behind.** Ragdolls (`$collisionjoints`), blended animations as pose parameters, bone
+controllers as pose parameters, NPC activities as Source names them, eyes and flexes.
+
 ## Which model does the work (measured 2026-10-25)
 
 Three of 1a's usual tasks, each given to Haiku, Sonnet and Opus as subagents with the same prompt and only

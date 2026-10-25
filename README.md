@@ -18,9 +18,9 @@ model, map and shot in it was made by an agent with SMAK.
 
 ## What it can do (measured)
 
-![commands](https://img.shields.io/badge/commands-80-555)
-![functions](https://img.shields.io/badge/public%20functions-706-555)
-![docs](https://img.shields.io/badge/guides-21-555)
+![commands](https://img.shields.io/badge/commands-84-555)
+![functions](https://img.shields.io/badge/public%20functions-730-555)
+![docs](https://img.shields.io/badge/guides-22-555)
 ![profiles](https://img.shields.io/badge/game%20profiles-Master%20Sword%20%C2%B7%20The%20Specialists%20%C2%B7%20Half--Life-555)
 
 ![models](https://img.shields.io/badge/Models-read%20%C2%B7%20write%20%C2%B7%20re--skin%20%C2%B7%20paint%20by%20place-2ea44f)
@@ -35,6 +35,7 @@ model, map and shot in it was made by an agent with SMAK.
 
 ![play](https://img.shields.io/badge/In%20the%20game-play%20%C2%B7%20fight%20%C2%B7%20test%20by%20its%20lines%20%C2%B7%20film-8957e5)
 ![assets](https://img.shields.io/badge/Assets-textures%20%28.wad%29%20%C2%B7%20sounds%20%C2%B7%20sprites%20%C2%B7%20video-8957e5)
+![source](https://img.shields.io/badge/Source-GoldSrc%20%E2%86%92%20Garry%27s%20Mod%20%C2%B7%20read%20%C2%B7%20draw-8957e5)
 ![judges](https://img.shields.io/badge/Judges-figure%20style%20%C2%B7%20texture%20%C2%B7%20shape%20vs%20the%20game-8957e5)
 
 ## What it has made
@@ -87,11 +88,13 @@ node bin/smak.mjs help                              every command
 | [docs/TROUBLE.md](docs/TROUBLE.md) | What the kit can and cannot do, and what a message means when something is wrong. |
 | [docs/IMPORT.md](docs/IMPORT.md), [docs/ITEMS.md](docs/ITEMS.md) | Bought models, and new weapons in a game's own files. |
 | [docs/ENGINES.md](docs/ENGINES.md) | GoldSrc against Xash3D. |
+| [docs/SOURCE.md](docs/SOURCE.md) | A GoldSrc model ported to Garry's Mod (Source), checked corner by corner; Source models read and drawn. |
 | [CHANGELOG.md](CHANGELOG.md) | What changed, version by version. |
 
 ## Limits
 
-- GoldSrc models and maps only (model version 10, map version 30): not Source.
+- Made for GoldSrc (model version 10, map version 30). Source: a GoldSrc model ported to Garry's Mod, and Source
+  models read and drawn; new models made for Source, and maps, not yet.
 - One bone a vertex, as the format has it. Animations kept in `name01.mdl` files are read, not edited.
 - The kit's pictures use a plain light of their own: shape, size, texture and pose are true, brightness is not.
 - It does not ship any game's content. A game's models and textures belong to its authors.

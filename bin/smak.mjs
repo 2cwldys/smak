@@ -144,6 +144,11 @@ const VALUE_FLAGS = [
   "weights",
   "cfg",
   "report",
+  "folder",
+  "collision",
+  "studiomdl",
+  "gmod",
+  "addon",
 ];
 // the flags of the map commands that may be given more than once: each time adds to a list
 const LISTED_FLAGS = [
@@ -3517,6 +3522,114 @@ function mapDecompile({ command, file, flags, listed }) {
   console.log(`${to}: decompiled in ${((performance.now() - started) / 1000).toFixed(1)} s`);
 }
 
+// ── the Source engine (GMod) ───────────────────────────────────────────────
+/**
+ * gmod-port: a GoldSrc model ported to Garry's Mod (src/source/gmod.mjs): its compiler's files and an addon
+ * folder under -o, compiled by GMod's studiomdl, the compiled model held to the original and drawn.
+ */
+function gmodPort({ command, file, flags }) {
+  const out = need(command, flags.o, "-o <folder>: where the port goes (src/ and addon/ under it)");
+  if (flags.collision !== undefined && !["auto", "box", "none"].includes(flags.collision))
+    fail(`${command}: --collision auto, box or none, not ${flags.collision}`);
+  const result = smak.source.portToGmod(
+    file,
+    defined({
+      out,
+      name: flags.name,
+      folder: flags.folder,
+      collision: flags.collision,
+      studiomdl: flags.studiomdl,
+      gmod: flags.gmod,
+      compile: flags.compile !== false,
+    }),
+  );
+  const warnings = result.warnings.map((warning) => `WARN  ${warning}`);
+  const faults = result.faults.map((fault) => `ERROR ${fault}`);
+  let look;
+  if (result.picture) {
+    const to = join(out, "sheet.png");
+    save(to, smak.png(result.picture.width, result.picture.height, result.picture.rgba));
+    look = `look at ${to}: six views of the compiled model, read back from its own files`;
+  }
+  const where = `${join(out, "addon")} (into garrysmod/addons/<name>/), models/${result.modelname}`;
+  answered(command, file, flags, {
+    detail: [...result.said.map((line) => `      ${line}`), `      the QC: ${result.qc}`, `      the addon: ${where}`, ...warnings, ...faults], // prettier-ignore
+    passed: result.passed,
+    said:
+      flags.compile === false
+        ? `written, not compiled (--no-compile): ${result.qc}`
+        : result.passed
+          ? `compiled and whole: ${where}${warnings.length ? `, with ${warnings.length} warnings` : ""}`
+          : `${faults.length} things lost on the way to Source`,
+    shown: [...faults, ...warnings],
+    look,
+  });
+  process.exit(result.passed ? 0 : 1);
+}
+
+/**
+ * A Source model named on the command line: a .mdl on the disk (its .vvd and .vtx beside it, its materials
+ * looked for under the folder that holds its models/, --addon, and GMod's), or a path under the game
+ * (models/kleiner.mdl) found in GMod's folders and packs.
+ */
+function sourceModelOf(command, file, flags) {
+  const gmod = flags.gmod ?? smak.source.findGmod();
+  const onDisk = existsSync(file);
+  let path = file;
+  const more = flags.addon ? [existingFolder(flags.addon)] : [];
+  if (onDisk) {
+    // the folder above models/ is an addon's (or the game's), where its materials are
+    const full = resolve(file).replace(/\\/g, "/");
+    const at = full.toLowerCase().lastIndexOf("/models/");
+    if (at < 0) fail(`${command}: ${file} is not under a models/ folder, and its materials are looked for beside that`);
+    more.unshift(full.slice(0, at));
+    path = full.slice(at + 1);
+  }
+  const files = gmod ? smak.source.gmodFiles(gmod, { more }) : smak.source.sourceFiles({ folders: more });
+  if (!onDisk && !files.has(path)) fail(`${command}: no file ${file}, and none of that path in GMod's folders and packs${gmod ? "" : " (no GMod found: --gmod)"}`); // prettier-ignore
+  return smak.source.readSourceModel(path, files);
+}
+
+/** source-info: what a Source model holds. */
+function sourceInfo({ command, file, flags }) {
+  const model = sourceModelOf(command, file, flags);
+  const { mdl } = model;
+  if (flags.json) {
+    const materials = model.materials.map(({ texture, ...m }) => ({ ...m, texture: texture && { width: texture.width, height: texture.height, format: texture.format } })); // prettier-ignore
+    console.log(JSON.stringify({ ...mdl, triangles: model.triangles.length, materials, missing: model.missing }));
+    return;
+  }
+  console.log(`${mdl.name}: Source model, version ${mdl.version}; ${model.triangles.length} triangles`);
+  console.log(`  bones (${mdl.bones.length}): ${mdl.bones.map((b) => b.name).join(", ")}`);
+  console.log(`  bodygroups: ${mdl.bodyparts.map((part) => `${part.name} [${part.models.map((m) => `${m.name || "blank"} ${m.vertices}v`).join(", ")}]`).join("; ")}`); // prettier-ignore
+  for (const material of model.materials)
+    console.log(`  material ${material.name}: ${material.vmt ? `${material.shader}, ${material.texture ? `${material.texture.width}x${material.texture.height}` : "its picture not found"}` : "not found"}`); // prettier-ignore
+  console.log(`  skin families: ${mdl.skins.length}; attachments: ${mdl.attachments.map((a) => a.name).join(", ") || "none"}; hit boxes: ${mdl.hitboxes.length}`); // prettier-ignore
+  console.log(`  animations (${mdl.sequences.length}): ${mdl.sequences.map((s) => (s.activity ? `${s.name} (${s.activity})` : s.name)).join(", ")}`); // prettier-ignore
+}
+
+/** source-render, source-sheet: a Source model drawn by the kit (render's views; --body, --skin). */
+function sourceRender({ command, file, flags }) {
+  const to = need(command, flags.o, "-o out.png");
+  const model = sourceModelOf(command, file, flags);
+  const options = defined({
+    sheet: command === "source-sheet",
+    size: numberOf(flags, "size"),
+    view: flags.view,
+    yaw: numberOf(flags, "yaw"),
+    pitch: numberOf(flags, "pitch"),
+    zoom: numberOf(flags, "zoom"),
+    width: numberOf(flags, "width"),
+    height: numberOf(flags, "height"),
+    body: numberOf(flags, "body"),
+    skin: numberOf(flags, "skin"),
+  });
+  const picture = smak.source.renderSource(model, options);
+  save(to, smak.png(picture.width, picture.height, picture.rgba));
+  if (model.missing.length) console.log(`WARN  materials found nowhere (drawn grey): ${model.missing.join(", ")}`);
+  console.log(to);
+}
+
 // ── play ───────────────────────────────────────────────────────────────────
 /**
  * play: a map seen in the game itself, in a browser build of the engine at an address. The steps are checked
@@ -4368,6 +4481,36 @@ const COMMANDS = {
   play <session> --attach --close                                        the session ended
 `,
   },
+  "gmod-port": {
+    run: gmodPort,
+    own: true,
+    help: `  gmod-port <mdl> -o <folder> [--name n] [--folder smak] [--collision auto|box|none] [--studiomdl <exe>] [--gmod <folder>] [--no-compile]
+                                            a GoldSrc model ported to Garry's Mod: its bones, animations (those in <name>01.mdl
+                                            too), bodygroups, skins, attachments and hit boxes as Source's compiler's files
+                                            (<folder>/src: the QC and SMDs) and its textures as VTF and VMT (<folder>/addon), then
+                                            compiled by GMod's own studiomdl (an outside program that comes with GMod; --studiomdl,
+                                            SMAK_STUDIOMDL), the compiled model read back and held to the original, corner by
+                                            corner, and drawn (<folder>/sheet.png). <folder>/addon goes into garrysmod/addons/<name>/.
+                                            What Source has no place for is warned of. Ends in PASS or FAIL`,
+  },
+  "source-info": {
+    run: sourceInfo,
+    own: true,
+    address: true,
+    help: `  source-info <mdl | models/...mdl> [--json] [--gmod <folder>] [--addon <folder>]
+                                            what a Source model holds: bones, bodygroups, materials (found as the game finds them),
+                                            skins, attachments, hit boxes, animations. A path under the game (models/kleiner.mdl) is
+                                            read from GMod's folders and packs`,
+  },
+  "source-render": {
+    run: sourceRender,
+    own: true,
+    address: true,
+    help: `  source-render <mdl | models/...mdl> -o out.png [--view ...] [--yaw] [--pitch] [--zoom] [--body n] [--skin n]
+  source-sheet <mdl | models/...mdl> -o out.png [--size 384]
+                                            a Source model drawn at rest, as render and sheet draw a GoldSrc one`,
+  },
+  "source-sheet": { run: sourceRender, own: true, address: true },
   mcp: {
     run: mcp,
     help: `  mcp --work <folder> [--models <folder>] [--no-run]
@@ -4378,6 +4521,8 @@ const COMMANDS = {
 const HELP = `smak <command> <model.mdl | map.bsp | file> [...]        (node bin/smak.mjs ...)
 
 ${Object.values(COMMANDS)
+  // a command said in another's help (source-sheet in source-render's) has none of its own
+  .filter((entry) => entry.help)
   .map((entry) => entry.help)
   .join("\n")}
 `;

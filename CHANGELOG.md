@@ -5,6 +5,26 @@ mending for, says so under **Mind**.
 
 ## Unreleased
 
+The Source engine, first step (PLAN.md, phase 6): a GoldSrc model ported to Garry's Mod (`docs/SOURCE.md`).
+- `smak gmod-port <mdl> -o <folder>`, `source.portToGmod`. The kit reads the model and writes Source's
+  compiler's files: SMD for each submodel and animation, a QC, a VTF and a VMT for each texture. GMod's own
+  studiomdl compiles them, in a folder of its own. The compiled model is read back and held to the original,
+  corner by corner, and drawn.
+  - Kept: bones, animations (those in `01.mdl` files too), bodygroups and their empty submodels, skin families,
+    attachments, hit boxes, activities, events, a walk's travel.
+  - Changed, each said: what Source refuses (a bone with no name, two bones or animations of one name in any
+    case, fps or weight 0, a triangle of no area).
+  - Left, each said: chrome, bone controllers, blends after the first.
+  - Measured on all 210 of Half-Life's models: every one compiles and holds every corner.
+- Source models read and drawn:
+  - `smak source-info`, `source-render` and `source-sheet`;
+  - `readSourceMdl`, `readVvd`, `readVtx`, `sourceTriangles`;
+  - VMTs and VTFs, including DXT;
+  - Valve's packs (`openVpk`), so Half-Life 2's own models are read from GMod's packs.
+  - `render` takes another kind of model's triangles (`tris`), with textures of their own colours.
+- `ACTIVITY` names every number of `activity.h`, 1 to 76, held to Half-Life's models. 47 is `ACT_IDLE_ANGRY`
+  ("combatidle", "madidle"), where the table had `ACT_COMBAT_IDLE`, which is 62.
+
 `AGENTS.md`, "Handing work to another agent": one task a worker, its guide named, every `WARN` quoted in its
 report, the pictures looked at by the agent that gave the task, against what the person asked; and
 `.claude/agents/smak-worker.md`, such a worker for Claude Code, on Sonnet (PLAN.md, "Which model does the work").

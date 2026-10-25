@@ -77,6 +77,14 @@ export const CHECKERS = [
     at: "src/figures/judge-texture.mjs validateTexture, src/figures/judge-shape.mjs validateShape",
     none: "validateStyle's question (are two manners told apart) of the texture and shape measures, by the same AUC; validateStyle's case of two corpora of one manner stands for the three",
   },
+  // ── the Source engine ──
+  { name: "comparePort", at: "src/source/check.mjs comparePort" },
+  {
+    name: "compileQc, portToGmod",
+    at: "src/source/compile.mjs compileQc, src/source/gmod.mjs portToGmod",
+    none: "they run GMod's studiomdl, which the self-test may not have; where it is found, 109-source.mjs compiles a port and holds a moved corner against it, and comparePort, which portToGmod answers by, has its cases here",
+  },
+  { name: "smak gmod-port", at: "bin/smak.mjs gmodPort", none: "it prints portToGmod's faults (comparePort's, with cases here) and exits 1 on them; 109-source.mjs runs it where studiomdl is" },
   // ── play ──
   { name: "play", at: "src/play.mjs play (its expectations and passed)" },
   // ── the command lines that fail by their exit code ──

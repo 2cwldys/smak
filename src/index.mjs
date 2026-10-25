@@ -33,6 +33,8 @@ export * from "./blender.mjs";
 export { rand, noise, fbm, fbm3, seeded, step, mix, times, bell } from "./workshop.mjs";
 export * from "./reskin.mjs";
 export * as maps from "./maps/index.mjs";
+// the Source engine (GMod): a GoldSrc model ported, Source models and textures read (src/source/)
+export * as source from "./source/index.mjs";
 export * as play from "./play.mjs";
 export * as animate from "./animate.mjs";
 export * as audio from "./audio/index.mjs";
