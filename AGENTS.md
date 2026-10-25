@@ -74,7 +74,7 @@ In full, with the reasons, in `docs/MODELS.md`.
 | A new model: from triangles, from an `.obj`, its animations, a monster; how a model is put together | `docs/MODELS.md` | `examples/01-new-model.mjs`, `06-from-obj.mjs`, `04-animate.mjs` |
 | A new shape in a model: a weapon's mesh swapped, a helmet or a pack added, pieces taken off, paint carried to a changed shape | `docs/SHAPES.md` | `examples/02-swap-mesh.mjs`, `kits/` |
 | An item (weapon, shield, bow) in a game's own model files, from a kit or a bought model | `docs/ITEMS.md` | `kits/` |
-| A bought model (FBX, glTF, OBJ) | `docs/IMPORT.md` | |
+| A bought model (FBX, glTF, OBJ); art from a generator (a texture, a mesh) | `docs/IMPORT.md` | |
 | A figure of rigid pieces on a game's skeleton; does a figure fit the game (the judges) | `docs/FIGURES.md` | |
 | A model, its textures or a video from a spec (JSON) | `docs/SPEC.md` | |
 | A map from a spec | `docs/SPEC-MAPS.md` | |

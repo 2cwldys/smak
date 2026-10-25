@@ -3,7 +3,11 @@
 The newest first. A version that changes what a model's file looks like, or that a model made before needs
 mending for, says so under **Mind**.
 
-## Unreleased
+## 0.27.0 (2026-10-25)
+
+Art from a generator (PLAN.md, phase 5): `docs/IMPORT.md`, "Art from a generator": a generated texture as a
+material's photograph, a generated mesh through `smak import` (`--triangles`, `--fit`, `--origin base`) or as a
+spec's `mesh`, when to ask the person first, what a generator gets wrong, and ComfyUI's API for a script.
 
 What nine agents tripped on (PLAN.md, "Which model does the work"):
 - **`findCompilers`** finds SDHLT's programs under the folder it unpacks to (`tools/Win64`, `tools/Linux`), so

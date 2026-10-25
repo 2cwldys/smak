@@ -147,6 +147,65 @@ one), a rigged archer of 1080 to 618 that walks as before; a sculpted armour of 
 picture cut into thousands of small charts that a join would smear across, and is still more than a model
 holds.
 
+## Art from a generator
+
+A picture or a mesh made by a generator comes into the kit as a bought one does, by the same doors; from there
+the kit's own fitting, checks and pictures take over. The kit calls no generator and holds nothing of one: the
+person runs it (a ComfyUI of their own on their graphics card, free; Blender's generator; any service they pay
+for), or lets you run it, and saves what it makes in the work folder.
+
+Before you run one for them:
+- **Ask first** when it costs anything (a service's credit, Blender's `generate_3d` may) or sends anything off the
+  machine. What is sent to a service has left: never a game's file, nor a picture of one, as its input.
+- **Whether they may use what it makes** is theirs to know, as for a bought pack. The kit only checks what a
+  folder holds before it is shared (`smak check --publish`).
+- A generator guesses what it is not shown, and its guesses pass every check. **Look at every side** of what it
+  made; a check says only that the game can load it.
+
+**A map's texture.** Ask for the material seen straight on, evenly lit, as a photograph, and tiling:
+
+- *a seamless tileable texture of poured concrete, flat even lighting, orthographic, no shadows, no perspective*
+
+Save it beside the spec (`refs/concrete_gen.png`) and give it to a material as a photograph (docs/SPEC.md, "A
+material from a photograph"): `{ "base": "stone", "picture": "refs/concrete_gen.png", "size": 128 }`. The
+`valve` filter (unless told) treats it as it treats a photograph: its broad light divided out, laid one texel a
+unit at `size`, made to tile, and its grain and colour moved into the range of Valve's. A generator's picture
+is more even and more coloured than a photograph: read the report's "Materials" lines, which say a texture is
+brighter, more coloured, more even or noisier than nine in ten of Valve's, and look at the `.wad`'s sheet. A
+sign, a poster or a mural is not a material: `literal` (as it is), or `aged` (to sit among Valve's).
+
+**A model's texture.** Make it the size of the one it replaces (rule 4), ask for the layout `smak uv` shows,
+and bring it in with `textureFrom` and `replaceTexture` (docs/RESKIN.md). A generator does not keep to the UV
+layout, so a whole skin painted at once seldom lands; a material laid over a part (a material's `picture` on a
+model spec's part, docs/SPEC.md) or a picture of the thing from its front and back (`project`) does. A
+generated front and back rarely agree on the thing's sides: look at the sides.
+
+**A mesh.** Ask for a `.glb` (most generators give one; `.fbx` and `.gltf` are read too), then:
+
+```
+smak import chair_gen.glb                                              its size, meshes, pictures
+smak import chair_gen.glb -o chair.mdl --triangles 800 --fit 40 --origin base --pictures
+smak item mace_gen.glb --mod profiles/x.mjs --game <mod> --family blunt1h --name mace -o out --pictures
+```
+
+- **`--triangles`** first: a generator's mesh is tens or hundreds of thousands of triangles, where a Half-Life
+  prop is hundreds. The report says how far it got and why it stopped.
+- **`--fit` and `--origin base`**: a generated mesh has no scale and no floor. Its size is what the person asked
+  for; its origin, its foot.
+- **One picture a mesh**: a generator bakes its colour into one picture inside the `.glb`, which `picturesOf`
+  finds. Its light is often baked in too: a top lit bright and a foot dark, which the game's own light then
+  doubles.
+- **An `.obj`** goes into a model spec as a `mesh` part (docs/SPEC.md), which reduces it to Half-Life's count
+  for its size, lays out its picture and paints it as a carve.
+- **A character from a generator** has no skeleton the game knows: build it on the game's skeleton (docs/FIGURES.md),
+  or re-skin one of the game's (docs/RESKIN.md). It is rarely worth rigging a generated one.
+
+**Running ComfyUI from a script.** ComfyUI listens on `http://127.0.0.1:8188`: a workflow saved from it "for the
+API" is `POST`ed to `/prompt` as `{ "prompt": <the workflow> }`, which answers with a `prompt_id`; `/history/<id>`
+says when it is done and the names of its pictures, and `/view?filename=<name>&type=output` gives each one.
+Change only the workflow's prompt text and its seed between runs, and keep the seed of a picture the person
+liked: the same seed and prompt give the same picture.
+
 ## Limits
 
 - **One bone a point.** GoldSrc holds each point on one bone: where the file shares a point between bones

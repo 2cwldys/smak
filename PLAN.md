@@ -142,6 +142,16 @@ installed in the game's folder is said `--ours`, or it is the game's file byte f
 
 From there SMAK's own import, fit and checks take over. Nothing of a paid service goes into the kit.
 
+**Done 2026-10-25**: `docs/IMPORT.md`, "Art from a generator" (and its row in `AGENTS.md`). Every door it names
+was already in the kit: a picture as a material's `picture`, a `.glb` through `smak import` and `smak item` with
+`--triangles`, an `.obj` as a spec's `mesh`. It adds when to ask the person first (a cost, anything sent off the
+machine), what a generator gets wrong (unseen sides, baked light, no UV layout, no scale), and ComfyUI's own API
+for a script. No generator is on this machine, so it was tried on a stand-in: a 512 picture of grit and blotches,
+too warm and lit from one corner, given to a `stone` material, came out a grey 128 texture that tiles with the
+light divided out, and the report warned of too little grain (0.016, Valve's concrete 0.123), the line the recipe
+says to read. Writing it found the guide's example wrong first (there is no `concrete` base). Not yet tried: a
+real generator's picture or mesh.
+
 ## Which model does the work (measured 2026-10-25)
 
 Three of 1a's usual tasks, each given to Haiku, Sonnet and Opus as subagents with the same prompt and only

@@ -4,7 +4,7 @@ A toolkit an AI coding agent (Claude Code, or any agent that runs commands and l
 content for **GoldSrc games**, Half-Life and its mods: models, animations, textures and maps. The agent writes
 short scripts with it, draws what it made to check its own work, and plays the result in the game.
 
-![version](https://img.shields.io/badge/version-0.26.0-blue)
+![version](https://img.shields.io/badge/version-0.27.0-blue)
 ![tests](https://img.shields.io/badge/tests-755%20passing-brightgreen)
 ![node](https://img.shields.io/badge/node-18%2B-339933)
 ![dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)
