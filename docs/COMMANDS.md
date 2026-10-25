@@ -144,6 +144,9 @@ node bin/smak.mjs play <url> --map <name> [--steps steps.json] -o dir [--mod <pr
                                                    entered, walked, spoken in, pictures taken, and every line the game says written down;
                                                    steps wait for a line (until) and a run passes or fails by lines (expect): docs/PLAY.md.
                                                    --serve keeps the game up and --attach runs in it: seconds a run, not a minute
+node bin/smak.mjs play native --map <name> --mod ts [--steps steps.json] -o dir
+                                                   the same in the game Steam installed, by its console alone (no keys, no mouse):
+                                                   its lines and its own screenshots; nothing but Node (docs/PLAY.md)
 ```
 
 The three that draw take `--width`, `--height`, `--game <folder>` (the mod's folder, then `valve`: where the map's

@@ -5,6 +5,16 @@ mending for, says so under **Mind**.
 
 ## Unreleased
 
+The Steam game played by its console (PLAN.md, phase 3a): `smak play native`.
+- **`smak play native --map <name> --mod ts`** plays the game Steam installed, GoldSrc's own engine, with
+  nothing but Node: `hl.exe -game <folder> -insecure -windowed -condebug +exec smak_run.cfg`, a loop in that
+  `.cfg` reading a file every few frames, each command in a file of its own that runs once and answers
+  (0.1 to 0.2 s), the console read from `qconsole.log` from where the run began, a map waited for until
+  `status` names the player, the game's own `screenshot` made a PNG (`pngOfTga`), `quit` at the end. A run of
+  Neuropolis in TS is in the map in 2 s and over in 4. It never joins a server; it has no keys, mouse or view.
+- `play.nativeDriver`, and a driver's `loaded`: the line a session waits for after `map` in place of the
+  profile's (the Steam game never says Xash's "Custom resource propagation complete").
+
 Fewer tokens a task (PLAN.md, phase 1): an agent reads a short index and the one guide its task needs, and a
 check answers in a line.
 - **`AGENTS.md` is an index**: what the kit is and needs, the loop, the rules short, how to report, and a table

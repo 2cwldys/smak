@@ -760,6 +760,16 @@ that runs a browser build of Xash3D. `playwright` is the Playwright module (`{ c
 holds its `node_modules`; `engine` and `readyFlag` are the page's names for the engine's Emscripten module and
 for the flag it sets when the engine takes commands. Nothing is opened before `ready()`.
 
+`play.nativeDriver({ halfLife, mod = "valve", exe = "hl.exe", width = 1024, height = 768, args = [],
+readyWithin = 90000, enterWithin = 120000, answerWithin = 20000, spawn })` → a driver for the person's own game
+from Steam, by its console alone (`smak play native`; src/play-native.mjs says how). `halfLife` is the
+Half-Life folder (unless told, `findHalfLife`'s), `mod` the game's folder in it. `command(text)` resolves when
+the game has run it, a `map` once the player is in (the driver then says `SMAK entered <map>`, its `loaded`,
+which a session waits for in place of the profile's line); `shot(file)` is the game's own screenshot as a PNG;
+keys and the mouse throw; `close()` quits the game, or ends it by its process id, and takes its `smak_*.cfg`
+files out of the mod's folder. `spawn` is how the program is started (a test's fake engine).
+`play.pngOfTga(bytes)` → a TGA screenshot (24 or 32 bits, raw or run-length) as a PNG's bytes.
+
 `play.playwrightFrom(folder)` → the Playwright module of that folder's `node_modules`, looked for there and
 nowhere else; it throws a sentence when it is not there. `play.playPartOf(mod)` → the profile's `play` field
 made whole from `GOLDSRC`'s: `{ enter, say, loads, yawspeed, screen }`.

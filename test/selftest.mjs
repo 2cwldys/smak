@@ -115,6 +115,7 @@ const areas = [
   "96-map-teams", // a map's two teams as ts_matchmode splits them, its spawn file, sight and walks across; profiles by name, the game found, a mod's own dressing, lamp faces
   "95-rcbot-waypoints", // RCBot's .rcw read and written byte for byte; waypoints from the walk (a ladder, a jump, a crouching passage); smak map-waypoints
   "19-example-and-kit-faults", // the examples' wrong arguments and refused models; the kits' fittings and rings
+  "108-play-native", // the Steam game's driver against a fake engine: the console loop, a command once, a map entered, its screenshot, its refusals
   "107-broken-cases", // every checker failing an input broken in one way, by the sentence it must give, and passing its twin whole
 ];
 

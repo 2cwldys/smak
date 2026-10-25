@@ -94,6 +94,13 @@ Found by hand, 2026-10-24 (TS, `h9_te_neuropolis`, build 8684, Steam running):
 
 Measure: a map that passes `maps check` is played in TS from Steam by one command, and its log decides.
 
+**Done 2026-10-24**: `smak play native --map h9_te_neuropolis --mod ts --expect-not "Couldn't load gfx/env"`
+ran in 4.0 s and failed by the log, as it should: Neuropolis lacks its sky. Commands are not put in a `.cfg`
+once: the start `.cfg` keeps a loop that reads a file every 5 frames, and each command is a file of its own that
+runs once and answers (`SMAK_ACK n`) in 0.1 to 0.2 s, so a run is driven step by step like the browser's.
+A map is in when `status` names the player. Test 108 holds the protocol against a fake engine. Not done: the TS
+profile's steps into a team (a walk in TS moves the player only after them).
+
 **3b. Pictures of the native game** (only after 3a works). A picture of the game's window through Windows'
 own capture (`Windows.Graphics.Capture`; ordinary capture comes out black for GPU games), with a PowerShell
 helper called from Node.

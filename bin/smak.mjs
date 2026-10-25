@@ -3569,11 +3569,14 @@ async function playMap({ command, file: url, flags, listed }) {
     console.error(last);
     return false;
   };
+  // `smak play native ...`: the person's own game from Steam, by its console, in place of a page
+  const native = url === "native";
   try {
-    if (!/^https?:\/\//i.test(url))
+    if (!native && !/^https?:\/\//i.test(url))
       fail(
-        `${command}: the address of the page that runs the game comes first (http://...), not ${url}${flags.attach ? `: with --attach it is the session's (http://127.0.0.1:${SESSION_PORT})` : ""}`,
+        `${command}: the address of the page that runs the game comes first (http://...), or native for the game Steam installed, not ${url}${flags.attach ? `: with --attach it is the session's (http://127.0.0.1:${SESSION_PORT})` : ""}`,
       );
+    if (native && flags.attach) fail(`${command}: native plays the installed game from here; --attach is a page's session`); // prettier-ignore
     if (flags.attach && flags.close) {
       await closeSession(url);
       return console.log(`${url}: the session is closed`);
@@ -3633,10 +3636,13 @@ async function playMap({ command, file: url, flags, listed }) {
     const [wide, high] = playPartOf(mod).screen ?? [];
     const width = numberOf(flags, "width") ?? wide;
     const height = numberOf(flags, "height") ?? high;
-    const playwright = playwrightFrom(flags.playwright ?? process.env.PLAYWRIGHT_DIR);
-    const driver = browserDriver(
-      defined({ url, playwright, width, height, messages: messagesOf(mod), headless: flags.show !== true, args: flags.gpu ? HARDWARE_GL : undefined }), // prettier-ignore
-    );
+    // the game's folder: --game-folder, else the profile's (ts, msc), else Half-Life's own
+    const gameFolder = flags["game-folder"] ?? maps.mapProfileOf(flags.mod)?.folder ?? "valve";
+    const driver = native
+      ? smak.play.nativeDriver(defined({ halfLife: flags["half-life"], mod: gameFolder, width, height }))
+      : browserDriver(
+          defined({ url, playwright: playwrightFrom(flags.playwright ?? process.env.PLAYWRIGHT_DIR), width, height, messages: messagesOf(mod), headless: flags.show !== true, args: flags.gpu ? HARDWARE_GL : undefined }), // prettier-ignore
+        );
     if (wide && (width !== wide || height !== high))
       console.log(`WARN  the profile's clicks were measured on a page of ${wide} by ${high}, and this one is ${width} by ${height}`); // prettier-ignore
     // a session served keeps printing what its runs do: it is the window onto the runs attached to it
@@ -4302,6 +4308,11 @@ const COMMANDS = {
                                             are a third of the page each way (--full-pictures: the page's size).
                                             It needs Playwright, an outside program: --playwright names the folder that holds its
                                             node_modules (or PLAYWRIGHT_DIR)
+  play native --map <name> [--mod ts] [--half-life <folder>] [--game-folder ts] [--steps ...] [-o ...] [--expect ...]
+                                            the same run in the game Steam installed (hl.exe, -insecure, never a server), by its
+                                            console alone: no keys, no mouse, no view read or set; walks and turns by time, commands,
+                                            what it says and its own screenshots. The Half-Life folder is found in Steam's libraries
+                                            (or --half-life, SMAK_HALF_LIFE); the game's folder is the profile's (or --game-folder)
   play <url> --serve [--port 8098] [--over <place>=<folder> ...] [--mod ...] [--playwright ...]
                                             the game started and KEPT: a session served on this machine, for runs that pay for
                                             their map and not for the engine. --over: a folder laid over the game's (msc=mine/msc),

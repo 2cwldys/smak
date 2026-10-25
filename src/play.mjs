@@ -19,8 +19,8 @@
 //   playOf         a list of steps, as a person or an agent writes them, checked and made plain actions
 //   playSession    a game kept up: many runs and many maps against one engine, which is started once
 //   play           one run from a cold start: the engine waited for, the map, the steps, the driver closed
-//   browserDriver  the one driver the kit ships: a browser build of the Xash3D engine, driven with
-//                  Playwright (src/play-browser.mjs)
+//   browserDriver  a browser build of the Xash3D engine, driven with Playwright (src/play-browser.mjs)
+//   nativeDriver   the person's own game from Steam, driven by its console alone (src/play-native.mjs)
 //   serveSession, attachSession   a session kept by one process and used by others (src/play-session.mjs)
 //   sheetOf        a run's pictures in one, each with its name (src/play-sheet.mjs)
 //
@@ -60,6 +60,7 @@ import { MOUSE_BUTTONS } from "./play-browser.mjs";
 import { ASIDE, CENSUS_RADIUS, LOOSED, aimOf, besideOf, censusOf, censusTable, fightOptionsOf, fightPartOf, leftOf, placeOf, progressOf } from "./play-fight.mjs"; // prettier-ignore
 
 export { SOFTWARE_GL, HARDWARE_GL, playwrightFrom, browserDriver } from "./play-browser.mjs";
+export { nativeDriver, pngOfTga, NATIVE_LOADED } from "./play-native.mjs";
 export { sheetOf, smallerPng } from "./play-sheet.mjs";
 export { serveSession, attachSession, sessionState, closeSession, SESSION_PORT } from "./play-session.mjs";
 
@@ -929,6 +930,9 @@ export function playSession({ driver, mod, pause: sessionPause, tell: sessionTel
       `play: driver is an object with ${DRIVER.join(", ")} (browserDriver makes one)${driver ? `: this one has no ${lacks.join(", ")}` : ""}`,
     );
   const part = playPartOf(mod);
+  // a driver that tells itself when the player is in a map says by what line (the Steam game's, which never
+  // says the profile's: src/play-native.mjs)
+  if (driver.loaded) part.loaded = patternOf(driver.loaded, "driver.loaded");
   /** The folders laid over the game's, each with its files' marks as the engine last had them. */
   const laid = new Map();
   for (const each of oversOf(sessionOver)) laid.set(each.key, { ...each, marks: marksOf(each.folder) });

@@ -20,7 +20,8 @@ This file is the index. Read the one guide your task needs (the table below), no
 - **For a map**: the map's own file, and the game's folders when its textures are in `.wad` files (most maps').
   **To compile** a new map: VHLT (or SDHLT), an outside program the person installs once (`VHLT_DIR`); everything
   else about maps needs Node alone.
-- **To play a map in the game** (`smak play`): the person's browser build of Xash3D, and Playwright.
+- **To play a map in the game** (`smak play`): the person's Steam game (`smak play native`, by its console), or
+  their browser build of Xash3D and Playwright.
 
 First thing on a new machine, from this folder: `node test/selftest.mjs`. It makes a model from nothing and
 exercises every part of the kit. If every test passes, the kit works here.

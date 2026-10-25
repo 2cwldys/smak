@@ -5,7 +5,8 @@ says, does a list of steps, and writes down what happened: pictures, a sheet of 
 game said, with its time**. A step can wait for a line and a run can be held to lines, so a test passes or
 fails by text and nobody has to read its pictures.
 
-It needs two things that are not part of this kit: a browser build of the engine served at an address, and
+Or it plays the person's own game from Steam, by its console (`smak play native`, below), with nothing more
+than Node. The browser build needs two things that are not part of this kit: the build served at an address, and
 Playwright (`npm install playwright` in a folder of your own; name the folder with `--playwright` or
 `PLAYWRIGHT_DIR`). The library is `src/play.mjs` (`import { play } from "smak"`); `docs/API.md` has its
 functions.
@@ -25,6 +26,32 @@ In short, for the usual tests:
   with `ms` pan the view. Each clip is written `NN_name.mp4` beside the pictures (needs ffmpeg).
 - A run ends in one line, `PASS: ...` or `FAIL: ...`, and says which picture to look at, or that none is
   needed (`docs/COMMANDS.md`, "Answers in text first").
+
+## The Steam game itself: `smak play native`
+
+```
+smak play native --map h9_te_neuropolis --mod ts --steps steps.json -o work/run1 --expect-not "Couldn't load"
+```
+
+The same run in the game Steam installed, GoldSrc's own engine, with nothing but Node: no browser, no
+Playwright, no window capture, no key pressed. The game is started as `hl.exe -game <folder> -insecure
+-windowed -condebug +exec smak_run.cfg` and driven by its console alone (src/play-native.mjs, which says how):
+a command is put in a `.cfg` the game reads every few frames, and answered in a tenth of a second; what the
+game says is read from `qconsole.log`; a picture is its own `screenshot`. A run is in the map 2 seconds after
+the start and over in 4 to 9 (Neuropolis in TS, 2026-10-24).
+
+- The Half-Life folder is found in Steam's libraries (or `--half-life <folder>`, `SMAK_HALF_LIFE`); the game's
+  folder is the profile's (`ts`, `msc`), or `--game-folder`, or `valve`. Steam is running (without it was not
+  tried); one game at a time.
+- `-insecure` keeps it off VAC, and a run never joins a server: `connect` and `retry` are refused.
+- It has no keys, no mouse and no view: a walk (`+forward`), a turn by time, `command`, `say`, `until`,
+  `expect` and `shot` work; `look`, `face`, `where`, `goto` with a check, a fight's aim, `press`, `click` and
+  `tap` do not, and say so. `--put`, `--over`, `--serve` and `record` are the browser's.
+- Its log is the mod's own words, including what it could not load: a missing sound, sky or model is a line
+  (`Warning:  Unable to open ...`, `R_LoadSkys: Couldn't load ...`), so `--expect-not` holds a map to having
+  every file it names.
+- In The Specialists the player begins as a spectator with the buy menu open: a walk moves him only once the
+  profile's steps have got him into a team.
 
 ## The commands
 
