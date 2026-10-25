@@ -410,10 +410,12 @@ export function motionOverlaps(
     }
     return d;
   };
+  // its corners and its middle: a piece driven onto one of its own size and place has every corner on the
+  // other's faces, at no depth, and only its middle tells
   const depthOf = (pose, inv, a, b) => {
     const T = mul34(inv[b.bone], pose[a.bone]);
     let deep = 0;
-    for (const p of a.pts) deep = Math.max(deep, depthIn(b, apply34(T, p)));
+    for (const p of [...a.pts, a.c]) deep = Math.max(deep, depthIn(b, apply34(T, p)));
     return deep;
   };
   const meet = (pose) => {

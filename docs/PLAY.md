@@ -10,6 +10,22 @@ Playwright (`npm install playwright` in a folder of your own; name the folder wi
 `PLAYWRIGHT_DIR`). The library is `src/play.mjs` (`import { play } from "smak"`); `docs/API.md` has its
 functions.
 
+In short, for the usual tests:
+
+- To test a fight, write `{ "fight": { "heal": 0.5, "post": [...] }, "until": "<the line that ends it>" }`,
+  not a loop outside: the summary line is the measure of difficulty.
+- A held mouse button charges in Master Sword: use `tap`.
+- A fight strikes the nearest unless told: `prefer: "lantern"` goes for the healer first, `chase` walks
+  round a crowd to it (sidesteps), `dodge` steps out of a place a line warns of (a test copy's line: the
+  real game shows a sprite). Their counts are in the fight's line ("A fight", below).
+- A session (`--serve`) keeps a fight of any length; `--over msc=<folder>` puts a model rebuilt since the
+  game started.
+- To film it, run with `--show --gpu` (a window on the graphics card: software draws a town at a few frames a
+  second) and put `{ "record": "name" }` ... `{ "record": false }` round the steps to film; `face` and `look`
+  with `ms` pan the view. Each clip is written `NN_name.mp4` beside the pictures (needs ffmpeg).
+- A run ends in one line, `PASS: ...` or `FAIL: ...`, and says which picture to look at, or that none is
+  needed (`docs/COMMANDS.md`, "Answers in text first").
+
 ## The commands
 
 ```
@@ -55,6 +71,12 @@ run in a session after 6, where the fixed waits of 0.11 took 79.
 - `--expect <pattern>`, `--expect-not <pattern>`: lines the whole run is held to.
 - `--no-sheet`, `--show` (the browser's window seen), `--gpu` (with `--show`: WebGL on the graphics card, smooth
   enough to film; the pictures then depend on the card), `--loads <ms>`, `--width`, `--height`.
+- `--full-pictures`: the pictures at the page's size. Unless told, each is written a third of it each way
+  (341 by 256 for a page of 1024 by 768), which tells where the player stands and what he sees; the clicks
+  and the page keep their size, and `sheet.png` its own. In a script, a run's `shrink` (1 unless told).
+- `--verbose`: each step printed as it is done, and every picture and section line after the run, as before
+  0.27. Unless told, a run that passes prints four lines: where its steps and the game's lines were written,
+  its fight's line (or the run's), which picture to look at, if any, and `PASS: ...`.
 
 **A long run** (a fight of ten minutes) is answered as it goes: the session sends its answer's headers at
 once, a line for each thing done, and a beat (`{ "beat": seconds }`) every 30 seconds in which the run says
@@ -63,7 +85,8 @@ nothing; `--attach` reads the answer with Node's own `http` and no time limit. B
 process with `FAILED: terminated` while it went on in the game.
 
 What a run leaves in its folder: `NN_name.png` for each picture, `sheet.png` (all of them in one, each under
-its name), `log.txt` and `log.jsonl` (what was heard), `result.json` (the steps with their times, the
+its name), `log.txt` and `log.jsonl` (what was heard), `told.txt` (what the command printed before 0.27:
+each step done with its times, the pictures, the fights and sections, ending in PASS or FAIL), `result.json` (the steps with their times, the
 expectations, `passed`, and the `failure` when it stopped), and `summary.json` (below, **A run in
 sections**).
 
@@ -217,7 +240,7 @@ smak play http://127.0.0.1:8098 --attach --stay --steps fullrun.json --from tomb
 A step with `"onFail": "continue"` (or in a section whose step says so) does not stop the run when it fails: a
 mere expectation ("the gate grinds open in 15 seconds") is held to and the run goes on to the next section.
 Its failure is an expectation (`FAIL  step {...} (step 26): play: the game never said ...`) and the run ends
-`FAILED`.
+`FAIL` (before 0.27, `FAILED`).
 
 **A way to another map.** `{ "travel": true }` does what the player does at a way out: the game asks
 "Press (enter) to continue", the profile's command answers (`accept`), the next map's server starts, its files
@@ -321,8 +344,9 @@ it counts as on him (Master Sword's helper: within 128), when the profile reads 
 profile's `died` line; the fight then waits for the player's health to come back (he has risen) with its
 blows going on (a game may want a button to rise), and puts him at `post`.
 
-An expectation that does not hold does not stop the run: every one is looked at, and the run ends `FAILED`
-with each on a line (`PASS  expect /.../ (step 10): the line that decided`). A line an `until` waited for in
+An expectation that does not hold does not stop the run: every one is looked at, and the run ends `FAIL` (`FAILED`
+before 0.27) with the ones that failed on a line each above it (`FAIL  expect /.../ (step 10): no such line was
+heard`), and every one in `told.txt` (`PASS  expect /.../ (step 10): the line that decided`). A line an `until` waited for in
 vain does stop it: the steps after it would be done in a game that is not where they think.
 
 ## What is heard

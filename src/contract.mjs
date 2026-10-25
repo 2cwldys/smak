@@ -9,7 +9,7 @@
 //                       hitgroups, controllers: [{ bone }] }
 //   compareContract(reference, made) -> { faults, notes }: what of the reference the model lacks or moved
 //   sharedContract(contracts) -> the contract every one of a mod's stock models keeps: what its code can rely on
-import { readMdl, bones as bonesOf, sequences, attachments, hitboxes } from "./mdl.mjs";
+import { readMdl, bones as bonesOf, sequences, attachments, hitboxes, boneControllers } from "./mdl.mjs";
 
 export function contractOf(mdl) {
   const boneNames = bonesOf(mdl).map((b) => b.name);
@@ -18,9 +18,10 @@ export function contractOf(mdl) {
   try {
     hitgroups = [...new Set(hitboxes(mdl).map((h) => `${boneNames[h.bone] ?? h.bone}:${h.group}`))];
   } catch {}
+  // from the file's own table: `readMdl` gives no controllers, and read from it they were never found
   let controllers = [];
   try {
-    controllers = (info.controllers ?? []).map((c) => ({ bone: boneNames[c.bone] ?? c.bone }));
+    controllers = boneControllers(mdl).map((c) => ({ bone: boneNames[c.bone] ?? c.bone }));
   } catch {}
   return {
     bones: boneNames,

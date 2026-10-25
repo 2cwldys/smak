@@ -55,12 +55,12 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { GOLDSRC, modOf } from "./maps/mod.mjs";
-import { sheetOf } from "./play-sheet.mjs";
+import { sheetOf, smallerPng } from "./play-sheet.mjs";
 import { MOUSE_BUTTONS } from "./play-browser.mjs";
 import { ASIDE, CENSUS_RADIUS, LOOSED, aimOf, besideOf, censusOf, censusTable, fightOptionsOf, fightPartOf, leftOf, placeOf, progressOf } from "./play-fight.mjs"; // prettier-ignore
 
 export { SOFTWARE_GL, HARDWARE_GL, playwrightFrom, browserDriver } from "./play-browser.mjs";
-export { sheetOf } from "./play-sheet.mjs";
+export { sheetOf, smallerPng } from "./play-sheet.mjs";
 export { serveSession, attachSession, sessionState, closeSession, SESSION_PORT } from "./play-session.mjs";
 
 /** What a step may do: one of these, or nothing but a wait and a picture. */
@@ -892,6 +892,8 @@ const placeText = (origin) => (origin ? origin.map(rounded).join(" ") : "nowhere
  *              this run, and nothing of it is put
  *   loads, pause, tell   as `play`'s
  *   sheet      false for no contact sheet (unless told: `sheet.png`, when a picture was taken)
+ *   shrink     each picture written this many times smaller each way (unless told: 1, the page's size);
+ *              the sheet is drawn from them at its own size all the same
  *
  * and resolves to what happened:
  *   { map, out, took,
@@ -1052,6 +1054,7 @@ export function playSession({ driver, mod, pause: sessionPause, tell: sessionTel
     expectNot = [],
     put = [],
     sheet = true,
+    shrink = 1,
     over = [],
     from = null,
   } = {}) {
@@ -1064,6 +1067,8 @@ export function playSession({ driver, mod, pause: sessionPause, tell: sessionTel
       );
     if (!isText(out))
       throw new Error(`play: out is the folder the pictures and the log go to, not ${shown(out)}`);
+    if (!(Number.isInteger(shrink) && shrink > 0))
+      throw new Error(`play: shrink is how many times smaller each picture is written, a whole number over 0, not ${shown(shrink)}`); // prettier-ignore
     const loading = loads ?? part.loads;
     if (!isCount(loading)) throw new Error(`play: loads is a number of milliseconds, not ${shown(loads)}`);
     const entering = playOf(part.enter, { mod, pause, what: "the profile's enter step" });
@@ -1147,6 +1152,12 @@ export function playSession({ driver, mod, pause: sessionPause, tell: sessionTel
     const picture = async (name) => {
       const file = join(out, `${String(pictures.length).padStart(2, "0")}_${name}.png`);
       await driver.shot(file);
+      if (shrink > 1)
+        try {
+          writeFileSync(file, smallerPng(readFileSync(file), shrink));
+        } catch {
+          // a picture that is not a PNG (a driver of another kind) is kept as the driver wrote it
+        }
       pictures.push(file);
       // what was said before the picture is heard before it: "since the picture" is then from here
       await listen();
@@ -2180,7 +2191,8 @@ export function playSession({ driver, mod, pause: sessionPause, tell: sessionTel
     if (sheet && pictures.length)
       try {
         sheetFile = join(out, "sheet.png");
-        writeFileSync(sheetFile, sheetOf(pictures, SHEET));
+        // pictures written smaller are drawn less small on it: the sheet keeps its size
+        writeFileSync(sheetFile, sheetOf(pictures, { ...SHEET, shrink: Math.max(1, Math.round(SHEET.shrink / shrink)) })); // prettier-ignore
       } catch {
         // pictures that are not PNG (a driver of another kind) make no sheet, and the run is no worse for it
         sheetFile = null;

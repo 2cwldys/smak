@@ -14,6 +14,10 @@ smak item mace.fbx --mod profiles/x.mjs --game <mod> --family blunt1h --name mac
 smak import zombie.fbx -o zombie.mdl --anim --origin base    its bones and animations
 ```
 
+`smak import <file>` first: it says the axes, units, size at its true scale, meshes, materials and which
+picture it found for each. Then fit its size (packs are not to scale), look at the pictures, and correct what
+it assumed ("Recipes").
+
 ## What is read
 
 | | FBX (`readFbx`) | glTF (`readGlb`) | OBJ (`readObj`, `importedObj`) |
@@ -103,7 +107,7 @@ then `smak strip zombie.mdl --seq walk -o walk.png`. `importRigged` keeps the no
 every node above them (a rig's handles are left out), binds each point to the bone that weighs most on it,
 reads each animation at `fps` poses a second, names it by what follows its last `|` in small letters, and
 gives the model hit boxes about its bones. It is not yet a monster: activities, events, eyes and a walk
-that travels are added as for any monster (AGENTS.md, "A monster's parts").
+that travels are added as for any monster (docs/MODELS.md, "A monster from nothing").
 
 It says where the feet stand as the first animation begins (`report.feet`) and warns when they are more than 6
 units off z 0. A monster's origin is on the floor, and Master Sword's own stand there. A file whose origin is its
@@ -154,6 +158,7 @@ holds.
   middle); and the turn chosen by its outline may put its belly the wrong way in some placements: look at
   the pictures, and give `--axis`/`--flip`.
 - **Sizes in a pack** vary from model to model: fit them.
+- **Never copy a bought file into a repository**: its licence almost always forbids it.
 - **Fewer triangles keeps the shape, not the picture's detail**: the reducer weighs how far the surface moves,
   not how the picture stretches over it, so a reduced model's picture can smear where large triangles now
   cross it (a spear's blade at a tenth of its triangles). Look at `--pictures` and ask for fewer by less.

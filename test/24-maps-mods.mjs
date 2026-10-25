@@ -1234,7 +1234,7 @@ const mapFile = (name, entities, options) => {
 };
 
 test("map-check takes --fgd, --learned and --mod, for a compiled map and for a .map; map-learn writes what the maps teach", () => {
-  const plain = runSmak("map-check", join(FIXTURES, "tworooms.bsp"), "--fgd", FGD);
+  const plain = runSmak("map-check", join(FIXTURES, "tworooms.bsp"), "--fgd", FGD, "--verbose");
   sure(
     /entity definitions: \d+ classes from smakbase\.fgd, smakgame\.fgd/.test(plain) &&
       /fit for goldsrc\n$/.test(plain),
@@ -1247,7 +1247,7 @@ test("map-check takes --fgd, --learned and --mod, for a compiled map and for a .
 
   // a .map: the plan's check, with the entities against the FGD; exit code 1 on an error
   const good = mapFile("good.map", [beast([480, 128, 16], { lives: 2 })]);
-  const fine = runSmak("map-check", good, "--fgd", FGD);
+  const fine = runSmak("map-check", good, "--fgd", FGD, "--verbose");
   sure(
     /world brushes/.test(fine) &&
       /places to start: 1 info_player_start/.test(fine) &&
@@ -1295,7 +1295,7 @@ test("map-check takes --fgd, --learned and --mod, for a compiled map and for a .
       /^ +12 {2}script +"beasts\/wolf" x9 {2}"beasts\/boar" x3/m.test(one),
     one,
   );
-  const byMaps = runRefused(SMAK_CLI, "map-check", bad, "--learned", learnedFile);
+  const byMaps = runRefused(SMAK_CLI, "map-check", bad, "--learned", learnedFile, "--verbose");
   sure(
     byMaps.code === 0 &&
       /WARN  1 classes were never seen in any of the mod's 3 maps.*smak_beast_tier1/.test(byMaps.out),
@@ -1320,6 +1320,7 @@ test("map-check takes --fgd, --learned and --mod, for a compiled map and for a .
     GAME,
     "--game",
     VALVE,
+    "--verbose",
   );
   sure(
     /places to start: 1 smak_start/.test(byMod) &&

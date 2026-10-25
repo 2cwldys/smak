@@ -9,6 +9,7 @@
 // function and to its lines of the help.
 import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync, readdirSync } from "node:fs";
 import { join, dirname, basename, resolve } from "node:path";
+import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
 import * as smak from "../src/index.mjs";
 import { heightPlanOf } from "../src/maps/heightplan.mjs";
@@ -142,6 +143,7 @@ const VALUE_FLAGS = [
   "sheet",
   "weights",
   "cfg",
+  "report",
 ];
 // the flags of the map commands that may be given more than once: each time adds to a list
 const LISTED_FLAGS = [
@@ -170,6 +172,10 @@ const LISTED_FLAGS = [
 ];
 // `map-entities` and `map-plan` print no more lines than this of one list unless told all of it is wanted
 const MARKS_PRINTED = 40;
+// a play run that stopped prints this many of the last steps it did (all of them are in its told.txt)
+const STOPPED_STEPS = 4;
+// how many times smaller (each way) `play` writes the pictures it takes, unless --full-pictures
+const PLAY_SHRINK = 3;
 const LIGHTS = ["start", "off", "steady", "all"];
 const MARKED = ["all", "models", "game", "none"];
 const DOORS = ["open", "closed"];
@@ -504,22 +510,55 @@ function info({ file, src, flags }) {
       );
 }
 
+// ── a check's answer, text first ───────────────────────────────────────────
+// how many lines of what a check found a pass prints before the rest are left to its file
+const SHOWN_ON_PASS = 2;
+/**
+ * Where a checking command writes its detail: --report <file>, or a file named after the command and what it
+ * read, in smak/ under the system's temp folder (nothing is written beside a game's files).
+ */
+function reportFile(command, file, flags) {
+  if (typeof flags.report === "string") return flags.report;
+  return join(tmpdir(), "smak", `${command}-${basename(String(file)).replace(/[^A-Za-z0-9_.-]/g, "_")}.txt`);
+}
+/**
+ * A checking command's answer. The detail (every line it printed before 0.27) goes to its report file; the
+ * terminal gets what decides: on a pass the first SHOWN_ON_PASS of `shown`, the file and the PASS line (five
+ * lines at most); on a fail all of `shown` (the errors and warnings, or the findings), the file and the FAIL
+ * line. `look` says which picture to look at, or that none is needed. --verbose prints the detail as before.
+ * The last line is always `PASS: <said>` or `FAIL: <said>`.
+ */
+function answered(command, file, flags, { detail, passed, said, shown = [], look }) {
+  const to = reportFile(command, file, flags);
+  const last = `${passed ? "PASS" : "FAIL"}: ${said}`;
+  save(to, `${[...detail, ...(look ? [look] : []), last].join("\n")}\n`);
+  if (flags.verbose) for (const line of detail) console.log(line);
+  else {
+    const top = passed ? shown.slice(0, SHOWN_ON_PASS) : shown;
+    for (const line of top) console.log(line);
+    const more = shown.length - top.length;
+    console.log(`the detail: ${to}${more ? ` (${more} more lines like these)` : ""}`);
+  }
+  if (look) console.log(look);
+  console.log(last);
+}
+
 // ── check ──────────────────────────────────────────────────────────────────
-function check({ src, flags }) {
+function check({ file, src, flags }) {
   const engine = flags.engine ?? "goldsrc";
   // --source: the file it was made from; what that has too is said as inherited
   const source = flags.source === undefined ? undefined : readModel(existing(flags.source), "check");
   const report = smak.check(src, engine, { source });
-  for (const fact of report.facts) console.log(`      ${fact}`);
-  for (const warning of report.warnings) console.log(`WARN  ${warning}`);
-  for (const error of report.errors) console.log(`ERROR ${error}`);
+  const warnings = report.warnings.map((warning) => `WARN  ${warning}`);
+  const errors = report.errors.map((error) => `ERROR ${error}`);
   const inherited = report.inherited ? ` (${report.inherited} inherited from ${flags.source})` : "";
   const warned = report.warnings.length ? `, with ${report.warnings.length} warnings${inherited}` : "";
-  console.log(
-    report.errors.length
-      ? `${report.errors.length} errors: not fit for ${engine}`
-      : `fit for ${engine}${warned}`,
-  );
+  answered("check", file, flags, {
+    detail: [...report.facts.map((fact) => `      ${fact}`), ...warnings, ...errors],
+    passed: !report.errors.length,
+    said: report.errors.length ? `${report.errors.length} errors: not fit for ${engine}` : `fit for ${engine}${warned}`,
+    shown: [...errors, ...warnings],
+  });
   process.exit(report.errors.length ? 1 : 0);
 }
 
@@ -817,6 +856,30 @@ async function figureSurvey({ command, file, flags }) {
   console.log("(measures of the game's own figures, on this machine: keep the file out of any repository you share)");
 }
 
+// a judge's finding this many of the corpus' middle halves out is "far": a figure with one fails
+const FAR = 1.5;
+/** What a finding measures: its words before the value (`triangles: 216 ...` is "triangles"). */
+const measureOf = (said) => /^(.*?): [-\d]/.exec(said)?.[1] ?? said.split("; ")[0];
+/** Far findings as the reasons of a FAIL: what each measures, the first three. */
+const farText = (far) =>
+  `${far.length} measures far out of the corpus' middle half: ${far.slice(0, 3).map((finding) => measureOf(finding.said)).join("; ")}${far.length > 3 ? "; ..." : ""}`; // prettier-ignore
+/**
+ * The texture and shape judges' answer: a pass when no measure is far out of the corpus' middle half. Their
+ * sheet (--sheet) is looked at on a fail, where the measures far out are drawn; on a pass the text decides.
+ */
+function judgedBy(command, file, flags, { told, fit, findings }) {
+  const far = findings.filter((finding) => finding.distance >= FAR);
+  const sheet = typeof flags.sheet === "string" ? flags.sheet : null;
+  const head = told.findIndex((line) => / of 100$/.test(line));
+  answered(command, file, flags, {
+    detail: told,
+    passed: !far.length,
+    said: far.length ? farText(far) : `measures one at a time ${fit} of 100, none far out of the corpus' middle half`,
+    shown: far.length ? told : told.slice(Math.max(0, head), head + 1),
+    look: sheet ? (far.length ? `look at ${sheet}: the measures far out are drawn there` : "no picture to look at: the measures decide") : undefined, // prettier-ignore
+  });
+}
+
 /** figure-judge: the style judge, a model against the corpus of its game's profile (or --against). */
 async function figureJudge({ command, file, flags }) {
   if (!/\.mdl$/i.test(file)) fail(`${command}: a model (.mdl)`);
@@ -831,10 +894,24 @@ async function figureJudge({ command, file, flags }) {
   const { measures, by } = F.styleMeasures(f);
   const prep = F.prepareStyle(F.styleCorpus(data, games), w);
   const verdict = F.judgeStyle(measures, prep, { hash: f.hash, textures: by.textures, parts: by.parts });
-  verdict.among = F.rangeOf(Object.values(F.styleLeaveOneOut(prep)).map((v) => v.score));
+  const own = Object.values(F.styleLeaveOneOut(prep)).map((v) => v.score);
+  verdict.among = F.rangeOf(own);
   if (flags.json) return console.log(JSON.stringify({ file, corpus: games, profile: style.name, measures, ...verdict }, null, 1));
-  console.log(F.styleTold(basename(file), verdict, games, { most: flags.all ? 99 : 12 }));
-  if (style.name && weights !== "library") console.log(`  (weighed as ${style.title}: the profile's weights)`);
+  const told = F.styleTold(basename(file), verdict, games, { most: flags.all ? 99 : 12 }).split("\n");
+  if (style.name && weights !== "library") told.push(`  (weighed as ${style.title}: the profile's weights)`);
+  // it passes where the game's own figures do: at or over the lower quarter of their scores against the rest
+  const floor = [...own].sort((a, b) => a - b)[Math.floor(own.length / 4)];
+  const passed = verdict.score >= floor;
+  const far = verdict.findings.filter((finding) => finding.distance >= FAR && !finding.told);
+  answered(command, file, flags, {
+    detail: told,
+    passed,
+    said: passed
+      ? `${verdict.score} of 100, at or over the lower quarter of the game's own figures (${floor})`
+      : `${verdict.score} of 100, under the lower quarter of the game's own figures (${floor})${far.length ? `: ${farText(far)}` : ""}`,
+    shown: passed ? told.slice(0, 1) : told,
+    look: passed ? undefined : `look: draw it beside the nearest of the game's (${verdict.nearest[0]?.figure ?? "none"}) with render and tile, for the owner's eye`, // prettier-ignore
+  });
 }
 
 /** A texture's measures from a file: a model's textures, or a picture of an atlas (its box, its pixels a texel). */
@@ -865,13 +942,16 @@ async function figureTexture({ command, file, flags }) {
   const v = F.judgeTexture(own.measures, library.texture, games, ref?.measures, { refName });
   if (flags.sheet) {
     const items = [{ name: basename(file).replace(/\.\w+$/, ""), ...own }, ...(ref ? [{ name: refName, ...ref }] : [])];
-    const img = F.textureSheet(items, library.texture);
+    const img = F.textureSheet(items, library.texture, { scale: flags["full-pictures"] === true ? 3 : 2 });
     save(flags.sheet, smak.png(img.width, img.height, img.rgba));
-    console.log(`${flags.sheet}: the atlases side by side, every measure over the library's spread`);
   }
   if (flags.json) return console.log(JSON.stringify({ file, corpus: games, reference: ref ? refName : null, scale: own.scale, measures: own.measures, ...v }, null, 1)); // prettier-ignore
-  if (own.scale && own.scale !== 1) console.log(`(the picture read at ${own.scale.toFixed(2)} pixels a texel)`);
-  console.log(F.textureTold(basename(file), v, games, refName));
+  const told = [
+    ...(flags.sheet ? [`${flags.sheet}: the atlases side by side, every measure over the library's spread`] : []),
+    ...(own.scale && own.scale !== 1 ? [`(the picture read at ${own.scale.toFixed(2)} pixels a texel)`] : []),
+    ...F.textureTold(basename(file), v, games, refName).split("\n"),
+  ];
+  judgedBy(command, file, flags, { told, fit: v.fit, findings: v.findings });
 }
 
 /**
@@ -928,12 +1008,15 @@ async function figureShape({ command, file, flags, listed }) {
   const v = F.judgeShape(x, library.shape, games, ref, refName);
   if (flags.sheet) {
     const items = Object.entries(x.pictures ?? {}).map(([view, p]) => ({ name: `${basename(file).replace(/\.\w+$/, "")} ${view}`, at: p.at, note: `HOLES ${(100 * x.views[view].measures.holes).toFixed(1)}PC` })); // prettier-ignore
-    const img = F.shapeSheet(items);
+    const img = F.shapeSheet(items, { scale: flags["full-pictures"] === true ? 0.75 : 0.5 });
     save(flags.sheet, smak.png(img.width, img.height, img.rgba));
-    console.log(`${flags.sheet}: the silhouettes as measured`);
   }
   if (flags.json) return console.log(JSON.stringify({ file, corpus: games, reference: ref ? refName : null, measures: x.measures, bands: x.bands, ...v }, null, 1)); // prettier-ignore
-  console.log(F.shapeTold(basename(file), v, games, refName));
+  const told = [
+    ...(flags.sheet ? [`${flags.sheet}: the silhouettes as measured`] : []),
+    ...F.shapeTold(basename(file), v, games, refName).split("\n"),
+  ];
+  judgedBy(command, file, flags, { told, fit: v.fit, findings: v.findings });
 }
 
 /** figure-validate: does each judge tell the library's corpora apart (AUC, confusion), with each one's own weights or the library's. */
@@ -1833,24 +1916,27 @@ async function mapCheck({ file, flags, listed }) {
   const report = source
     ? maps.checkPlan(maps.readMap(readFileSync(file, "utf8")), defined({ ...against, folders, textures }))
     : maps.checkBsp(readFileSync(file), { engine, folders, ...against });
-  for (const fact of report.facts) console.log(`      ${fact}`);
-  for (const warning of report.warnings) console.log(`WARN  ${warning}`);
-  for (const error of report.errors) console.log(`ERROR ${error}`);
+  const facts = report.facts.map((fact) => `      ${fact}`);
+  const warnings = report.warnings.map((warning) => `WARN  ${warning}`);
+  const errors = report.errors.map((error) => `ERROR ${error}`);
   // the script folders given, against the game's pack: one of ours that replaces nothing and is named by
   // nothing is laid over the pack for no one (`smak scripts` lists them all). Of this map's own only, unless
   // --all: a script of another map is named by that map, which is not looked at here
-  let unnamed = 0;
+  const scripted = [];
   if (listed.scripts?.length && against.mod?.scriptPack) {
     const only = flags.all === true ? undefined : [mapForScripts(file).name];
     const placed = placeScripts(against.mod, listed.scripts, [file], flags.shipped && existingFolder(flags.shipped), only); // prettier-ignore
-    for (const fact of placed.facts.slice(1)) console.log(`      ${fact}`);
-    unnamed = sayScripts(placed, { all: false });
+    scripted.push(...placed.facts.slice(1).map((fact) => `      ${fact}`), ...placed.warnings.map((warning) => `WARN  ${warning}`)); // prettier-ignore
   }
+  const unnamed = scripted.filter((line) => line.startsWith("WARN")).length;
   const warned = report.warnings.length + unnamed ? `, with ${report.warnings.length + unnamed} warnings` : "";
   const fitFor = source ? "to compile" : `for ${engine}`;
-  console.log(
-    report.errors.length ? `${report.errors.length} errors: not fit ${fitFor}` : `fit ${fitFor}${warned}`,
-  );
+  answered("map-check", file, flags, {
+    detail: [...facts, ...warnings, ...errors, ...scripted],
+    passed: !report.errors.length,
+    said: report.errors.length ? `${report.errors.length} errors: not fit ${fitFor}` : `fit ${fitFor}${warned}`,
+    shown: [...errors, ...warnings, ...scripted.filter((line) => line.startsWith("WARN"))],
+  });
   process.exit(report.errors.length ? 1 : 0);
 }
 /**
@@ -2709,7 +2795,7 @@ async function modelSpecCommand({ command, file, flags, listed }) {
 }
 
 /**
- * map (smak.map/1, docs/SPEC.md): the map built in a folder of its name beside the spec (-o another): its .map,
+ * map (smak.map/1, docs/SPEC-MAPS.md): the map built in a folder of its name beside the spec (-o another): its .map,
  * its own .wad, its models and sounds, compiled when the compilers are found (VHLT_DIR, the PATH or --vhlt) and
  * then walked and lit, and its pictures (plan, views, sections, props). --game the folders the game's .wad files
  * and models are found in; --fgd entity definitions its entities are held to; --reference drawn beside the plan;
@@ -3414,28 +3500,73 @@ async function playMap({ command, file: url, flags, listed }) {
       return fail(`${command}: --steps is a JSON file that holds a list of steps, and ${file} does not read as JSON (${error.message})`); // prettier-ignore
     }
   };
-  /** One run printed: its pictures, its log, and whether what it expected held. False when it did not. */
+  // what a run tells as it goes (a line a step): printed as it comes with --verbose, else kept for the run's
+  // folder (told.txt), so that a run that passes prints five lines or fewer
+  let told = [];
+  const tell = (line) => (flags.verbose ? console.log(line) : told.push(line));
+  /** The lines of the run so far, written beside its pictures: the file's path. */
+  const toldFile = (out, more) => {
+    const to = join(out, "told.txt");
+    save(to, `${[...told, ...more].join("\n")}\n`);
+    told = [];
+    return to;
+  };
+  /**
+   * One run printed: whether what it expected held, last, as PASS or FAIL, and which picture to look at.
+   * Every line of before 0.27 (each picture, each fight, each section) is in told.txt, and printed with
+   * --verbose. False when an expectation did not hold.
+   */
   const report = (run) => {
-    console.log(`${run.pictures.length} pictures in ${run.out}${run.sheet ? `, all of them in ${run.sheet}` : ""}`); // prettier-ignore
-    for (const picture of run.pictures) console.log(`  ${picture}`);
-    console.log(`what the game said: ${run.logFile}${run.linesFile ? ` (and ${run.linesFile})` : ""}`);
-    for (const fight of run.fights ?? []) console.log(fightLine(fight));
-    for (const line of run.summary ? summaryLines(run.summary) : []) console.log(line);
     const failed = run.expectations.filter((each) => !each.passed);
-    if (run.expectations.length) {
-      for (const each of run.expectations) console.log(expectationLine(each));
-      console.log(`${run.passed ? "PASSED" : "FAILED"}: ${run.expectations.length - failed.length} of ${run.expectations.length} expectations held   (${(run.took / 1000).toFixed(1)} s)`); // prettier-ignore
-    } else console.log(`done in ${(run.took / 1000).toFixed(1)} s (nothing was expected of it: no pass and no fail)`); // prettier-ignore
+    const held = `${run.expectations.length - failed.length} of ${run.expectations.length} expectations held   (${(run.took / 1000).toFixed(1)} s)`; // prettier-ignore
+    const last = run.expectations.length
+      ? `${failed.length ? "FAIL" : "PASS"}: ${held}`
+      : `PASS: done in ${(run.took / 1000).toFixed(1)} s (nothing was expected of it: its pictures are the test)`;
+    const fights = (run.fights ?? []).map(fightLine);
+    const summary = run.summary ? summaryLines(run.summary) : [];
+    const detail = [
+      `${run.pictures.length} pictures in ${run.out}${run.sheet ? `, all of them in ${run.sheet}` : ""}`,
+      ...run.pictures.map((picture) => `  ${picture}`),
+      `what the game said: ${run.logFile}${run.linesFile ? ` (and ${run.linesFile})` : ""}`,
+      ...fights,
+      ...summary,
+      ...run.expectations.map(expectationLine),
+    ];
+    const pictures = run.sheet ?? run.pictures.at(-1);
+    const look = !pictures
+      ? "no picture was taken"
+      : !run.expectations.length
+        ? `look at ${pictures}: nothing was expected, so only the pictures tell`
+        : failed.length
+          ? `look at ${pictures} (the pictures, ${run.pictures.length}) beside the lines that failed`
+          : "no picture to look at: the expectations decided";
+    const file = toldFile(run.out, [...detail, look, last]);
+    if (flags.verbose) for (const line of detail) console.log(line);
+    else {
+      console.log(`what was done: ${file}; what the game said: ${run.logFile}`);
+      if (failed.length) for (const each of failed) console.log(expectationLine(each));
+      // one fight's line is the measure of its difficulty; the run's own line counts the rest
+      console.log(fights.length === 1 ? fights[0] : (summary.at(-1) ?? `${run.steps?.length ?? 0} steps`));
+    }
+    console.log(look);
+    console.log(last);
     return failed.length === 0;
   };
   /** A run that stopped, printed; false. */
-  const stopped = (error) => {
-    for (const fight of error.fights ?? []) console.error(fightLine(fight));
-    for (const line of error.summary ? summaryLines(error.summary) : []) console.error(line);
-    for (const each of error.expectations ?? []) console.error(expectationLine(each));
-    if (error.sheet) console.error(`the pictures up to there: ${error.sheet}`);
-    if (error.logFile) console.error(`what the game said up to there: ${error.logFile}`);
-    console.error(`FAILED: ${/^play: /.test(error.message) ? error.message : `${command}: ${sayOf(error)}`}`);
+  const stopped = (error, out) => {
+    const lines = [
+      ...(error.fights ?? []).map(fightLine),
+      ...(error.summary ? summaryLines(error.summary) : []),
+      ...(error.expectations ?? []).map(expectationLine),
+      ...(error.sheet ? [`the pictures up to there: ${error.sheet}`] : []),
+      ...(error.logFile ? [`what the game said up to there: ${error.logFile}`] : []),
+    ];
+    const last = `FAIL: ${/^play: /.test(error.message) ? error.message : `${command}: ${sayOf(error)}`}`;
+    // the last steps done say where it stopped; all of them are in told.txt
+    if (!flags.verbose) for (const line of told.slice(-STOPPED_STEPS)) console.error(line);
+    if (told.length && out) console.error(`what was done up to there: ${toldFile(out, [...lines, last])}`);
+    for (const line of lines) console.error(line);
+    console.error(last);
     return false;
   };
   try {
@@ -3478,6 +3609,8 @@ async function playMap({ command, file: url, flags, listed }) {
       out: all.length > 1 ? join(out, `${index + 1}-${String(map).replace(/[^A-Za-z0-9_-]/g, "_")}`) : out,
       ...defined({ loads: numberOf(flags, "loads"), from: index ? undefined : flags.from }),
       ...{ expect, expectNot, sheet: flags.sheet !== false },
+      // a third of the page each way unless told: the size that tells where the player is and what he sees
+      shrink: flags["full-pictures"] === true ? 1 : PLAY_SHRINK,
       // the files are put once, before the first map
       put: index ? [] : put,
       ...(over.length ? { over } : {}),
@@ -3488,8 +3621,8 @@ async function playMap({ command, file: url, flags, listed }) {
       await sessionState(url);
       let held = true;
       for (const run of runs) {
-        console.log(`${url}: ${run.stay ? "staying" : `map ${run.map}`}, ${run.steps.length} steps      (from the start, it took, what)`); // prettier-ignore
-        held = (await attachSession(url, run, { tell: (line) => console.log(line) }).then(report, stopped)) && held; // prettier-ignore
+        tell(`${url}: ${run.stay ? "staying" : `map ${run.map}`}, ${run.steps.length} steps      (from the start, it took, what)`); // prettier-ignore
+        held = (await attachSession(url, run, { tell }).then(report, (error) => stopped(error, run.out))) && held; // prettier-ignore
       }
       if (!held) process.exit(1);
       return;
@@ -3506,7 +3639,8 @@ async function playMap({ command, file: url, flags, listed }) {
     );
     if (wide && (width !== wide || height !== high))
       console.log(`WARN  the profile's clicks were measured on a page of ${wide} by ${high}, and this one is ${width} by ${height}`); // prettier-ignore
-    const session = playSession({ driver, mod, over, tell: (line) => console.log(line) });
+    // a session served keeps printing what its runs do: it is the window onto the runs attached to it
+    const session = playSession({ driver, mod, over, tell: flags.serve ? (line) => console.log(line) : tell });
 
     if (flags.serve) {
       const began = Date.now();
@@ -3518,7 +3652,7 @@ async function playMap({ command, file: url, flags, listed }) {
       console.log(`  smak play ${served.address} --attach --map <name> --steps steps.json -o <folder>     a run in it`); // prettier-ignore
       console.log(`  smak play ${served.address} --attach --close                                        its end`); // prettier-ignore
       let held = true;
-      for (const run of runs) held = (await session.run(run).then(report, stopped)) && held;
+      for (const run of runs) held = (await session.run(run).then(report, (error) => stopped(error, run.out))) && held; // prettier-ignore
       await served.closed;
       console.log("the session is closed");
       if (!held) process.exit(1);
@@ -3528,8 +3662,8 @@ async function playMap({ command, file: url, flags, listed }) {
     let held = true;
     try {
       for (const run of runs) {
-        console.log(`${url}: map ${run.map}, ${run.steps.length} steps      (from the start, it took, what)`);
-        held = (await session.run(run).then(report, stopped)) && held;
+        tell(`${url}: map ${run.map}, ${run.steps.length} steps      (from the start, it took, what)`);
+        held = (await session.run(run).then(report, (error) => stopped(error, run.out))) && held;
       }
     } finally {
       await session.close().catch(() => {});
@@ -3554,7 +3688,8 @@ const COMMANDS = {
   check: {
     run: check,
     help: `  check <mdl> [--engine goldsrc|xash] [--source original.mdl]   what would break or draw wrong in the game (exit code 1 on
-                                            an error); --source: warnings the original has too are marked "inherited"`,
+                                            an error); --source: warnings the original has too are marked "inherited". Ends in a
+                                            line PASS or FAIL; the facts go to a file (--report <file>), --verbose prints them`,
   },
   render: {
     run: draw,
@@ -3671,7 +3806,10 @@ const COMMANDS = {
                                             layers, mirror, likeness, boxes) against the game's figures and a reference's. --pose:
                                             a module exporting pose(src) (the bones' matrices) and views ({ front: { yaw, pitch,
                                             dist, fov, target } }): the model drawn in the reference's pose, from its cameras, framed
-                                            as its masks' figure stands`,
+                                            as its masks' figure stands. The three judges end in a line PASS or FAIL (style: at or
+                                            over the game's own figures' lower quarter; texture, shape: no measure far out of the
+                                            corpus' middle half), exit code 0 either way; the detail goes to a file (--report),
+                                            --verbose prints it; the sheets are drawn small unless --full-pictures`,
   },
   "figure-validate": {
     run: figureValidate,
@@ -3684,7 +3822,7 @@ const COMMANDS = {
   reskin: {
     run: reskin,
     help: `  reskin <mdl> <rules.json|rules.mjs> -o out.mdl [--body n] [--pictures <folder>]
-                                            its textures recoloured, weathered and painted over by rules (AGENTS.md, "A re-skin
+                                            its textures recoloured, weathered and painted over by rules (docs/RESKIN.md, "A re-skin
                                             by rules"); --pictures: each changed texture before and after; checked against the original`,
   },
   inline: {
@@ -3780,7 +3918,8 @@ const COMMANDS = {
                                             entities against the mod: a class or a key that does not exist, a value of the wrong
                                             kind, a name nothing answers to, the mod's rules, the files it names (--scripts: folders of
                                             scripts of your own, for a profile whose mod names scripts: of those named by nothing,
-                                            this map's own are warned of, and every one with --all)`,
+                                            this map's own are warned of, and every one with --all). Ends in a line PASS or FAIL;
+                                            the facts go to a file (--report <file>), --verbose prints them`,
   },
   "map-fgd": {
     run: mapFgd,
@@ -4148,7 +4287,7 @@ const COMMANDS = {
     address: true,
     help: `  play <url> --map <name> [--steps steps.json] [-o <folder>] [--mod <profile>] [--game <folder> ...] [--playwright <folder>]
                               [--width 1024] [--height 768] [--loads ms] [--expect <pattern> ...] [--expect-not <pattern> ...]
-                              [--put <place>=<file> ...] [--no-sheet] [--show] [--gpu]
+                              [--put <place>=<file> ...] [--no-sheet] [--show] [--gpu] [--full-pictures] [--verbose]
                                             the map seen in the game itself: a browser build of Xash3D at that address is opened,
                                             the map loaded, the game entered as the mod's profile says, and the steps done
                                             (steps.json: a list such as [{ "walk": 3000, "shot": "gate" }, { "face": 90, "look": -20 },
@@ -4158,6 +4297,9 @@ const COMMANDS = {
                                             time. --expect, --expect-not: lines the whole run is held to. It ends with 1 when an
                                             expectation did not hold or the run stopped. --map and --steps given several times: one
                                             run each, in one start of the engine. --put: a file written into the engine first.
+                                            A run ends in a line PASS or FAIL and says which picture to look at, if any; what
+                                            it did step by step is in told.txt (--verbose: printed as it goes). The pictures
+                                            are a third of the page each way (--full-pictures: the page's size).
                                             It needs Playwright, an outside program: --playwright names the folder that holds its
                                             node_modules (or PLAYWRIGHT_DIR)
   play <url> --serve [--port 8098] [--over <place>=<folder> ...] [--mod ...] [--playwright ...]

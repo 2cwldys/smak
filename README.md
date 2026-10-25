@@ -20,7 +20,7 @@ model, map and shot in it was made by an agent with SMAK.
 
 ![commands](https://img.shields.io/badge/commands-80-555)
 ![functions](https://img.shields.io/badge/public%20functions-706-555)
-![docs](https://img.shields.io/badge/guides-13-555)
+![docs](https://img.shields.io/badge/guides-21-555)
 ![profiles](https://img.shields.io/badge/game%20profiles-Master%20Sword%20%C2%B7%20The%20Specialists%20%C2%B7%20Half--Life-555)
 
 ![models](https://img.shields.io/badge/Models-read%20%C2%B7%20write%20%C2%B7%20re--skin%20%C2%B7%20paint%20by%20place-2ea44f)
@@ -78,11 +78,13 @@ node bin/smak.mjs help                              every command
 
 | | |
 | --- | --- |
-| [AGENTS.md](AGENTS.md) | The agent's briefing: how a model is put together, the rules, the recipes. |
-| [docs/API.md](docs/API.md) | Every function. |
-| [docs/MAPS.md](docs/MAPS.md), [MAPS-MAKING.md](docs/MAPS-MAKING.md), [MAPS-DESIGN.md](docs/MAPS-DESIGN.md) | Reading, making and designing maps. |
+| [AGENTS.md](AGENTS.md) | The agent's briefing, short: the loop, the rules, and which guide a task needs. |
+| [docs/COMMANDS.md](docs/COMMANDS.md), [docs/API.md](docs/API.md) | Every command; every function. |
+| [docs/MODELS.md](docs/MODELS.md), [RESKIN.md](docs/RESKIN.md), [SHAPES.md](docs/SHAPES.md), [FIGURES.md](docs/FIGURES.md) | How a model is put together and a new one made; re-skins; new shapes in a model; figures and their judges. |
+| [docs/MAPS-LOOKING.md](docs/MAPS-LOOKING.md), [MAPS-CHECKS.md](docs/MAPS-CHECKS.md), [MAPS.md](docs/MAPS.md), [MAPS-MAKING.md](docs/MAPS-MAKING.md), [MAPS-DESIGN.md](docs/MAPS-DESIGN.md) | Looking at, checking, reading, making and designing maps. |
 | [docs/PLAY.md](docs/PLAY.md) | Playing a map in the game and testing it by what the game says; filming it. |
-| [docs/SPEC.md](docs/SPEC.md) | Maps, models, textures and videos described in JSON and built by `smak build`. |
+| [docs/SPEC.md](docs/SPEC.md), [SPEC-MAPS.md](docs/SPEC-MAPS.md) | Models, textures, videos and maps described in JSON and built by `smak build`. |
+| [docs/TROUBLE.md](docs/TROUBLE.md) | What the kit can and cannot do, and what a message means when something is wrong. |
 | [docs/IMPORT.md](docs/IMPORT.md), [docs/ITEMS.md](docs/ITEMS.md) | Bought models, and new weapons in a game's own files. |
 | [docs/ENGINES.md](docs/ENGINES.md) | GoldSrc against Xash3D. |
 | [CHANGELOG.md](CHANGELOG.md) | What changed, version by version. |

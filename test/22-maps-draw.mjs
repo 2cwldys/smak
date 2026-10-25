@@ -356,9 +356,16 @@ test("the map commands tell what is in a map and check it", () => {
     /fit for goldsrc/.test(runSmak("map-check", mapFile, "--engine", "xash").replace("xash", "goldsrc")),
     "map-check",
   );
+  // a map that passes: five lines at most, the last PASS; its counts in the file it names
+  const passed = runSmak("map-check", mapFile).trim().split("\n");
+  const detail = /^the detail: (.*)$/m.exec(passed.join("\n"))?.[1];
+  sure(
+    passed.length <= 5 && passed.at(-1) === "PASS: fit for goldsrc" && /version 30/.test(readFileSync(detail, "utf8")),
+    `map-check printed ${passed.join(" | ")}`,
+  );
   sure(
     /found in the folders given: 1 of 1 \.wad files, 3 of 3 textures/.test(
-      runSmak("map-check", join(FIXTURES, "tworooms-wants-wad.bsp"), "--game", FIXTURES),
+      runSmak("map-check", join(FIXTURES, "tworooms-wants-wad.bsp"), "--game", FIXTURES, "--verbose"),
     ),
     "map-check --game",
   );

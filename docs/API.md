@@ -767,7 +767,8 @@ made whole from `GOLDSRC`'s: `{ enter, say, loads, yawspeed, screen }`.
 A session (`docs/PLAY.md` has the whole of it): `play.playSession({ driver, mod, pause, tell, over })` →
 `{ ready(), run(run), close(), state }`. `over: [{ path: "msc", folder }]`: folders laid over the game's files,
 marked as the session begins; a `run({ ..., over })` that names one puts every file in it new or changed since
-(size or time) and moves the mark on. `play.serveSession({ session, port = 8098, host, tell, beat = 30000 })`
+(size or time) and moves the mark on; a `run({ ..., shrink: 3 })` writes each picture that many times smaller each way
+(`play.smallerPng(bytes, k)`; `smak play` asks 3 unless `--full-pictures`). `play.serveSession({ session, port = 8098, host, tell, beat = 30000 })`
 serves it: a run's answer is a line of JSON a thing done, with `{ beat }` every `beat` ms while the run is quiet.
 `play.attachSession(address, run, { tell })` does a run there and reads its answer with `node:http`, with no
 time limit (a fight of fifteen minutes reports its result). A fight's `prefer`, `sidestep` and `dodge`, and the
@@ -993,7 +994,7 @@ texels), chartDiag, aoFollow, aoFollowAll (darker where the surface is hidden: a
 | `textureOfPicture(img, { box, scale, ground, tolerance })` | A picture of an atlas: the painting told from its ground (the commonest colour of the box's border unless given), brought back to one pixel a texel (`scale`, or found from the period of its hard steps, `periodOf`: a screenshot of an editor's UV view at 4 pixels a texel reads 4.00). `{ measures, atlases, scale }`. `atlasOfPicture`, `atlasOfTexture(tex, tris)`, `textureMeasures(atlases)` under it. |
 | `referenceOfMeasures(list)` | A reference of several figures (the game's own, or of the manner wanted): each measure's median. |
 | `judgeTexture(measures, data, games, ref, { leave, refName, yard })` | `{ fit, findings, toward, refDistance, refPlace, refCorpusMedian }`: the corpus measure by measure, then the reference (`{ measures }` or the measures), each measure apart in yardsticks (the library's middle halves over all its figures, `textureYardstick`), the distance over every measure both have, and the share of the corpus' figures nearer the reference. `textureTold(name, verdict, games, refName)` in words. |
-| `validateTexture(data, { refs, weights, games, alike })`, `textureSheet(items, data)`, `textureSeparation(data, { games, of })` | The validation (AUC, who stands best where, the references against each corpus); a picture of atlases side by side with every measure as a bar over the library's spread. |
+| `validateTexture(data, { refs, weights, games, alike })`, `textureSheet(items, data, { scale })`, `textureSeparation(data, { games, of })` | The validation (AUC, who stands best where, the references against each corpus); a picture of atlases side by side (`scale` pixels a texel, 3) with every measure as a bar over the library's spread. |
 
 ### The shape judge (`shape.mjs`, `silhouettes.mjs`, `judge-shape.mjs`)
 
@@ -1009,7 +1010,7 @@ near twin), boxes. Holes and notches are also told by band of the height (`BANDS
 | `masksLikeReference(src, { pose, views, background, scale })` | A model drawn as a reference's figure is seen: in `pose` (a pose made to match the reference's), each view `{ mask, yaw, pitch, dist, fov, target }` from the reference's camera in perspective, framed so its top, bottom and middle across stand where the reference mask's figure does. → masks for `shapeOfModel(src, { masks })`: like with like. |
 | `shapeOfReference(masks)`, `shapeOfMasks(masks)`, `masksOnViewport(img, views)` | A reference from masks by view (`{ view: { mask, img } }`, `img` the picture under it for the inside's edges), summarised over its own views; masks cut from a screenshot of an editor's viewport (`maskOnViewport`: its grey ground, grid, axis lines and gizmos taken out). |
 | `silhouetteMeasures(mask, img)`, `modelSilhouettes(src, { views })`, `summary(views, names)` | One silhouette brought to 400 pixels tall and measured; a model's views; their summary. |
-| `judgeShape(x, data, games, ref, refName, { leave, yard })` | As the texture judge's, with the band or part at fault (`shapeWhere`); the reference's distance over the silhouette measures (`PICTURE_KEYS`). `shapeTold`, `validateShape(data, { refs, ours, reference, weights, games, alike })`, `shapeSheet(items)`. |
+| `judgeShape(x, data, games, ref, refName, { leave, yard })` | As the texture judge's, with the band or part at fault (`shapeWhere`); the reference's distance over the silhouette measures (`PICTURE_KEYS`). `shapeTold`, `validateShape(data, { refs, ours, reference, weights, games, alike })`, `shapeSheet(items, { scale })` (the silhouettes at `scale` of their size, 0.75). |
 
 What the research found: holes as a share are a trustworthy measure of a
 screenshot's mask, `holeCount` is not (it moves with the mask's settings); holes and asymmetry depend on the pose

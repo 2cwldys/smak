@@ -144,9 +144,9 @@ export default () => ({
   const room = [maps.box([-16, -16, -16], [272, 272, 0], "A"), maps.box([-16, -16, 128], [272, 272, 144], "A"), maps.box([-16, -16, 0], [0, 272, 128], "A"), maps.box([256, -16, 0], [272, 272, 128], "A"), maps.box([0, -16, 0], [256, 0, 128], "A"), maps.box([0, 256, 0], [256, 272, 128], "A")]; // prettier-ignore
   const mapFile = join(folder, "yard.map");
   writeFileSync(mapFile, maps.writeMap({ worldspawn: {}, brushes: room, entities: [maps.playerStart([128, 128, 0], 0), maps.pointEntity("monster_zombie", [64, 64, 36], { script: "yard/keeper" })] })); // prettier-ignore
-  const checked = runSmak("map-check", mapFile, "--mod", profile, "--scripts", scripts, "--shipped", shipped);
+  const checked = runSmak("map-check", mapFile, "--mod", profile, "--scripts", scripts, "--shipped", shipped, "--verbose");
   sure(/^WARN {2}1 scripts are new .*yard\/lost/m.test(checked) && !/cellar\/rat/.test(checked.split("\n").filter((line) => /^WARN/.test(line)).join()), checked); // prettier-ignore
   sure(/1 more scripts are new and named by nothing, and are no part of yard/.test(checked), "the others are counted");
-  const all = runSmak("map-check", mapFile, "--mod", profile, "--scripts", scripts, "--shipped", shipped, "--all");
+  const all = runSmak("map-check", mapFile, "--mod", profile, "--scripts", scripts, "--shipped", shipped, "--all", "--verbose");
   sure(/^WARN {2}2 scripts are new .*cellar\/rat.*yard\/lost/m.test(all), all);
 });

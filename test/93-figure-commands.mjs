@@ -2,7 +2,7 @@
 // library of the test's own), `figure-judge`, `figure-texture` (a picture of an atlas as the reference, read at
 // 4 pixels a texel), `figure-shape` (a reference's masks; a pose module drawing the model as they see it; a
 // picture with its mask), `figure-validate`, and what they refuse.
-import { mkdirSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import * as smak from "../src/index.mjs";
@@ -131,6 +131,22 @@ test("figure-shape: against a reference's masks, in the reference's pose from a 
     library,
   );
   sure(/its shape against flat/.test(picture), picture);
+});
+
+test("the judges answer in text first: a figure of the game's manner passes in a few lines, one of another fails with the measures far out", () => {
+  const like = join(tmp, "figure-like.mdl");
+  writeFileSync(like, figure({ name: "figure-like.mdl", paint: "panels", seed: 11, limb: 2.9 }).src);
+  const style = runSmak("figure-judge", like, "--against", "shaded", "--library", library).trim().split("\n");
+  sure(style.length <= 5 && /^PASS: \d+ of 100, at or over the lower quarter of the game's own figures/.test(style.at(-1)), style.join("\n")); // prettier-ignore
+  const sheet = join(tmp, "figure-like-texture.png");
+  const texture = runSmak("figure-texture", like, "--against", "shaded", "--library", library, "--sheet", sheet).trim().split("\n"); // prettier-ignore
+  sure(texture.length <= 5 && texture.includes("no picture to look at: the measures decide") && /^PASS: measures one at a time \d+ of 100, none far out/.test(texture.at(-1)), texture.join("\n")); // prettier-ignore
+  const detail = /^the detail: (.*)$/m.exec(texture.join("\n"))[1];
+  sure(/its texture against shaded/.test(readFileSync(detail, "utf8")), "the findings are in the file");
+  // the flat figure: FAIL, with the findings above it and the sheet to look at
+  const flat = runSmak("figure-texture", judged, "--against", "shaded", "--library", library, "--sheet", sheet);
+  sure(/far {2}texels in a flat fill/.test(flat) && /look at .*figure-like-texture\.png/.test(flat) && /\nFAIL: \d+ measures far out of the corpus' middle half: [^\n]*flat fill/.test(flat), flat); // prettier-ignore
+  sure(/\nFAIL: \d+ of 100, under the lower quarter/.test(runSmak("figure-judge", judged, "--against", "shaded", "--library", library)), "the style judge's FAIL"); // prettier-ignore
 });
 
 test("figure-validate: the two games told apart by each judge", () => {

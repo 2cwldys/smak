@@ -1,11 +1,14 @@
-// The kit's own writing, handed out a section at a time. An agent with a shell reads AGENTS.md whole; a
-// client of this server asks for the list of its sections first and then for the two or three its task
-// needs. Nothing of the guide is copied here: the files are read when they are asked for and cut at their
-// headings, so that what the guide says tomorrow is what this hands out tomorrow.
+// The kit's own writing, handed out a section at a time. An agent with a shell reads AGENTS.md, an index, and
+// the one guide its task needs; a client of this server asks for the list of the guide's sections first and
+// then for the two or three its task needs. Nothing of the guide is copied here: the files are read when
+// they are asked for and cut at their headings, so that what the guide says tomorrow is what this hands out
+// tomorrow.
 //
-//   the documents   AGENTS.md ("guide"), docs/API.md ("api"), docs/ENGINES.md ("engines"), docs/MAPS.md
-//                   ("maps"), docs/MAPS-MAKING.md ("maps-making"), and every example and kit by its path
-//                   ("examples/01-new-model.mjs", "kits/swordkit.mjs")
+//   the documents   "guide": AGENTS.md and the guides its briefing was moved to (the command line, models,
+//                   re-skins, shapes, figures, what is wrong), read as one; docs/API.md ("api"),
+//                   docs/ENGINES.md ("engines"), docs/MAPS.md ("maps"), docs/MAPS-MAKING.md ("maps-making"),
+//                   every other guide of docs/ by its name in small letters ("play", "spec-maps"), and every
+//                   example and kit by its path ("examples/01-new-model.mjs", "kits/swordkit.mjs")
 //   a section       a heading of a document and what is under it, up to the next heading of any depth
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -14,13 +17,22 @@ import { fileURLToPath } from "node:url";
 /** The kit's folder: this file is in its `mcp`. */
 export const KIT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-/** The written documents, by the short name a client asks for them with. */
+/** The guide: AGENTS.md, then the guides that hold what it held before it was made an index (0.27). */
+const GUIDE = ["AGENTS.md", ...["COMMANDS", "MODELS", "RESKIN", "SHAPES", "FIGURES", "TROUBLE"].map((name) => `docs/${name}.md`)];
+/** The written documents, by the short name a client asks for them with: a file, or files read as one. */
 const DOCUMENTS = {
-  guide: "AGENTS.md",
+  guide: GUIDE,
   api: "docs/API.md",
   engines: "docs/ENGINES.md",
   maps: "docs/MAPS.md",
   "maps-making": "docs/MAPS-MAKING.md",
+  // and the rest of docs/, each by its name: "play" for docs/PLAY.md
+  ...Object.fromEntries(
+    readdirSync(join(KIT, "docs"))
+      .filter((name) => /\.md$/.test(name) && !["API", "ENGINES", "MAPS", "MAPS-MAKING"].includes(name.slice(0, -3)))
+      .sort()
+      .map((name) => [name.slice(0, -3).toLowerCase(), `docs/${name}`]),
+  ),
 };
 /** The folders whose modules are documents too, each by its path. */
 const CODE_FOLDERS = ["examples", "kits"];
@@ -47,14 +59,16 @@ const codeDocuments = () =>
       .map((name) => `${folder}/${name}`),
   );
 
-/** The file a document's name stands for (a path under the kit's folder); it throws for a name it has not. */
-function fileOf(name = "guide") {
-  if (Object.hasOwn(DOCUMENTS, name)) return DOCUMENTS[name];
-  if (codeDocuments().includes(name)) return name;
+/** The files a document's name stands for (paths under the kit's folder); it throws for a name it has not. */
+function filesOf(name = "guide") {
+  if (Object.hasOwn(DOCUMENTS, name)) return [DOCUMENTS[name]].flat();
+  if (codeDocuments().includes(name)) return [name];
   throw new Error(
     `no document ${name}: there are ${[...Object.keys(DOCUMENTS), ...codeDocuments()].join(", ")}`,
   );
 }
+/** A document's text: its files one after another. */
+const writtenOf = (files) => files.map((file) => readFileSync(join(KIT, file), "utf8").trim()).join("\n\n");
 
 /** What opens an item of a list: "- " or "1. ". */
 const LIST_MARK = /^(- |\d+\. )/;
@@ -119,7 +133,7 @@ function listOf(name, sections) {
     (section) =>
       `${"  ".repeat(Math.max(0, section.level - 2))}${section.number} ${section.title} (${sizeText(section.text.length)})${section.summary ? `: ${section.summary}` : ""}`,
   );
-  const head = `${fileOf(name)}: ${sections.length} sections. Ask for one or more by number (topic: "12" or "12,17") or by words of its title.`;
+  const head = `${filesOf(name).join(" + ")}: ${sections.length} sections. Ask for one or more by number (topic: "12" or "12,17") or by words of its title.`;
   if (name !== "guide") return [head, ...lines].join("\n");
   // with the guide's own list: what the kit can and cannot do, and what else can be asked for
   const table = sections.find((section) => CAN_AND_CANNOT.test(section.title));
@@ -171,16 +185,17 @@ function found(sections, words) {
 
 /**
  * What the tool `guide` answers with, as text.
- *   doc    which document: "guide" (AGENTS.md, unless told), "api", "engines", "maps", "maps-making", or a
- *          module's path
+ *   doc    which document: "guide" (AGENTS.md and the guides it sends to, unless told), "api", "engines",
+ *          "maps", "maps-making", another guide of docs/ by its name ("play"), or a module's path
  *   topic  the sections wanted, by number or by title; without it, the list of the document's sections
  *          (for a module: its opening comment; with "code", all of it)
  *   find   instead of a topic: the lines that hold these words, each with its section
  */
 export function guide({ doc, topic, find } = {}) {
   const name = doc ?? "guide";
-  const file = fileOf(name);
-  const written = readFileSync(join(KIT, file), "utf8");
+  const files = filesOf(name);
+  const written = writtenOf(files);
+  const [file] = files;
   if (isCode(file)) {
     const sections = [{ number: 1, title: file, text: written }];
     if (find) return found(sections, find);

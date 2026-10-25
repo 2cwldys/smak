@@ -84,7 +84,7 @@ node editor/cli.mjs $P texture helmet.bmp --select 201,160,70 --invert          
   brightness by half. A metal's light and dark shades are within about 20 of one another; another metal of the
   same brightness is past 35. Very dark colours of any hue are near one another: look at the mask.
 - `uv` islands play no part: it is the colour that is chosen, wherever it lies in the picture. Two parts in the
-  same colours cannot be told apart this way; that needs `paint` in the kit (`AGENTS.md`).
+  same colours cannot be told apart this way; that needs `paint` in the kit (`docs/RESKIN.md`).
 - One selection a texture. For a second group of colours: `--export` the adjusted picture, put it back with
   `--file`, `--no-adjust`, and select again.
 

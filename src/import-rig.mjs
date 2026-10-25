@@ -160,7 +160,7 @@ function nearestAngles(six, before) {
  * reading back. `textures` lists the textures the meshes wear. The lists are the model's own: change copies
  * when the original is wanted again.
  * A monster needs more than this gives: its animations' activities and events, where it sees from, and a walk
- * that travels (`movement`): see "A monster's parts" in AGENTS.md, and `addSequence`, `setEvents`.
+ * that travels (`movement`): see "A monster from nothing" in docs/MODELS.md, and `addSequence`, `setEvents`.
  */
 export function importRigged(scene, options = {}) {
   const { origin = "keep", fps = FPS, smooth = 40, maxTextureSize = LIMITS.goldsrc.texture } = options;

@@ -82,6 +82,16 @@ test("the command line runs", () => {
   // what it prints about a model
   sure(/ANIMATIONS \(2\)/.test(runSmak("info", modelFile)), "info");
   sure(/fit for goldsrc/.test(runSmak("check", modelFile)), "check");
+  // a check that passes says so in five lines at most, the last PASS; its facts go to the file it names
+  const report = join(tmp, "knife-check.txt");
+  const passed = runSmak("check", modelFile, "--report", report).trim().split("\n");
+  sure(
+    passed.length <= 5 && passed.at(-1) === "PASS: fit for goldsrc" && passed.includes(`the detail: ${report}`),
+    `check printed ${passed.join(" | ")}`,
+  );
+  sure(/bones, .* triangles in all/.test(readFileSync(report, "utf8")), "the facts are in the file");
+  const verbose = runSmak("check", modelFile, "--verbose");
+  sure(/triangles in all[^]*\nPASS: fit for goldsrc\n$/.test(verbose), `--verbose: ${verbose}`);
   sure(JSON.parse(runSmak("info", modelFile, "--json")).bones.length === 2, "info --json");
 
   // the pictures it draws

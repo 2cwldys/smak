@@ -18,6 +18,7 @@ import {
   boneControllers,
   boneMatrices,
   basesByRule,
+  events,
 } from "./mdl.mjs";
 import { sub, dot, cross } from "./vec.mjs";
 import { FRONT } from "./mesh.mjs";
@@ -228,6 +229,25 @@ function checkSequences(src, seqs, { errors }) {
   }
 }
 
+/**
+ * The events on frames their animation has not. The engine looks an animation's events up by the frames it
+ * passed since it last looked (the SDK's GetAnimationEvent on the server and StudioProcessEvents in the client,
+ * from memory of them): the frames run from 0 to frames - 1, so an event on frame `frames` or after, or under
+ * 0, is never passed and never fires. The model loads, and the sound or the swing's hit is never heard.
+ */
+function checkEvents(src, seqs, { warnings }) {
+  const off = [];
+  seqs.forEach((s, q) => {
+    for (const e of events(src, q))
+      if (e.frame < 0 || e.frame >= Math.max(1, s.frames))
+        off.push(`${s.name}'s event ${e.event} on frame ${e.frame} of ${Math.max(1, s.frames)}`);
+  });
+  if (off.length)
+    warnings.push(
+      `${off.length} events are on frames their animation has not (${some(off)}): the engine fires an event as the animation passes its frame, numbered from 0 to the count less one, so these never fire`,
+    );
+}
+
 /** The angle between two bones' turns (the 3 by 3 of their matrices), in degrees. */
 function degreesBetween(a, b) {
   let trace = 0;
@@ -418,6 +438,7 @@ function inspect(src, engine, info, report) {
       `${count.turned} of ${count.total} triangles look the other way from their normals: right for a sheet seen from both sides (a leaf, a cloth), wrong for a solid, which would be seen from inside`,
     );
   checkSequences(src, seqs, report);
+  checkEvents(src, seqs, report);
   checkLoops(src, seqs, info.bones, report);
   checkParts(src, seqs, info.bones, count.total > 0, report);
   facts.push(

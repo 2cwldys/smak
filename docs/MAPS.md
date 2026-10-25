@@ -23,7 +23,7 @@ it ("Pictures", which also draws brush source). Writing brush source (`.map`) an
 half of `src/maps/`, in `docs/MAPS-MAKING.md`. The command line has a command for most of this: `smak map-info`,
 `map-check`, `map-entities`, `map-set`, `map-plan`, `map-view`, `map-views`, `map-compare`, `map-reach`, `map-section`,
 `map-storeys`, `map-openings`, `map-measure`, `map-waypoints`, `map-textures`, `wad`, `wad-make`, `map-compile` and `map-decompile` (`node bin/smak.mjs help`;
-`AGENTS.md` has them with their recipes).
+`docs/COMMANDS.md` has them all, and `docs/MAPS-LOOKING.md` the recipes for looking at a map and changing it).
 
 ## What a compiled map is
 
@@ -684,7 +684,8 @@ half as wide as the game's, or whose corridors are lower, reads cramped in the g
 `measure(map, options)` gives those numbers for brush source or a compiled map; `measureTable(list)` lays
 several maps' side by side, a measure a line and a map a column. `smak map-measure a.bsp [b.bsp ...]` prints
 the one or the other (`--json`: the numbers themselves); `smak map-compare a.bsp b.bsp -o same.png` draws them
-at one scale (`compareOf`, above).
+at one scale (`compareOf`, above). So a new map is set beside the game's with `smak map-measure new.bsp
+game.bsp --every --mod <profile>` and `smak map-compare new.bsp game.bsp -o same.png --z 100,-`.
 
 ```js
 const game = maps.measure(maps.readBsp(readFileSync("demontemple.bsp")), { mod, every: true, name: "demontemple" });

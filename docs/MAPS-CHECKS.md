@@ -3,6 +3,28 @@
 Beside `docs/MAPS.md` and `docs/MAPS-MAKING.md`: what was added after agents built two maps of a series and
 met these faults. Each is a function of `maps` and, where it says so, a command.
 
+## The walk test: running it
+
+```
+smak map-reach <bsp|map> [-o walked.png] [--goal <n|class>] [--jump] [--doors closed] [--open <name>] [--shut <name>] [--exit <name>]
+```
+
+In a script, `maps.reachOf(map)` (`{ warnings, facts, entities, openings ... }`; `{ jump: true }` for jumps), and
+`planOfSource(map, { reach, heights: true })` for its plan. Exit code 1 on a fault. Every option is in
+`docs/COMMANDS.md` (`--speed`, `--gravity`, `--no-slopes` ...), every function in `docs/MAPS.md`, "The walk test".
+
+**`map-reach` walks the map** from its places to start, as the box of a standing player: steps of 18, any
+drop, doors open, ladders climbed, a slope too steep to stand on (over 45.6 degrees) slid down and never
+walked up. It lists the entities that are not reached, each with what it would take (a jump, a crouch, an
+opening that is not there), those that stand in something solid, every opening with its width and height,
+and the **one-way places**: floor a player gets into and finds no way out of, by a step, a jump or a
+crouch (a pit, the foot of a steep slope, a room a teleport leads into). Mend each or mean it; `--exit
+<class|name>` names a way out of the map that is no fault. `--jump` walks with jumps (up 45, and across a
+gap as far as a run carries: 215 for the body's middle) and tells apart what only a jump reaches: a roof
+a player was not meant to stand on shows there. `-o` draws the plan with the walked floor green, the rest
+red, floor only a jump reaches blue and one-way places amber. It is geometry, not the game: say so when
+you report it. `map-openings` looks through each opening it found.
+
 ## The walk test: what a class is
 
 `reachOf` counts "the entities a player goes to". Three lists say what the classes alone do not, each by

@@ -3,6 +3,55 @@
 The newest first. A version that changes what a model's file looks like, or that a model made before needs
 mending for, says so under **Mind**.
 
+## Unreleased
+
+Fewer tokens a task (PLAN.md, phase 1): an agent reads a short index and the one guide its task needs, and a
+check answers in a line.
+- **`AGENTS.md` is an index**: what the kit is and needs, the loop, the rules short, how to report, and a table
+  "the task, the guide, the template" (7 KB where it was 112). What it held is in guides of its own, word for
+  word where nothing held it before: `docs/COMMANDS.md` (the command line, and how a check answers),
+  `docs/MODELS.md` (how a model is put together, the rules in full, a new model, an `.obj`, animations, a
+  monster), `docs/RESKIN.md`, `docs/SHAPES.md`, `docs/FIGURES.md`, `docs/TROUBLE.md` (what it can and cannot
+  do, and when something is wrong), `docs/MAPS-LOOKING.md` (looking at a map, changing its entities). A new
+  map's steps went into `docs/MAPS-MAKING.md`'s loop, a `.wad` of one's own into its "Textures", the walk
+  test's use to the head of `docs/MAPS-CHECKS.md`, the bought models' advice into `docs/IMPORT.md`, the
+  usual tests into `docs/PLAY.md`. `docs/SPEC.md`'s map specs are `docs/SPEC-MAPS.md`.
+- The table of what it can and cannot do says what 0.26 can: FBX, glTF and JPEG pictures are read
+  (`smak import`), a map is played in the game where there is a browser build of it (`smak play`), SDHLT
+  compiles as VHLT does.
+- **Answers in text first**: `check`, `map-check`, `figure-judge`, `figure-texture`, `figure-shape` and `play`
+  end in one line, `PASS: ...` or `FAIL: ...`, with the reasons. A pass prints five lines or fewer; the detail
+  goes to a file it names (`--report <file>`, or `smak/` in the system's temp folder; `told.txt` in a run's
+  folder), and `--verbose` prints it as before. The judges pass a figure at or over the lower quarter of the
+  game's own figures (style) or with no measure far out of the corpus' middle half (texture, shape), and end 0
+  either way. A command that draws says which picture to look at, or that none is needed.
+- **Pictures cheap by default**: `smak play` writes each picture a third of the page each way (a run's
+  `shrink`, 1 in a script; `sheet.png` keeps its size; `smallerPng`), the judges' sheets two pixels a texel and
+  silhouettes at half size (`textureSheet`'s and `shapeSheet`'s `scale`); `--full-pictures` for the full size.
+- The MCP `guide` reads `AGENTS.md` and the guides its briefing went to as one, so its sections are found as
+  before, and every guide of `docs/` by its name (`doc: "play"`, `"spec-maps"`).
+
+**Mind**: the last line of `check` and `map-check` is `PASS: fit for goldsrc` where it was `fit for goldsrc`,
+and the facts are in the file unless `--verbose`; `play` ends `PASS:` or `FAIL:` where it ended `PASSED:` or
+`FAILED:`, and its pictures are smaller unless `--full-pictures`.
+
+A broken case for every checker (PLAN.md, phase 2a): a checker that always says PASS no longer goes unnoticed.
+- **`test/broken/`, the self-test's area `107-broken-cases`**: for each checker, inputs made in the case with
+  exactly one thing wrong and the sentence it must give; a case fails when the checker passes the input, fails
+  it for another reason, or fails its twin whole. 74 cases for 40 checkers: models (the engine's limits, a
+  texture's size, a loop that does not come back, an event on no frame, a hit box or an attachment on no bone),
+  maps (a leak, an entity the mod has not, a spawn in a wall, a monster walled off), specs, sounds and sprites,
+  the figure judges (a figure in another game's manner, on corpora made in the case: no game's files), `play`'s
+  expectations, and five command lines by their exit code. `test/broken/checkers.mjs` lists every checker of the kit with where it is, and the area
+  fails while one has no case and no reason written beside it.
+- **`check` tells of an event on a frame its animation has not**: the engine fires an event as the animation
+  passes its frame (0 to the count less one), so one past the last never fires. It passed before.
+- **`motionOverlaps` asks a piece's middle too**: a piece driven onto one of its own size and place had every
+  corner on the other's faces, at no depth, and was not told.
+- **`contractOf` reads a model's bone controllers**: it read them from where `readMdl` keeps none, so a
+  contract's controllers were always none. `compareContract` still does not hold a model to them (a case of
+  `107-broken-cases` marked known, for the owner to decide).
+
 ## 0.26.0 (2026-10-24)
 
 The game filmed by the tool that tests it: SMAK's showcase video was made this way (docs/media).

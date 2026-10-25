@@ -172,13 +172,13 @@ export function validateTexture(data, { refs = {}, weights, games, alike = [] } 
 }
 
 /**
- * The sheet: atlases side by side at one texel scale (3 pixels a texel), and every measure as a bar over the
+ * The sheet: atlases side by side at one texel scale (`scale` pixels a texel, 3), and every measure as a bar over the
  * library's spread (5 to 95% grey, the middle half lighter, the median white), each item's mark in its ink.
  * `items`: `[{ name, measures, atlases }]`, up to three. → an image `{ width, height, rgba }`.
  */
-export function textureSheet(items, data) {
+export function textureSheet(items, data, { scale = 3 } = {}) {
   const GROUND = [52, 54, 60],
-    K = 3;
+    K = scale;
   const tiles = items.map(({ atlases }) =>
     atlases.reduce((a, b) => (a.width * a.height >= b.width * b.height ? a : b)),
   );

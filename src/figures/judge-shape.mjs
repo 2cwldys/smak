@@ -232,12 +232,12 @@ export function validateShape(data, { refs = {}, ours = {}, reference, weights, 
 
 /**
  * The silhouette sheet: figures black on white, each at one height (the masks as measured, `at`), labelled,
- * seven to a row. `items`: `[{ name, at, note }]`. → an image `{ width, height, rgba }`.
+ * seven to a row, drawn `scale` of their size (3/4). `items`: `[{ name, at, note }]`. → an image `{ width, height, rgba }`.
  */
-export function shapeSheet(items) {
+export function shapeSheet(items, { scale = 0.75 } = {}) {
   const pad = 24,
     top = 34,
-    k = 0.75; // the masks are HEIGHT (400) + margins; drawn at 3/4
+    k = scale; // the masks are HEIGHT (400) + margins; drawn at 3/4 unless told
   const tiles = items.map((it) => ({
     ...it,
     w: Math.round(it.at.width * k),

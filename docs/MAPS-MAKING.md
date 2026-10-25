@@ -92,6 +92,49 @@ The same from the command line, for a `.map` that is written: `smak map-plan sma
 `smak map-openings small.map -o doors.png`, `smak map-compile small.map -o small.bsp --wad halflife.wad`, then
 `smak map-plan small.bsp -o plan.png` and `smak map-views small.bsp -o views.png`.
 
+### What each step asks of you
+
+`examples/07-a-small-map.mjs` is the template. Never write over a map of the game's: write a new file.
+
+- **Before the first brush, read `docs/MAPS-DESIGN.md`**: a map that parses, compiles and is walked end to end
+  can still be one a player calls "all straight lines" and leaves. It has the rules of thumb (shape, height,
+  landmarks, light, sound, monsters, rewards), read from a game's own maps, and the recipes
+  (`kits/encounterkit.mjs`) that bring monsters in out of sight.
+- **Describe.** A room may bring its own textures, `{ min, max, texture: { floor, ceiling, wall } }`: one carve
+  then makes a street of brick and asphalt with a shop of tiles behind one wall 16 thick.
+- **Check the plan for a mod, with its profile**: `checkPlan(map, { mod })` (`smak map-check x.map --mod
+  <profile>`). A map's entities are text that only the game's code reads, and what that code does not know it
+  drops without a word: a class the mod does not have, a key on an entity where the game never reads it, a name
+  nothing answers to, more monsters than an area holds. Neither a compiler nor a picture shows any of it. With a
+  profile the check does: against the mod's FGD, its own maps (`smak map-learn <mod>/maps -o learned.json
+  --class <name>` shows how the mod's authors write a class: copy that, do not guess), the classes its program
+  has, and its rules. The kit ships Half-Life's profile (`maps.GOLDSRC`) and no mod's own: "A mod's profile",
+  below, is how to get from nothing to a checked one, and `profiles/mastersword.mjs` is one mod's, as the
+  example (`profiles/specialists.mjs` a second: The Specialists, its arenas and, as `specialists-roleplay.mjs`,
+  the role-play cities). **Never write an entity for a mod from memory.**
+- **Walk it**: fix every entity that is not reached or stands in something solid, mend or mean every one-way
+  place, and read each opening's width and height against what has to pass it (a player 32 x 72, a large
+  monster 64 x 64). Walk it once more with `{ jump: true }` (`--jump`) and read what only a jump reaches. Cut a
+  section through every stair and every place where one room lies over another: rooms carved in separate
+  `carve` calls fill each other with rock where their blocks overlap, and only a section or the walk test
+  shows it.
+- **Compile**: it needs VHLT; ask the person where it is. A **leak** names the entity it was found from and
+  where the trail leaves the world: look at the wall there.
+- **Look at the result**: `smak map-plan`, `map-views`, `map-view` on the `.bsp`; with `--game` and `--models`,
+  the sky, the sprites and the models as the game will show them. `smak map-check` and `smak map-reach` too:
+  the compiled map is walked by its own clip hulls. For a mod with spawn areas, `smak map-spawns --mod` (no
+  monster seen appearing, no races at war on one spawn, the reward where the fight was won) and `smak
+  map-character --mod` (no five figures on the plain side of the mod's own maps). For a role-play map, `smak
+  map-wiring`: every door a property by its name, switches at what they mean to work, no switch at a name
+  nothing answers to, lifts that stop where they are called.
+- **The game is the real test.** Tell the person the file, where it goes (`<mod>/maps/`, its `.wad` beside the
+  mod's unless the compile was `--wadinclude`), and `map <name>` in the console. A mod may want its own
+  entities to start a player (Master Sword: `ms_player_begin` and `ms_player_spawn`): its profile's `starts`
+  say which, and with no profile the plan check and the walk test count Half-Life's two and those two, as they
+  did before there were profiles. Say what the entity check went by (an FGD, the mod's maps, its program, which
+  rules), and what the walk test could not tell: whether a monster is dropped to its floor, whether a jump it
+  found is one a player makes in the game, anything a script does.
+
 ## Units and sizes
 
 Axes: `+x` east, `+y` north, `+z` up. A unit is about an inch. Keep to whole numbers, and to multiples of 8 or
@@ -179,7 +222,7 @@ Each returns brushes; each refuses, in words, what a player could not walk.
 | `INTERIOR_SETS`, `pickSet(set, seed)`, `chamfered(outline, cut)` | Interiors' textures from MSC's ms_generic.wad (keep, cellar, house: lists a room picks one of each from); an outline with its corners cut back (walls that face many ways) |
 | `learnDetails(texts)`, `detailText(names, table, { fallback })` | The detail texture the game's own `_detail.txt` files give each texture (the most used), and the `<map>_detail.txt` for the textures a map uses. → `Map`; `{ text, given, left }` |
 | `additions(edited, made)`, `mergeMaps(...maps)` | What a person added to a map the kit made (by the brushes' planes, however the editor wrote them), and maps as one |
-| `standingIn(map, { min, max }, { by, starts })` | What stands in a box of a map, moved by `by`: a building a map spec (docs/SPEC.md) stood in its yard, without the yard's rock, its starts and its sun, to be put in another map with `mergeMaps` |
+| `standingIn(map, { min, max }, { by, starts })` | What stands in a box of a map, moved by `by`: a building a map spec (docs/SPEC-MAPS.md) stood in its yard, without the yard's rock, its starts and its sun, to be put in another map with `mergeMaps` |
 | `hollow(min, max, wall, texture)` | A single sealed room: six walls around the space asked for. Returns the six, in order: floor, ceiling, west, east, south, north |
 | `subtract(box, hole)` | What is left of one `{ min, max }` box with another taken out: up to six boxes (data, not brushes) |
 
@@ -387,6 +430,26 @@ builder takes as `texture`:
 | `-0NAME` ... | Tiled at random from the set, to break up repetition |
 | `~NAME` | By convention, a texture that gives light (a lamp, a screen): it is a name that lists of texture lights go by; the engine does nothing with it. `+0~NAME` is both |
 | `NULL`, `CLIP`, `ORIGIN`, `AAATRIGGER`, `HINT`, `SKIP` | The compilers' own (their `zhlt.wad`, which `compileMap` adds by itself): a face not drawn; a wall for players and not for bullets; a hinge; a trigger's brush; hints for visibility |
+
+### A .wad of your own
+
+A map names its textures; the pictures are in a `.wad`. To make one from pictures of your own:
+
+```js
+import { maps } from "./smak/src/index.mjs";
+writeFileSync("mine.wad", maps.writeWad([{ name: "my_stone", image: stone }, { name: "{my_bars", image: bars }]));
+```
+
+or `smak wad-make my_stone.png "{my_bars.png" -o mine.wad`, each texture named after its file.
+
+- An image is `{ width, height, rgb }` or `{ width, height, rgba }`, drawn by code (as the models' textures are)
+  or read from a file (`unpng`). **Both sides are multiples of 16**; a name is at most 15 letters, one word.
+- `{name` has holes where the picture is see-through (bars, a fence), and goes on a brush entity with
+  `rendermode: 4, renderamt: 255`; the other first letters are in the table above.
+- A texture is drawn one texel a unit: a 64 wide picture repeats every 64 units. Draw it to tile.
+- `smak wad <file.wad>` lists a `.wad`; `smak map-textures <bsp> -o dir` takes a map's out as PNGs. A game's
+  textures are its authors': do not put them, or a map compiled with them inside, in anything shared
+  (`AGENTS.md`, rule 7).
 
 ## Light
 

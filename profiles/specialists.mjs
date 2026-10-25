@@ -203,7 +203,7 @@ export const FIGURE_STYLE = {
 
 /**
  * What a map spec of The Specialists is built with where the spec says nothing (src/spec/map.mjs, `smak build
- * --mod`; docs/SPEC.md, "A mod's map"): the game's textures, its props as its maps put them, and rooms furnished
+ * --mod`; docs/SPEC-MAPS.md, "A mod's map"): the game's textures, its props as its maps put them, and rooms furnished
  * by their `use` with the game's own models. Read off the 29 maps on 2026-10-21:
  *
  *   textures  The maps keep most of their textures inside themselves or in .wad files the game does not ship

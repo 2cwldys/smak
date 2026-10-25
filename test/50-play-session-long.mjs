@@ -2,8 +2,9 @@
 // would wait is still answered, and what changed in a folder since the session had it is put into the engine.
 //
 // No browser and no game: a session of our own that only waits, and the fake game of fixture-game.mjs, which
-// writes down what is put into it.
-import { mkdirSync, writeFileSync } from "node:fs";
+// writes down what is put into it. And `smak play`'s answer in text first, from a run attached to such a game.
+import { spawn } from "node:child_process";
+import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { createServer, request } from "node:http";
 import { join } from "node:path";
 import * as smak from "../src/index.mjs";
@@ -154,5 +155,51 @@ await testAsync(
     sure(/play: over is a list of \{ path, folder \}/.test(shape), `it said: ${shape}`);
     const command = runRefused(SMAK_CLI, "play", "http://127.0.0.1:1", "--attach", "--map", "yard", "--over", "msc");
     sure(command.code === 1 && /--over <place in the game's files>=<folder>, not msc/.test(command.err), command.err);
+  },
+);
+
+/** `smak play` run as a person runs it, without blocking this process (the session it attaches to is served here). */
+const playCommand = (...args) =>
+  new Promise((done) => {
+    const child = spawn(process.execPath, [SMAK_CLI, "play", ...args]);
+    let out = "";
+    let err = "";
+    child.stdout.on("data", (chunk) => (out += chunk));
+    child.stderr.on("data", (chunk) => (err += chunk));
+    child.on("close", (code) => done({ code, out, err }));
+  });
+
+await testAsync(
+  "smak play answers in text first: a run that passes in five lines ending PASS, its steps in told.txt, its pictures a third of the page",
+  "play: the answer in text first",
+  async () => {
+    const driver = gameDriver(GAME_SAYS);
+    driver.shot = (file) => writeFileSync(file, smak.png(1024, 768, new Uint8Array(1024 * 768 * 4).fill(90)));
+    const served = await serveSession({ session: playSession({ driver, mod: GAME }), port: port() });
+    try {
+      const steps = inFolder("answer-steps.json");
+      writeFileSync(steps, JSON.stringify([{ say: "hail" }, { walk: 500, shot: "a" }, { expect: "welcome" }]));
+      const out = inFolder("answer");
+      const run = await playCommand(served.address, "--attach", "--map", "yard", "--steps", steps, "-o", out);
+      const lines = run.out.trim().split("\n");
+      sure(run.code === 0 && lines.length <= 5 && /^PASS: 1 of 1 expectations held/.test(lines.at(-1)), `it printed ${run.out}${run.err}`); // prettier-ignore
+      sure(lines.includes("no picture to look at: the expectations decided"), "it says no picture is needed");
+      const told = readFileSync(join(out, "told.txt"), "utf8");
+      sure(/\{"say":"hail"\}/.test(told) && /PASS {2}expect \/welcome\//.test(told) && /^PASS: /m.test(told), `told.txt: ${told}`); // prettier-ignore
+      const picture = smak.unpng(readFileSync(join(out, "02_a.png")));
+      sure(picture.width === 341 && picture.height === 256, `a picture of ${picture.width}x${picture.height}`);
+
+      // --full-pictures and --verbose: the page's size, and every step printed as it is done
+      const full = inFolder("answer-full");
+      const loud = await playCommand(served.address, "--attach", "--map", "yard", "--steps", steps, "-o", full, "--full-pictures", "--verbose"); // prettier-ignore
+      sure(loud.code === 0 && /\{"say":"hail"\}/.test(loud.out) && /PASS {2}expect/.test(loud.out), loud.out);
+      sure(smak.unpng(readFileSync(join(full, "02_a.png"))).width === 1024, "the full size");
+
+      // an expectation that does not hold: FAIL, the line that failed, and the sheet to look at
+      const failed = await playCommand(served.address, "--attach", "--map", "yard", "--steps", steps, "-o", inFolder("answer-fail"), "--expect", "never said"); // prettier-ignore
+      sure(failed.code === 1 && /FAIL {2}expect \/never said\//.test(failed.out) && /look at .*sheet\.png/.test(failed.out) && /^FAIL: 1 of 2 expectations held/m.test(failed.out), failed.out); // prettier-ignore
+    } finally {
+      await served.close();
+    }
   },
 );

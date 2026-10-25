@@ -66,3 +66,14 @@ export function sheetOf(files, { cols = 4, shrink = 3, names } = {}) {
   const whole = tile(same, Math.min(cols, same.length), over);
   return png(whole.width, whole.height, whole.rgba);
 }
+
+/**
+ * A PNG made `shrink` times smaller each way, as a PNG's bytes: what a run writes in place of the page's own
+ * picture when its pictures are asked smaller (`shrink`: 3 makes a page of 1024 by 768 one of 341 by 256).
+ */
+export function smallerPng(bytes, shrink) {
+  if (!(Number.isInteger(shrink) && shrink > 0))
+    throw new Error(`play: a picture's shrink is a whole number over 0, not ${shrink}`);
+  const picture = smaller(unpng(bytes), shrink);
+  return png(picture.width, picture.height, picture.rgba);
+}

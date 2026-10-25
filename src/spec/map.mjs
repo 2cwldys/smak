@@ -8,7 +8,7 @@
 //   validateMapSpec(spec, { mod })                   -> { errors, warnings }
 //   layoutOf(spec)                                   -> the rooms as boxes, before anything else is built
 //
-// docs/SPEC.md is the guide. Axes as every map's: +x east, +y north, +z up, a unit about an inch.
+// docs/SPEC-MAPS.md is the guide. Axes as every map's: +x east, +y north, +z up, a unit about an inch.
 //
 // For a mod (`mod`: its profile, src/maps/mod.mjs) the map is the mod's: a place to start is one of its
 // `starts`, the plan and the walk test go by its classes, its folders are where the game's .wad files and models
