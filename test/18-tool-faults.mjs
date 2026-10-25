@@ -121,7 +121,7 @@ test("smak answers a wrong argument with a sentence and exit code 1", () => {
       ["render", modelFile, "-o", out, "--view", "sideways"],
       /--view: orbit or first or side or front or top, not sideways/,
     ],
-    [["check", modelFile, "--engine", "quake"], /--engine: goldsrc or xash, not quake/],
+    [["check", modelFile, "--engine", "quake"], /--engine: goldsrc or xash or source, not quake/],
     // a flag with nothing after it
     [["render", modelFile, "-o"], /-o needs a file or a folder after it/],
     [["render", modelFile, "-o", out, "--seq"], /--seq needs a value after it/],

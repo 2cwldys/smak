@@ -109,13 +109,19 @@ const ON_SURFACE = new Set(["band", "boss", "ridge", "studs"]);
 /** The anchors every part has: the middles of the faces of its box, and its middle. */
 const BOX_ANCHORS = ["top", "bottom", "front", "back", "left", "right", "centre"];
 /** The fields a spec takes at its top. */
-const TOP = ["spec", "name", "kind", "size", "texture", "seed", "materials", "parts", "prefabs", "allow", "base", "weapon", "finish", "smooth", "project", "budget", "fidelity", "contract", "floor", "pose", "motion", "note", "palette", "layout"];
+const TOP = ["spec", "name", "kind", "engine", "size", "texture", "seed", "materials", "parts", "prefabs", "allow", "base", "weapon", "finish", "smooth", "project", "budget", "fidelity", "contract", "floor", "pose", "motion", "note", "palette", "layout"];
 /**
  * How finely a model is made: "game" (unless told) holds it to Half-Life's own of its kind and size, warning past
  * them; "high" (a person's own model, made to look its best) gets the larger picture and is told its triangles
  * against Half-Life's as a fact, not warned. A `budget` still binds either way.
  */
 const FIDELITY = ["game", "high"];
+/**
+ * The engine a model is made for: "goldsrc" (unless told), held to Half-Life's own; or "source", held to Half-Life
+ * 2's (SOURCE_PROP_TRIANGLES, SOURCE_CHARACTER_TRIANGLES, SOURCE_SHEET), its pictures kept in full colour beside the
+ * file written for the build (`pictures`), which src/source/gmod.mjs (builtToGmod) turns into Source's.
+ */
+export const ENGINES = ["goldsrc", "source"];
 /** A texture's side unless told; a kit's picture is made this much smaller (the kits paint at 1024 wide). */
 const SHEET_SIZE = 256;
 const KIT_SHRINK = 2;
@@ -147,11 +153,37 @@ export const CHARACTER_TRIANGLES = [
 ];
 
 /**
+ * Half-Life 2's props and its people and creatures, as GMod has them in its packs, by the length of their box's
+ * diagonal in units: the triangles of their first body at the median, the third quartile and the most. Measured
+ * on 2170 props (gibs and debris left out) and 88 characters by scripts/source-budgets.mjs (2026-10-25); numbers
+ * only. A Source model is held to these as a GoldSrc one is to Half-Life's: two to six times as many.
+ */
+export const SOURCE_PROP_TRIANGLES = [
+  { under: 16, median: 120, q3: 261, most: 1680 },
+  { under: 32, median: 182, q3: 384, most: 1984 },
+  { under: 64, median: 260, q3: 598, most: 4800 },
+  { under: 128, median: 326, q3: 632, most: 6840 },
+  { under: Infinity, median: 633, q3: 1462, most: 24665 },
+];
+export const SOURCE_CHARACTER_TRIANGLES = [
+  { under: 48, median: 672, q3: 1276, most: 1690 },
+  { under: 96, median: 4718, q3: 4976, most: 8744 },
+  { under: Infinity, median: 4966, q3: 7495, most: 8392 },
+];
+/** A Source model's picture side unless told: the median of the largest of Half-Life 2's props' (512) and people's (1024). */
+export const SOURCE_SHEET = { prop: 512, character: 1024 };
+/** The game whose models a build is held to, by its engine: its tables and its name in what is said. */
+const HELD_TO = {
+  goldsrc: { props: PROP_TRIANGLES, characters: CHARACTER_TRIANGLES, game: "Half-Life's" },
+  source: { props: SOURCE_PROP_TRIANGLES, characters: SOURCE_CHARACTER_TRIANGLES, game: "Half-Life 2's" },
+};
+
+/**
  * A mesh part's triangles: its .obj read and stood up (`up`, `turn`), its loose crumbs dropped, reduced to
  * `triangles` (unless told, three quarters of Half-Life's props of its size have under that), then stretched to
  * `size`, centred on x and y and standing on z 0, as a carved part is. What was done is told in the report.
  */
-function meshPart(part, readText, report, warnings) {
+function meshPart(part, readText, report, warnings, props = PROP_TRIANGLES) {
   let obj;
   try {
     obj = readObj(readText(part.file).toString("utf8"));
@@ -161,7 +193,7 @@ function meshPart(part, readText, report, warnings) {
   const { meshes } = objMeshes(obj, { up: part.up ?? "y", turn: part.turn ?? 0 });
   const all = meshes.flatMap((m) => m.tris).map((t) => t.map((c) => ({ p: c.p })));
   if (!all.length) throw new Error(`${part.id}: ${part.file} has no triangles`);
-  const band = PROP_TRIANGLES.find((b) => Math.hypot(...part.size) < b.under);
+  const band = props.find((b) => Math.hypot(...part.size) < b.under);
   const target = part.triangles ?? band.q3;
   const reduced = all.length > target ? reduce(all, { target }).tris : all;
   const lo = [0, 1, 2].map((k) => Math.min(...reduced.flatMap((t) => t.map((c) => c.p[k]))));
@@ -735,6 +767,8 @@ export function validateModelSpec(spec, { prefabs = {} } = {}) {
     errors.push('layout: "regions" (the picture laid as Valve lays its own: a region of the body to each patch, projected flat from the side that sees it, a left and right limb on one picture) or "parts" (each part laid in its own zone, as unless told)');
   if (spec.palette !== undefined && spec.palette !== "own") errors.push('palette: "own" keeps a character\'s projected pictures\' colour as they are (unless told, they are pulled to the base\'s palette)');
   if (spec.fidelity !== undefined && !FIDELITY.includes(spec.fidelity)) errors.push(`fidelity: ${FIDELITY.map((f) => `"${f}"`).join(" or ")}`);
+  if (spec.engine !== undefined && !ENGINES.includes(spec.engine)) errors.push(`engine: ${ENGINES.map((e) => `"${e}"`).join(" or ")}`);
+  if (spec.engine === "source" && spec.weapon) errors.push("weapon: a weapon's files are GoldSrc's (v_, p_ and w_ models in the game's names); a Source weapon is not made yet");
   if (spec.floor !== undefined && !(typeof spec.floor === "number" && Number.isFinite(spec.floor))) errors.push("floor: where its feet stand, 0 for a monster (its origin at its feet) or -36 for a player (its origin the middle of its hull)");
   if (spec.motion !== undefined) {
     if (!spec.base) errors.push("motion: a character's, on a base model's skeleton: give the spec a base");
@@ -1835,6 +1869,14 @@ function buildOnce(spec, { folder, out, prefabs = {}, games = [], readPicture, r
   const { errors, warnings } = validateModelSpec(spec, { prefabs });
   const report = { ok: false, errors, faults: [], warnings, notes: [], facts: [], parts: {} };
   if (errors.length) return { mdl: null, report };
+  // made for Source: held to Half-Life 2's models, and painted on its larger picture unless told
+  const engine = spec.engine ?? "goldsrc";
+  const held = HELD_TO[engine];
+  if (engine === "source" && !spec.texture) {
+    const side = SOURCE_SHEET[spec.kind ?? (spec.base ? "character" : "prop")] ?? SOURCE_SHEET.prop;
+    spec = { ...spec, texture: { width: side, height: side } };
+    report.facts.push(`made for Source: held to Half-Life 2's own models, its picture ${side} by ${side} (Half-Life 2's of its kind at the median)`);
+  }
   // a material with a photograph: its detail laid over the part at its real size, made like Valve's (paint.mjs)
   const readMaterial = readPicture ?? ((file) => unpicture(readFileSync(resolve(folder ?? ".", file.replace(/^(work|models):/, "")))));
   try {
@@ -1991,7 +2033,7 @@ function buildOnce(spec, { folder, out, prefabs = {}, games = [], readPicture, r
           // a copy is judged against twice its original's, and the outline holds at that count
           // a character's body: unless told, as many as its base's own body has (a houndeye carved at 1,834 against
           // its original's 308 failed the judges' count; the base is the nearest thing to the original's budget)
-          const band = { ...PROP_TRIANGLES.find((b) => Math.hypot(...part.size) < b.under) };
+          const band = { ...held.props.find((b) => Math.hypot(...part.size) < b.under) };
           // and never past CHARACTER_CARVE: a houndeye carved on a bullsquid's base took the bullsquid's 938
           if (spec.kind === "character" && skeleton) {
             const own = readMdl(skeleton.src).bodyparts[skeleton.bodypart].models[0]?.meshes.reduce((n, m) => n + m.numtris, 0) ?? 0;
@@ -2041,7 +2083,7 @@ function buildOnce(spec, { folder, out, prefabs = {}, games = [], readPicture, r
   if (spec.parts.some((part) => part.kind === "mesh")) {
     const readText = readFile ?? ((name) => readFileSync(resolve(folder ?? ".", name.replace(/^(work|models):/, ""))));
     try {
-      spec = { ...spec, parts: spec.parts.map((part) => (part.kind === "mesh" ? { ...part, ...feetOn(part), carvedTris: ((t) => (part.symmetric ? symmetrized(t, part, report) : t))(meshPart(part, readText, report, warnings)) } : part)) };
+      spec = { ...spec, parts: spec.parts.map((part) => (part.kind === "mesh" ? { ...part, ...feetOn(part), carvedTris: ((t) => (part.symmetric ? symmetrized(t, part, report) : t))(meshPart(part, readText, report, warnings, held.props)) } : part)) };
     } catch (error) {
       errors.push(`mesh: ${error.message}`);
       return { mdl: null, report };
@@ -2156,10 +2198,11 @@ function buildOnce(spec, { folder, out, prefabs = {}, games = [], readPicture, r
   const high = spec.fidelity === "high";
   const budgetLine = `${triangles} triangles${spec.budget ? ` of a budget of ${spec.budget}` : ""}; the most in ${heaviest}${thin.length ? `; ${thin.length} boxes under a unit thick could be panels or paint: true (${thin.slice(0, 8).join(", ")}${thin.length > 8 ? " ..." : ""})` : ""}`;
   if (spec.budget && triangles > spec.budget) report.faults.push(`over budget: ${budgetLine}`);
-  else if (!spec.budget && kind === "prop" && triangles > PROP_BUDGET) (high ? report.facts : warnings).push(`${budgetLine}: three quarters of Half-Life's props have fewer than ${PROP_BUDGET}${high ? " (fidelity high: told, not warned)" : "; give the spec a budget, and paint what lies on a surface"}`);
+  else if (!spec.budget && kind === "prop" && engine === "goldsrc" && triangles > PROP_BUDGET) (high ? report.facts : warnings).push(`${budgetLine}: three quarters of Half-Life's props have fewer than ${PROP_BUDGET}${high ? " (fidelity high: told, not warned)" : "; give the spec a budget, and paint what lies on a surface"}`);
   else report.facts.push(budgetLine);
   // a character's: the body it takes the place of (its base's own), which a copy is judged against twice of
-  if (kind === "character" && skeleton && !spec.budget) {
+  // (a Source body is held to Half-Life 2's people, not to the GoldSrc base it is built on)
+  if (kind === "character" && skeleton && !spec.budget && engine === "goldsrc") {
     const info = readMdl(skeleton.src);
     const own = info.bodyparts[skeleton.bodypart].models[0]?.meshes.reduce((n, m) => n + m.numtris, 0) ?? 0;
     if (own && triangles > 2 * own && high) report.facts.push(`${triangles} triangles (fidelity high), over twice the ${own} of the base's own body`);
@@ -2172,8 +2215,8 @@ function buildOnce(spec, { folder, out, prefabs = {}, games = [], readPicture, r
   // what Half-Life's own creatures and people of this size spend: a judge holds one to the most of them
   if (kind === "character" && !spec.budget) {
     const diagonal = Math.hypot(...[0, 1, 2].map((k) => box.mx[k] - box.mn[k]));
-    const band = CHARACTER_TRIANGLES.find((b) => diagonal < b.under);
-    const line = `Half-Life's creatures and people of this size (${Math.round(diagonal)} units corner to corner) have ${band.median} triangles at the median, three quarters under ${band.q3}, ${band.most} at the most`;
+    const band = held.characters.find((b) => diagonal < b.under);
+    const line = `${held.game} creatures and people of this size (${Math.round(diagonal)} units corner to corner) have ${band.median} triangles at the median, three quarters under ${band.q3}, ${band.most} at the most`;
     if (triangles > band.most && !high) warnings.push(`${triangles} triangles: ${line}: more than any of them. Paint what lies on the surface, give round parts fewer sides, and build only what stands out of the outline`);
     else report.facts.push(line);
   }
@@ -2181,8 +2224,8 @@ function buildOnce(spec, { folder, out, prefabs = {}, games = [], readPicture, r
   // original of this size most often has the median
   if (kind === "prop") {
     const diagonal = Math.hypot(...[0, 1, 2].map((k) => box.mx[k] - box.mn[k]));
-    const band = PROP_TRIANGLES.find((b) => diagonal < b.under);
-    const line = `Half-Life's props of this size (${Math.round(diagonal)} units corner to corner) have ${band.median} triangles at the median, three quarters under ${band.q3}, ${band.most} at the most`;
+    const band = held.props.find((b) => diagonal < b.under);
+    const line = `${held.game} props of this size (${Math.round(diagonal)} units corner to corner) have ${band.median} triangles at the median, three quarters under ${band.q3}, ${band.most} at the most`;
     if (!spec.budget && triangles > band.q3 && !high) warnings.push(`${triangles} triangles: ${line}${triangles > band.most ? ": more than any of them" : ""}. Paint what lies on a surface (drawers, labels, seams), and build only what stands out of the outline`);
     else if (high) report.facts.push(`${triangles} triangles (fidelity high): ${line}`);
     else report.facts.push(line);
@@ -2315,10 +2358,13 @@ function buildOnce(spec, { folder, out, prefabs = {}, games = [], readPicture, r
       warnings.push(`its pictures look unlike nine in ten of Valve's models': ${off.join("; ")}. A painted or manufactured white in Half-Life (a fridge, a wall, a sign) is a used grey (0.5 to 0.6: the game's light brightens it), its colours muted, its surfaces worn: give tones nearer Valve's and its materials a photograph (\`picture\`, docs/SPEC.md "A material from a photograph"). What is white by what it is stays white: most of Valve's scientist's lab coat textures are white (70 to 100% of their texels, at 0.8 to 0.94), so a copy of a white garment keeps the original's white`);
   }
 
-  // written: one bone, one still animation
+  // written: one bone, one still animation. For Source each picture is kept as it was painted, in full colour,
+  // beside the file's 256 colours: Source's textures are not cut to a palette
+  const pictures = new Map();
   const textures = meshes.map((mesh, n) => {
     const texture = pictureTexture(mesh.image, `${base.slice(0, 40)}_${mesh.name}.bmp`.slice(0, 63), mesh.flags);
     texture.flags = mesh.flags;
+    if (engine === "source") pictures.set(texture.name, fullColour(mesh.image, mesh.flags));
     return texture;
   });
   let mdl;
@@ -2449,9 +2495,9 @@ function buildOnce(spec, { folder, out, prefabs = {}, games = [], readPicture, r
     errors.push(`buildMdl: ${error.message}`);
     return { mdl: null, report };
   }
-  const engine = check(mdl, "goldsrc");
-  errors.push(...engine.errors);
-  warnings.push(...engine.warnings);
+  const checked = check(mdl, engine);
+  errors.push(...checked.errors);
+  warnings.push(...checked.warnings);
   const seen = seeThrough(mdl);
   report.faults.push(...seen.faults);
   report.facts.push(`the pictures see through it at ${(seen.share * 100).toFixed(2)}% of its dots`);
@@ -2479,7 +2525,8 @@ function buildOnce(spec, { folder, out, prefabs = {}, games = [], readPicture, r
     }
   }
   report.ok = !errors.length && !report.faults.length;
-  return { mdl, report, files };
+  // for Source: the pictures in full colour, and the base's file, beside which its animations kept apart are
+  return { mdl, report, files, ...(engine === "source" ? { pictures, baseFile: skeleton?.file } : {}) };
 }
 
 /**
@@ -2573,6 +2620,18 @@ function aimerOf(mdl, rig, base, bones = ["Bip01 R Arm1", "Bip01 R Hand"]) {
       say: `${arm} turned ${best.y} about y and ${best.z} about z, ${hand} ${best.h} about y; the far end at ${best.s.across.toFixed(2)} ${best.s.up.toFixed(2)}`,
     };
   };
+}
+
+/** A picture as it was painted, { width, height, rgba }: a masked one's holes (HOLE_RGB) see-through. */
+function fullColour(image, flags = 0) {
+  if (image.rgba) return { width: image.width, height: image.height, rgba: Uint8Array.from(image.rgba) };
+  const hole = HOLE_RGB.map((v) => Math.round(v * 255));
+  const rgba = new Uint8Array(image.width * image.height * 4);
+  for (let i = 0; i < image.width * image.height; i++) {
+    const [r, g, b] = [image.rgb[i * 3], image.rgb[i * 3 + 1], image.rgb[i * 3 + 2]];
+    rgba.set([r, g, b, flags & 64 && r === hole[0] && g === hole[1] && b === hole[2] ? 0 : 255], i * 4);
+  }
+  return { width: image.width, height: image.height, rgba };
 }
 
 /**

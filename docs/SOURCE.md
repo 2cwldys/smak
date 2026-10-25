@@ -44,9 +44,22 @@ Options:
   - `hull`: the convex hull of all its triangles, one solid. A physics prop that rolls as it is shaped (a barrel
     rolls). The kit makes the hull: Source's compiler refuses a collision mesh of several pieces.
   - `box`: the box about its triangles.
-  - `ragdoll`: a figure that falls as a body. Each bone with hit boxes gets a box about them, joined to its
-    parent's by a joint that bends 40 degrees each way about each axis. There are 24 pieces at most, the
-    smallest left to their parents. A `ragdoll` animation (its rest pose, `ACT_DIERAGDOLL`) is added.
+  - `ragdoll`: a figure that falls as a body, a piece a bone with hit boxes, each joined to the piece above it.
+    A `ragdoll` animation (its rest pose, `ACT_DIERAGDOLL`) is added.
+    - **Each piece is fitted to the body**: the convex hull of its bone's corners, and of the bones below it
+      that have no piece (a hand's fingers, its gun). A GoldSrc vertex is on one bone, so a body's corners are
+      rings, one a bone: where a triangle's side goes from one piece to another, each takes its share of it, and
+      the pieces meet. A bone with hit boxes and no body of its own is left to the piece above. There are 24
+      pieces at most, the smallest left to their parents. GoldSrc's hit boxes, far bigger than the body, are the
+      pieces only of a model whose corners make none.
+    - **Each joint bends as far as the model's animations bend it**: how far the bone turns from its rest against
+      the piece above, about each of its axes, over every frame (the 2nd to the 98th hundredth of them, 10
+      degrees spare each way). An axis it never turns about is held, so a knee is a hinge: Half-Life's grunt's
+      knee bends -133 to 22 about z, and not at all about x and y. A bone the animations never turn, or a model
+      with none, bends 40 degrees each way.
+    - The limits are Source's own: measured on a Half-Life 2 citizen in GMod, its `.phy` gives its knee z -12 to
+      126, and +z is the turn that bends that knee. GMod's compiler writes the QC's limits into the `.phy` as
+      they are.
   - `auto` (the default): a hull for a model of one bone, a ragdoll for one with a skeleton and hit boxes, else
     none.
 - `--surfaceprop wood`: what it is made of, to Source: the sound it makes when hit, how heavy a volume of it
@@ -58,13 +71,48 @@ Options:
   - a hull or a box weighs its volume at its surfaceprop's density, read from GMod's own
     `scripts/surfaceproperties.txt` (wood 700 kg a cubic metre, metal 2700). GMod's compiler weighs everything
     as `default` (2000), whatever its surfaceprop: measured, a barrel's hull 671 kg as wood and as metal.
-  - a ragdoll weighs a person's 90 kg: its pieces are the hit boxes, which GoldSrc made far bigger than the
-    body (Half-Life's grunt weighs 855 kg as flesh by them).
+  - a ragdoll weighs a person's 90 kg, as Valve's do whatever their build (a citizen's and Kleiner's `.phy` both
+    say 90). By its volume, Half-Life's bulky grunt would weigh 232 kg as water.
 
   A solid barrel of wood 40 tall weighs 235 kg by its volume. An empty one is nearer 40: give `--mass 40`.
 
 The PASS line ends with what the compiled model collides as, read from its `.phy`: its solids, joints, mass
 and surfaceprop.
+
+## A model made for Source
+
+A model spec (`docs/SPEC.md`) built with `"engine": "source"`, or with `--engine source`:
+
+```
+node bin/smak.mjs build barrel.json --engine source
+```
+
+The model is built as any spec is, and checked the same way: its shape, its pictures, a character's poses. What
+differs is what it is held to and what is written:
+- **Half-Life 2's models, not Half-Life's.** Measured on GMod's packs by `scripts/source-budgets.mjs`: 2170 props,
+  88 people and creatures. Three quarters of Half-Life 2's props of a barrel's size have under 598 triangles
+  (Half-Life's: 156); its people under 4976 (Half-Life's: 785). Past those, it is warned of.
+- **A larger picture.** 512 a side unless told, Half-Life 2's props' at the median; 1024 a character's.
+- **Pictures in full colour.** GoldSrc's are cut to 256 colours; the Source files are written from the pictures
+  as they were painted.
+- **Source's limits.** `check` holds the file to its `source` profile, not GoldSrc's: no 512-pixel cap, more
+  points a submodel.
+
+A character keeps its base's bones and every animation, those the base keeps in `<base>01.mdl` files too (read
+beside the base). It is bound in the stance it was built in, its base's first frame: Source draws a model at rest
+in its bind pose, and a ragdoll falls from it, and a body made in a stance is out of shape at the bones' own rest
+(a robot built on Half-Life's grunt stood with a leg kicked out). Its joints are measured from that stance.
+
+The GoldSrc model written beside the spec is the step between. Under `-o`, `<name>_source/` has its `src/` and
+its `addon/`, as a port's. `<name>-source-sheet.png` is the compiled model drawn from its own files. It collides
+and weighs as a port does: a prop as its hull, at the density of what its parts are made of. `--collision`,
+`--surfaceprop`, `--mass`, `--folder` and `--no-compile` are taken as `gmod-port` takes them.
+
+A spec's own `budget` and `texture` still bind. Source allows a finer model, but a low-poly look is a choice it
+allows too: nothing is made finer than the spec asks.
+
+Not yet for Source: a weapon's files (refused), normal maps and the other material parameters, more than one
+bone a vertex, pose parameters.
 
 ## What is kept, value for value
 
@@ -92,6 +140,7 @@ and surfaceprop.
 | A bone with no name is named `bone<n>`; a bone or animation whose name another has (in any case) gets `_2` after it | Source's compiler cannot read a bone with no name, merges two bones of one name in any case (`Bone10` and `bone10`), and refuses two animations of one name |
 | An fps of 0 is written 1 (30 for one frame); a weight of 0 is written 1 | Source's compiler refuses both |
 | A triangle of no area is left out | Source's compiler drops it |
+| A bone no vertex is on is kept (`$bonemerge`) | Source's compiler drops it, then cannot find it for a hit box or an animation |
 
 Each change is said in a `WARN` line.
 
@@ -144,8 +193,6 @@ In a script: `smak.source`, see `docs/API.md` ("The Source engine").
 
 These are `PLAN.md`'s phases 6c to 6e:
 - the model seen in GMod by the kit itself;
-- new models made for Source, with its own limits;
-- a ragdoll's joints set bone by bone (a knee bends one way), and its pieces fitted to the body, not to the hit
-  boxes;
+- new models made for Source: weapons, normal maps, more than one bone a vertex;
 - blends and controllers as pose parameters;
 - maps.

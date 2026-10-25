@@ -43,6 +43,8 @@ import {
   readMesh,
   bones as bonesOf,
   restPose,
+  poseAt,
+  frameValues,
   apply34,
   sequences as sequencesOf,
   readSequence,
@@ -138,19 +140,25 @@ export function vmtOf(path, flags = 0) {
  *   collision: what it collides as in Source:
  *              "hull"     the convex hull of its triangles, one solid: a physics prop that rolls as it is shaped
  *              "box"      the box about its triangles
- *              "ragdoll"  a box a bone for each bone with hit boxes (their box), joined by joints that bend
- *                         RAGDOLL_TURN degrees each way: a figure that falls as a body ($collisionjoints)
+ *              "ragdoll"  a piece for each bone with hit boxes, the hull of its corners and of its children's
+ *                         that have none, joined by joints that bend as far as its animations bend them
+ *                         (jointTurns): a figure that falls as a body ($collisionjoints)
  *              "none"     nothing
  *              "auto"     a hull for a model of one bone, a ragdoll for one with a skeleton and hit boxes, else none
  *   surfaceprop: what it is made of to Source (its sounds, its weight a volume, how it breaks): "wood", "metal",
  *              "flesh"... ("flesh" for a ragdoll, "default" else, unless told)
- *   mass:      its mass in kilograms; unless told, its collision model's volume at `density` (kg a cubic metre, its
- *              surfaceprop's: densityOf), or without one Source's $automass, which weighs it as "default"
+ *   pictures:  Map(texture name -> { width, height, rgba }): the textures in full colour, for a model the kit built
+ *              for Source (buildModelSpec's `pictures`); the file's own 256 colours otherwise
+ *   bind:      { seq, frame }: bound in that frame's pose, not in the bones' rest (a body the kit built on a game's
+ *              skeleton was made in its first animation's first frame; the game's own were modelled at rest)
+ *   mass:      its mass in kilograms; unless told, its collision model's volume at `density` (kg a cubic metre), or
+ *              at `densities(surfaceprop)` (densityOf with GMod's table), or without either Source's $automass,
+ *              which weighs it as "default". A ragdoll weighs a person's RAGDOLL_MASS unless told
  * Returns { name, modelname, qc (its path in files), files: [{ path, data }] (paths under the out folder),
  * warnings: [sentence], facts: { bones, sequences, materials, bodygroups, skins, attachments, hitboxes, corners } }
  * (what the compiled model must have again: comparePort).
  */
-export function portToSource(src, { name, folder = PORT_FOLDER, groups, collision = "auto", surfaceprop, mass, density } = {}) {
+export function portToSource(src, { name, folder = PORT_FOLDER, groups, collision = "auto", surfaceprop, mass, density, densities, pictures, bind } = {}) {
   if (!COLLISIONS.includes(collision)) throw new Error(`portToSource: collision is ${COLLISIONS.join(", ")}, not ${collision}`);
   if (mass !== undefined && !(mass > 0)) throw new Error(`portToSource: mass is kilograms more than 0, not ${mass}`);
   if (!name) throw new Error("portToSource: the model's name in Source (name)");
@@ -169,17 +177,21 @@ export function portToSource(src, { name, folder = PORT_FOLDER, groups, collisio
     warnings.push(`${unnamed.length === 1 ? "a bone" : `${unnamed.length} bones`} with no name, named ${unnamed.length === 1 ? boneNames[unnamed[0]] : `${boneNames[unnamed[0]]} to ${boneNames[unnamed.at(-1)]}`} (Source's compiler cannot read a bone with no name)`); // prettier-ignore
   if (twice.length) warnings.push(`bones of a name another has (in any case, as Source tells them) renamed: ${twice.join(", ")}`);
   const skeleton = original.map((bone, i) => ({ ...bone, name: boneNames[i] }));
-  const rest = restPose(src);
+  // the pose it is bound in, which Source draws it in at rest and a ragdoll falls from: the bones' own rest, or
+  // (`bind`) a frame of an animation, the stance a body the kit built was made in
+  const rest = bind ? poseAt(src, bind.seq, bind.frame) : restPose(src);
   const smdBones = skeleton.map(({ name: bone, parent }) => ({ name: bone, parent }));
-  const restFrame = skeleton.map(({ pos, rot }) => [...pos, ...rot]);
+  const restFrame = bind ? frameValues(src, bind.seq, bind.frame) : skeleton.map(({ pos, rot }) => [...pos, ...rot]);
 
   // ── materials: one for each texture, named as Source wants its files ──
   const materialNames = uniqueNames(info.textures.map((t) => sourceName(t.name)));
   const materialsPath = `models/${where}/${model}`;
   info.textures.forEach((texture, i) => {
-    const picture = textureOf(src, i);
     const masked = Boolean(texture.flags & NF.masked);
-    const vtf = writeVtf({ width: picture.width, height: picture.height, rgba: rgbaOf(picture, masked) }, { alpha: masked });
+    // a model the kit built for Source has its pictures in full colour beside the file's 256 colours
+    const full = pictures?.get(texture.name);
+    const picture = full ?? textureOf(src, i);
+    const vtf = writeVtf({ width: picture.width, height: picture.height, rgba: full ? full.rgba : rgbaOf(picture, masked) }, { alpha: masked });
     files.push({ path: `addon/materials/${materialsPath}/${materialNames[i]}.vtf`, data: vtf });
     files.push({ path: `addon/materials/${materialsPath}/${materialNames[i]}.vmt`, data: vmtOf(`${materialsPath}/${materialNames[i]}`, texture.flags) }); // prettier-ignore
   });
@@ -193,6 +205,8 @@ export function portToSource(src, { name, folder = PORT_FOLDER, groups, collisio
   const bodyBox = [[Infinity, Infinity, Infinity], [-Infinity, -Infinity, -Infinity]];
   // every corner as the compiled model is to have it: in the model's space, u v from the picture's top (the .vvd's)
   const allCorners = [];
+  // every triangle as its corners' bones and places in the model's space: a ragdoll's pieces are fitted to them
+  const bodyTriangles = [];
   const submodelFiles = uniqueNames(info.bodyparts.flatMap((part) => part.models.map((m) => sourceName(m.name))));
   let fileIndex = 0;
   let flat = 0;
@@ -213,6 +227,7 @@ export function portToSource(src, { name, folder = PORT_FOLDER, groups, collisio
             flat++;
             continue;
           }
+          bodyTriangles.push(tri.map(({ bone }, k) => ({ bone, p: at[k] })));
           const corners = tri.map(({ p, n, bone, s, t }) => {
             const at = apply34(rest[bone], p);
             at.forEach((v, axis) => {
@@ -253,6 +268,8 @@ export function portToSource(src, { name, folder = PORT_FOLDER, groups, collisio
   const roots = skeleton.map((bone, i) => (bone.parent < 0 ? i : -1)).filter((i) => i >= 0);
   const sequenceLines = [];
   const portedSequences = [];
+  // every frame of every animation, as read: how far a ragdoll's joints bend is measured on them
+  const allFrames = [];
   list.forEach((seq, i) => {
     let read;
     try {
@@ -261,6 +278,7 @@ export function portToSource(src, { name, folder = PORT_FOLDER, groups, collisio
       warnings.push(`animation ${seq.name}: not ported (${error.message}; give the files of animations beside the model)`); // prettier-ignore
       return;
     }
+    allFrames.push(...read.frames);
     const axes = TRAVEL.filter(([, bit]) => seq.motiontype & bit);
     const travelled = axes.length && read.frames.length > 1;
     const frames = read.frames.map((frame, f) =>
@@ -306,10 +324,7 @@ export function portToSource(src, { name, folder = PORT_FOLDER, groups, collisio
   // ── what it collides as ──
   const kind =
     collision !== "auto" ? collision : skeleton.length === 1 ? "hull" : hitboxes.length ? "ragdoll" : "none";
-  // a ragdoll's pieces are its hit boxes, which GoldSrc made far bigger than the body (hgrunt.mdl's weigh 855 kg
-  // as flesh): it weighs a person's RAGDOLL_MASS unless told
-  const massLine = (ragdoll) =>
-    mass === undefined ? (ragdoll ? `\t$mass ${RAGDOLL_MASS}` : "\t$automass") : `\t$mass ${num(mass)}`;
+  const massLine = () => (mass === undefined ? "\t$automass" : `\t$mass ${num(mass)}`);
   let collisionLines = [];
   const physicsFile = `${model}_physics.smd`;
   const physics = (triangles) => files.push({ path: `src/${physicsFile}`, data: smdOf({ bones: smdBones, frames: [restFrame], triangles }) }); // prettier-ignore
@@ -318,22 +333,36 @@ export function portToSource(src, { name, folder = PORT_FOLDER, groups, collisio
     if (kind === "hull" && !hull) warnings.push("its triangles lie in a plane, which has no hull: a box about them in its place");
     physics(hull ? hullTriangles(hull, 0) : boxTriangles(bodyBox, 0));
     const volume = hull ? hullVolume(hull) : bodyBox[1].reduce((product, v, i) => product * (v - bodyBox[0][i]), 1);
-    const weighed = mass === undefined && density > 0 ? Math.round(massOf(volume, density) * 10) / 10 : undefined;
-    collisionLines = [`$collisionmodel ${quote(physicsFile)}\n{\n${weighed === undefined ? massLine(false) : `\t$mass ${num(weighed)}`}\n}`]; // prettier-ignore
+    const weight = density ?? densities?.(surfaceprop ?? "default");
+    const weighed = mass === undefined && weight > 0 ? Math.round(massOf(volume, weight) * 10) / 10 : undefined;
+    collisionLines = [`$collisionmodel ${quote(physicsFile)}\n{\n${weighed === undefined ? massLine() : `\t$mass ${num(weighed)}`}\n}`]; // prettier-ignore
   } else if (kind === "ragdoll") {
-    const pieces = ragdollPieces(skeleton, hitboxes, rest);
+    const pieces = ragdollPieces(skeleton, hitboxes, rest, bodyTriangles);
     if (pieces.dropped.length)
       warnings.push(`a ragdoll has ${RAGDOLL_MOST} pieces at most: ${pieces.dropped.length} of the smallest left to their parents (${pieces.dropped.join(", ")})`); // prettier-ignore
+    if (pieces.merged.length)
+      warnings.push(`${pieces.merged.join(", ")}: hit boxes and no body of their own (too few corners, or too thin), joined to the piece above`);
+    if (pieces.list.length >= 2 && !pieces.list[0].fitted)
+      warnings.push("its corners make no pieces: the boxes of its hit boxes in their place, which are bigger than its body");
     if (pieces.list.length < 2) warnings.push("too few bones with hit boxes for a ragdoll: none made");
     else {
-      if (mass === undefined)
-        warnings.push(`a ragdoll weighs a person's ${RAGDOLL_MASS} kg unless told (mass): its hit boxes are bigger than its body`);
       physics(pieces.list.flatMap((piece) => piece.triangles));
       const root = pieces.list[0].bone;
-      const joints = pieces.list
-        .filter((piece) => piece.bone !== root)
-        .flatMap((piece) => ["x", "y", "z"].map((axis) => `\t$jointconstrain ${quote(skeleton[piece.bone].name)} ${axis} limit ${-RAGDOLL_TURN} ${RAGDOLL_TURN} 0`)); // prettier-ignore
-      collisionLines = [`$collisionjoints ${quote(physicsFile)}\n{\n${massLine(true)}\n\t$inertia 10\n\t$damping 0.01\n\t$rotdamping 1.5\n\t$rootbone ${quote(skeleton[root].name)}\n${joints.join("\n")}\n}`]; // prettier-ignore
+      const turns = jointTurns(skeleton, rest, pieces.list.map((piece) => piece.bone), allFrames);
+      const joined = pieces.list.filter((piece) => piece.bone !== root);
+      const unmeasured = joined.filter((piece) => !turns?.get(piece.bone)).map((piece) => skeleton[piece.bone].name);
+      if (unmeasured.length)
+        warnings.push(`${turns ? `${unmeasured.join(", ")}: never turned by its animations` : "no animation to measure its joints on"}, so each bends ${RAGDOLL_TURN} degrees each way about each axis`); // prettier-ignore
+      const joints = joined
+        .flatMap((piece) => ["x", "y", "z"].map((axis, a) => {
+          const [lo, hi] = turns?.get(piece.bone)?.[a] ?? [-RAGDOLL_TURN, RAGDOLL_TURN];
+          return `\t$jointconstrain ${quote(skeleton[piece.bone].name)} ${axis} limit ${num(lo)} ${num(hi)} 0`;
+        })); // prettier-ignore
+      // a person weighs RAGDOLL_MASS whatever their build, as Valve weighs its own; the compiler shares it among
+      // the pieces by their volume
+      if (mass === undefined) warnings.push(`a ragdoll weighs a person's ${RAGDOLL_MASS} kg unless told (mass), as Valve's do`);
+      const weighed = mass ?? RAGDOLL_MASS;
+      collisionLines = [`$collisionjoints ${quote(physicsFile)}\n{\n\t$mass ${num(weighed)}\n\t$inertia 10\n\t$damping 0.01\n\t$rotdamping 1.5\n\t$rootbone ${quote(skeleton[root].name)}\n${joints.join("\n")}\n}`]; // prettier-ignore
       // the pose a ragdoll is built in and falls from: the bones at rest
       files.push({ path: "src/anims/ragdoll.smd", data: smdOf({ bones: smdBones, frames: [restFrame] }) });
       sequenceLines.push(`$sequence "ragdoll" "anims/ragdoll.smd" fps 30 activity ACT_DIERAGDOLL 1`);
@@ -354,6 +383,11 @@ export function portToSource(src, { name, folder = PORT_FOLDER, groups, collisio
   if (!isZero(boxes.eyes)) qc.push(`$eyeposition ${vec(boxes.eyes)}`);
   if (!isZero(boxes.bbmin) || !isZero(boxes.bbmax)) qc.push(`$bbox ${vec(boxes.bbmin)} ${vec(boxes.bbmax)}`);
   if (!isZero(boxes.min) || !isZero(boxes.max)) qc.push(`$cbox ${vec(boxes.min)} ${vec(boxes.max)}`);
+  // Source's compiler drops a bone no vertex is on, and then cannot find it for a hit box or an animation's
+  // frames (a body the kit built on Half-Life's grunt left its toes empty): such a bone is kept as one a weapon
+  // is merged onto is
+  const weighted = new Set(bodyTriangles.flatMap((corners) => corners.map(({ bone }) => bone)));
+  for (const [i, bone] of skeleton.entries()) if (!weighted.has(i)) qc.push(`$bonemerge ${quote(bone.name)}`);
   for (const group of bodygroups)
     qc.push(`$bodygroup ${quote(group.name)}\n{\n${group.models.map((file) => (file ? `\tstudio ${quote(file)}` : "\tblank")).join("\n")}\n}`); // prettier-ignore
   if (skinRows.length)
@@ -392,10 +426,23 @@ export function portToSource(src, { name, folder = PORT_FOLDER, groups, collisio
 
 /** What a port may collide as (portToSource's `collision`). */
 export const COLLISIONS = ["auto", "hull", "box", "ragdoll", "none"];
-/** How far a ragdoll's joints bend each way about each axis, in degrees: a body that falls, not a doll of rubber. */
+/** How far a ragdoll's joints bend each way about each axis, in degrees, when it has no animation to measure. */
 const RAGDOLL_TURN = 40;
-/** What a ragdoll weighs unless told, in kilograms: a person. */
+/**
+ * What a ragdoll weighs unless told, in kilograms: a person, as Valve weighs its own whatever their build (a
+ * citizen's .phy and Kleiner's both say 90). By its volume Half-Life's grunt would weigh 232 kg as water: GoldSrc's
+ * figures are bulky.
+ */
 const RAGDOLL_MASS = 90;
+/**
+ * A joint's limits from its animations: the turns between these shares of its frames (the few frames past them,
+ * Half-Life's grunt's dives and falls, turn a thigh almost round), widened by TURN_SPARE each way, at most
+ * TURN_MOST. An axis that turns less than TURN_STILL in them is held still, as Valve's knees are about two axes.
+ */
+const TURN_SHARE = [0.02, 0.98];
+const TURN_SPARE = 10;
+const TURN_MOST = 150;
+const TURN_STILL = 1;
 /** The most pieces a ragdoll has: Source's (RAGDOLL_MAX_ELEMENTS, 24). */
 const RAGDOLL_MOST = 24;
 /** A piece thinner than this (units) each way is made this thick: the physics cannot hold a flat box. */
@@ -422,21 +469,105 @@ function hullTriangles(hull, bone) {
 }
 
 /**
- * A ragdoll's pieces: for each bone with hit boxes, the box about them in the bone's space, as triangles in the
- * model's space on that bone; the biggest RAGDOLL_MOST of them, in the bones' order (a parent before its
- * children). Returns { list: [{ bone, triangles }], dropped: [bone names] }.
+ * A ragdoll's pieces, in the bones' order (a parent before its children). Each is the convex hull of the corners
+ * on its bone and on the bones below it that have no piece (a hand's fingers, its gun), and of the middles of the
+ * triangles' sides from them to another piece's, in the model's space on that bone; the corners on bones above
+ * every piece go to the first. A bone with hit boxes is a piece when those
+ * corners make a hull THINNEST_PIECE thick at least (a spine bone with no corners of its own is not: the piece
+ * above it takes its place); the biggest RAGDOLL_MOST of them. GoldSrc's hit boxes are far bigger than the body
+ * (hgrunt.mdl's weigh 855 kg as flesh): its corners are not. A model whose corners make fewer than two pieces has
+ * the boxes of its hit boxes for pieces.
+ * Returns { list: [{ bone, triangles, volume (cubic units), fitted }], dropped: [bone names], merged: [bone names
+ * with hit boxes and no body, taken by the piece above] }.
  */
-function ragdollPieces(skeleton, hitboxes, rest) {
+function ragdollPieces(skeleton, hitboxes, rest, triangles = []) {
   const boxes = new Map();
   for (const box of hitboxes) {
     const was = boxes.get(box.bone);
     boxes.set(box.bone, was ? [was[0].map((v, i) => Math.min(v, box.min[i])), was[1].map((v, i) => Math.max(v, box.max[i]))] : [box.min, box.max]); // prettier-ignore
   }
-  const volume = ([lo, hi]) => hi.reduce((product, v, i) => product * Math.max(THINNEST_PIECE, v - lo[i]), 1);
-  const ranked = [...boxes.entries()].sort((x, y) => volume(y[1]) - volume(x[1]));
-  const kept = new Set(ranked.slice(0, RAGDOLL_MOST).map(([bone]) => bone));
-  const list = [...boxes.entries()]
-    .filter(([bone]) => kept.has(bone))
+  // each corner goes to its bone's piece, or its nearest forebear's, or the first piece's. A vertex is on one
+  // bone in GoldSrc, so a body's corners are rings, a bone's each: where a triangle's side goes from one piece's
+  // corner to another's, each takes its share of the side, half of it shared among the steps between them (a
+  // low-poly belly's side from the hips to the chest goes past two pieces of spine), and the pieces meet there
+  const hullsOf = (pieces) => {
+    const owned = new Map([...pieces].map((bone) => [bone, []]));
+    const first = Math.min(...pieces);
+    const ownerOf = skeleton.map((_, bone) => {
+      let at = bone;
+      while (at >= 0 && !pieces.has(at)) at = skeleton[at].parent;
+      return at >= 0 ? at : first;
+    });
+    // a piece's chain of pieces up to the first
+    const pieceAbove = (bone) => {
+      let at = skeleton[bone].parent;
+      while (at >= 0 && !pieces.has(at)) at = skeleton[at].parent;
+      return at;
+    };
+    const chainOf = (bone) => (bone < 0 ? [] : [bone, ...chainOf(pieceAbove(bone))]);
+    const chains = new Map([...pieces].map((bone) => [bone, chainOf(bone)]));
+    const steps = (a, b) => {
+      const up = chains.get(a);
+      const down = chains.get(b);
+      const meet = up.findIndex((bone) => down.includes(bone));
+      return meet < 0 ? up.length + down.length : meet + down.indexOf(up[meet]);
+    };
+    for (const corners of triangles) {
+      const owners = corners.map(({ bone }) => ownerOf[bone]);
+      corners.forEach(({ p }, k) => owned.get(owners[k]).push(p));
+      for (const [a, b] of [[0, 1], [1, 2], [2, 0]]) {
+        if (owners[a] === owners[b]) continue;
+        const share = 0.5 / steps(owners[a], owners[b]);
+        const toward = (from, to) => corners[from].p.map((v, axis) => v + (corners[to].p[axis] - v) * share);
+        owned.get(owners[a]).push(toward(a, b));
+        owned.get(owners[b]).push(toward(b, a));
+      }
+    }
+    return new Map([...owned].map(([bone, points]) => {
+      const hull = points.length >= 4 ? convexHull(points) : null;
+      return [bone, hull && thicknessOf(hull) >= THINNEST_PIECE ? hull : null];
+    })); // prettier-ignore
+  };
+  // one tree of pieces, under the one with the most below it: Source's compiler refuses a joint on a piece with
+  // none above it (barnacle.mdl's bones have three roots). The bones of the others give their corners to its root
+  const isBelow = (bone, top) => {
+    for (let at = bone; at >= 0; at = skeleton[at].parent) if (at === top) return true;
+    return false;
+  };
+  const oneTree = (set) => {
+    const top = [...set].reduce((best, bone) => {
+      const below = [...set].filter((other) => isBelow(other, bone)).length;
+      return below > best.below || (below === best.below && bone < best.bone) ? { bone, below } : best;
+    }, { bone: -1, below: -1 }).bone;
+    return new Set([...set].filter((bone) => isBelow(bone, top)));
+  };
+  // a bone that makes no hull gives its corners to the piece above it, until every piece makes one
+  let pieces = boxes.size ? oneTree(new Set(boxes.keys())) : new Set();
+  let hulls = pieces.size ? hullsOf(pieces) : new Map();
+  while (pieces.size && [...hulls.values()].some((hull) => !hull)) {
+    pieces = new Set([...pieces].filter((bone) => hulls.get(bone)));
+    if (pieces.size) pieces = oneTree(pieces);
+    hulls = pieces.size ? hullsOf(pieces) : new Map();
+  }
+  const dropped = [];
+  if (pieces.size > RAGDOLL_MOST) {
+    const ranked = [...pieces].sort((x, y) => hullVolume(hulls.get(y)) - hullVolume(hulls.get(x)));
+    dropped.push(...ranked.slice(RAGDOLL_MOST).map((bone) => skeleton[bone].name));
+    pieces = new Set(ranked.slice(0, RAGDOLL_MOST));
+    hulls = hullsOf(pieces);
+  }
+  if (pieces.size >= 2 && [...hulls.values()].every(Boolean))
+    return {
+      list: [...pieces].sort((x, y) => x - y).map((bone) => ({ bone, triangles: hullTriangles(hulls.get(bone), bone), volume: hullVolume(hulls.get(bone)), fitted: true })), // prettier-ignore
+      dropped,
+      merged: [...boxes.keys()].filter((bone) => !pieces.has(bone) && !dropped.includes(skeleton[bone].name)).map((bone) => skeleton[bone].name),
+    };
+  // no body to fit: the boxes of the hit boxes, the biggest RAGDOLL_MOST
+  const boxVolume = ([lo, hi]) => hi.reduce((product, v, i) => product * Math.max(THINNEST_PIECE, v - lo[i]), 1);
+  const tree = boxes.size ? oneTree(new Set(boxes.keys())) : new Set();
+  const ranked = [...boxes.entries()].filter(([bone]) => tree.has(bone)).sort((x, y) => boxVolume(y[1]) - boxVolume(x[1]));
+  const list = ranked
+    .slice(0, RAGDOLL_MOST)
     .sort((x, y) => x[0] - y[0])
     .map(([bone, [lo, hi]]) => {
       // a flat box is made THINNEST_PIECE thick about its middle
@@ -445,10 +576,88 @@ function ragdollPieces(skeleton, hitboxes, rest) {
         ...triangle,
         corners: triangle.corners.map((corner) => ({ ...corner, p: apply34(rest[bone], corner.p), n: turn34(rest[bone], corner.n) })), // prettier-ignore
       }));
-      return { bone, triangles };
+      return { bone, triangles, volume: boxVolume([lo, hi]), fitted: false };
     });
-  const dropped = ranked.slice(RAGDOLL_MOST).map(([bone]) => skeleton[bone].name);
-  return { list, dropped };
+  return { list, dropped: ranked.slice(RAGDOLL_MOST).map(([bone]) => skeleton[bone].name), merged: [] };
+}
+
+/** How thin a hull is: the least, over its faces, of how far its farthest point is behind the face. */
+function thicknessOf(hull) {
+  return Math.min(
+    ...hull.faces.map((face) => {
+      const [a, b, c] = face.map((i) => hull.points[i]);
+      const m = cross(sub3(b, a), sub3(c, a));
+      const length = Math.hypot(...m) || 1;
+      return Math.max(...hull.points.map((p) => -(m[0] * (p[0] - a[0]) + m[1] * (p[1] - a[1]) + m[2] * (p[2] - a[2])) / length)); // prettier-ignore
+    }),
+  );
+}
+
+/** A bone's turn from its six values (roll about x, then pitch about y, then yaw about z, as mdl.mjs's). */
+function turnOf([, , , x, y, z]) {
+  const [sx, cx, sy, cy, sz, cz] = [x, y, z].flatMap((a) => [Math.sin(a), Math.cos(a)]);
+  return [
+    [cy * cz, sx * sy * cz - cx * sz, cx * sy * cz + sx * sz],
+    [cy * sz, sx * sy * sz + cx * cz, cx * sy * sz - sx * cz],
+    [-sy, sx * cy, cx * cy],
+  ];
+}
+const times33 = (a, b) => a.map((row) => [0, 1, 2].map((c) => row[0] * b[0][c] + row[1] * b[1][c] + row[2] * b[2][c]));
+const across33 = (m) => [0, 1, 2].map((c) => m.map((row) => row[c]));
+/** A turn as degrees about each of its own axes: its axis times its angle (the turn's logarithm). */
+function degreesOf(m) {
+  const angle = Math.acos(Math.max(-1, Math.min(1, (m[0][0] + m[1][1] + m[2][2] - 1) / 2)));
+  const s = Math.sin(angle);
+  const k = (s > 1e-6 ? angle / (2 * s) : 0.5) * (180 / Math.PI);
+  return [m[2][1] - m[1][2], m[0][2] - m[2][0], m[1][0] - m[0][1]].map((v) => v * k);
+}
+
+/**
+ * How far each ragdoll piece's bone turns from its rest against the piece above it, about each of its own axes,
+ * over every frame of the model's animations: Map(bone -> [[lo, hi] x, y, z] in degrees), as $jointconstrain
+ * takes them. Measured against Valve's own: a citizen's knee bends the way +z turns it (its .phy's limits
+ * z -12 to 126), its elbow the way -z does (-149 to 4); Half-Life's grunt's knee bends by -z, and its animations
+ * turn it -140 to 22. A bone they never turn is null; all of it is null when there is no frame.
+ */
+function jointTurns(skeleton, rest, pieceBones, frames) {
+  if (!frames.length) return null;
+  const pieces = new Set(pieceBones);
+  const above = (bone) => {
+    let at = skeleton[bone].parent;
+    while (at >= 0 && !pieces.has(at)) at = skeleton[at].parent;
+    return at;
+  };
+  // a turn of a bone against the piece above it, in the model's space; at rest from the rest pose
+  const against = (turns, bone, parent) => (parent < 0 ? turns[bone] : times33(across33(turns[parent]), turns[bone]));
+  const restTurns = rest.map((m) => m.map((row) => row.slice(0, 3)));
+  const seen = new Map(pieceBones.map((bone) => [bone, [[], [], []]]));
+  for (const frame of frames) {
+    const turns = [];
+    frame.forEach((six, bone) => {
+      const own = turnOf(six);
+      turns.push(skeleton[bone].parent < 0 ? own : times33(turns[skeleton[bone].parent], own));
+    });
+    for (const bone of pieceBones) {
+      const parent = above(bone);
+      const turn = times33(across33(against(restTurns, bone, parent)), against(turns, bone, parent));
+      degreesOf(turn).forEach((v, axis) => seen.get(bone)[axis].push(v));
+    }
+  }
+  return new Map(
+    [...seen].map(([bone, axes]) => {
+      const spans = axes.map((values) => {
+        values.sort((a, b) => a - b);
+        return TURN_SHARE.map((share) => values[Math.round(share * (values.length - 1))]);
+      });
+      // a bone its animations never turn is not measured by them: it bends RAGDOLL_TURN each way
+      if (spans.every(([lo, hi]) => hi - lo < TURN_STILL)) return [bone, null];
+      return [bone, spans.map(([lo, hi]) => {
+        if (hi - lo < TURN_STILL) return [0, 0];
+        // the rest, the pose it falls from, is always inside them
+        return [Math.max(-TURN_MOST, Math.min(0, Math.floor(lo - TURN_SPARE))), Math.min(TURN_MOST, Math.max(0, Math.ceil(hi + TURN_SPARE)))];
+      })];
+    }),
+  );
 }
 
 /** The twelve triangles of a box [min, max], on one bone, counter-clockwise from outside. */

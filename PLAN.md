@@ -252,8 +252,17 @@ Next, in order:
 - The grunt: 22 pieces, 21 joints, 90 kg. The barrel: one hull that follows its bulge; 235 kg as solid wood,
   given 40 for GMod.
 
-Not yet seen in GMod. Left for the ragdoll: joints bone by bone (a knee bends one way), and pieces fitted to
-the body rather than to GoldSrc's generous hit boxes.
+Seen in GMod (0.29.0): the barrel rolls as wood, the grunt falls as a body.
+
+**After 0.29.0:** the ragdoll's pieces fitted to the body, and its joints measured on its animations.
+- Each piece is the hull of its bone's corners, the sides between pieces shared out among them. The grunt:
+  22 pieces that follow its body, where its hit boxes would weigh 855 kg as flesh.
+- Each joint's limits are how far the animations turn it, an axis it never turns about held. The grunt's knees
+  and elbows are hinges about z. Valve's convention measured on a citizen: +z bends its knee, as its `.phy` says.
+- A ragdoll weighs 90 kg, as Valve's do.
+
+Next: seen in GMod, then 6d. After Source, s&box (Source 2). Its models are of a finer make by default, but a
+low-poly look is a choice it allows: the kit's models for it are not to be pushed finer than asked.
 
 **6b. Source models read and drawn.** Begun with 6a, to check it:
 - `readSourceMdl`, `readVvd`, `readVtx`, `sourceTriangles`;
@@ -280,6 +289,13 @@ does for Half-Life.
 
 `check` gets a `source` profile, and the spec builder writes SMD and QC for a Source target. Its judges are
 calibrated on Half-Life 2's own models, read from GMod's VPKs.
+
+**6d begun 2026-10-25:** a spec's `engine: "source"` (or `--engine source`).
+- Held to Half-Life 2's props and people (`scripts/source-budgets.mjs`, 2170 props and 88 characters from GMod's
+  packs): two to six times Half-Life's triangles. Painted on 512 (1024 a character), kept in full colour.
+- `check`'s `source` profile; the build ported by `builtToGmod`, compiled, held to itself, drawn, with a hull.
+- A spec's `budget` and `texture` still bind: a low-poly look stays the spec's choice.
+- Left: weapons, normal maps, more than one bone a vertex, pose parameters; and seen in GMod.
 
 **6e. What a port leaves behind.** Ragdolls (`$collisionjoints`), blended animations as pose parameters, bone
 controllers as pose parameters, NPC activities as Source names them, eyes and flexes.

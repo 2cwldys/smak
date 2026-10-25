@@ -38,7 +38,7 @@ at the full size.
 ```
 node bin/smak.mjs info <mdl> [--json] [--hitboxes] [--boxes]   bones, bodyparts with their body numbers, textures, animations
                                                    (activity, travel and speed), events, attachments, hit boxes
-node bin/smak.mjs check <mdl> [--engine xash]      errors and warnings; exit code 1 on an error
+node bin/smak.mjs check <mdl> [--engine xash|source]   errors and warnings; exit code 1 on an error
                                                    (--source original.mdl: what the original has too is marked "inherited")
 node bin/smak.mjs check --publish <folder> [--game <Half-Life folder>] [--ours ts/maps/mymap.bsp ...]
                                                    before a folder is shared: FAIL on a file that is the game's byte for byte, one
@@ -77,6 +77,7 @@ node bin/smak.mjs mcp --work <dir> [--models <dir>]  the kit as an MCP server, f
 node bin/smak.mjs edit <folder|mdl>                the editor, for the person: animations, events and textures by hand
 node bin/smak.mjs build <spec.json> [-o dir] [--game <folder> ...] [--mod <profile>]   a spec built by its kind (docs/SPEC.md; a map docs/SPEC-MAPS.md):
                                                    a map of rooms placed by words, a model of parts, textures, sounds, a sprite
+node bin/smak.mjs build <model spec> --engine source   the model made for Source: held to Half-Life 2's, compiled for GMod (docs/SOURCE.md)
 ```
 
 For maps (their recipes are in docs/MAPS-LOOKING.md, docs/MAPS-CHECKS.md and docs/MAPS-MAKING.md):

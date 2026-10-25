@@ -3,6 +3,30 @@
 The newest first. A version that changes what a model's file looks like, or that a model made before needs
 mending for, says so under **Mind**.
 
+## Unreleased
+
+A ported ragdoll fitted to the body, its joints measured on its animations (`docs/SOURCE.md`):
+- Each piece is the convex hull of its bone's corners, the triangles' sides between pieces shared out among
+  them. A bone with hit boxes and no body of its own is left to the piece above. GoldSrc's hit boxes are the
+  pieces only of a model whose corners make none.
+- Each joint bends as far as the model's animations turn it from its rest, about each axis; an axis it never
+  turns about is held, so knees and elbows are hinges. Valve's convention measured on a Half-Life 2 citizen's
+  `.phy`. A bone never turned, or a model with no animation, bends 40 degrees each way, said.
+- A ragdoll weighs 90 kg, as Valve's do whatever their build.
+- `portToSource` takes `densities(surfaceprop)`, which `portToGmod` gives from GMod's own table.
+
+A model made for Source (PLAN.md, 6d): a spec's `"engine": "source"`, or `smak build --engine source`.
+- Held to Half-Life 2's props and people, measured on GMod's packs (`scripts/source-budgets.mjs`;
+  `SOURCE_PROP_TRIANGLES`, `SOURCE_CHARACTER_TRIANGLES`), not Half-Life's. Painted on 512 a side (1024 a
+  character's) unless told.
+- Its pictures kept in full colour (`buildModelSpec`'s `pictures`), not cut to 256 colours.
+- `check`'s `source` profile (`--engine source`).
+- Written, compiled and drawn under `<name>_source/` (`builtToGmod`), colliding as a port does.
+- A Source weapon is refused for now.
+- A character keeps its base's animations kept apart, and is bound in the stance it was built in.
+- A port keeps a bone no vertex is on (`$bonemerge`): Source's compiler dropped it and then could not find it
+  for a hit box (a body built on Half-Life's grunt left its toes empty).
+
 ## 0.29.0 (2026-10-25)
 
 The Source engine, first step (PLAN.md, phase 6): a GoldSrc model ported to Garry's Mod (`docs/SOURCE.md`).

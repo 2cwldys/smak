@@ -751,10 +751,13 @@ map's monsters come: `spawnsOf`, `spawnsTable`; its character in numbers: `chara
   - Its surfaceprop comes from a kit-built model's `<name>.built.json` (`surfacepropOfBuild(file)`).
   - It is weighed at that surfaceprop's density, from GMod's `surfaceproperties.txt`.
   - `physics`: what it collides as (`readPhy`).
-- `portToSource(src, { name, folder = "smak", groups, collision = "auto", surfaceprop, mass, density })` → `{ name,
+- `builtToGmod(mdl, { pictures, record, out, name, ... })`: the same for a model the kit built for Source
+  (`buildModelSpec` of a spec with `engine: "source"`, which returns `pictures`, its textures in full colour by name).
+  `record` (`summaryOf`'s) gives its surfaceprop (`surfacepropOfRecord`).
+- `portToSource(src, { name, folder = "smak", groups, collision = "auto", surfaceprop, mass, density, densities, pictures })` → `{ name,
   modelname, qc, files: [{ path, data }], warnings, facts }`: the compiler's files of a model, with no disk and no
   compiler. `collision`: one of `COLLISIONS` (`auto`, `hull`, `box`, `ragdoll`, `none`); `density` (kg a cubic
-  metre) weighs a hull or a box when no `mass` is given.
+  metre), or `densities(surfaceprop)`, weighs a hull or a box when no `mass` is given; a ragdoll weighs 90 kg.
 - `convexHull(points)` → `{ points, faces }` or null; `readPhy(bytes)` → `{ solids, mass, surfaceprops, joints,
   text }`; `readSurfaceProps(text)`, `densityOf(name, props)`, `massOf(volume, density)`, `SURFACEPROP_OF_BASE`.
   - `facts`: what the compiled model must have again (bones, sequences, materials, bodygroups, skins,

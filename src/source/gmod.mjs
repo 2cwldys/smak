@@ -4,7 +4,10 @@
 //
 //   portToGmod(file, { out, name, folder, collision, surfaceprop, mass, studiomdl, gmod, compile, picture })
 //     -> { passed, faults, warnings, said, qc, files, modelname, picture, physics }
+//   builtToGmod(mdl, { pictures, record, out, name, ... })   the same for a model the kit built for Source
+//     (buildModelSpec with engine "source"): its pictures in full colour, its surfaceprop from its record
 //   surfacepropOfBuild(file)   what a model the kit built is made of, as Source names it, from <name>.built.json
+//   surfacepropOfRecord(record)  the same from the record itself (summaryOf's)
 //
 // Under `out`: src/ (the QC and SMDs, kept: a person may change them and compile again) and addon/, which goes
 // into garrysmod/addons/<name>/ as it is. `picture`: six views of the compiled model, read back from its own
@@ -30,7 +33,11 @@ import { readSurfaceProps, densityOf, SURFACEPROP_OF_BASE } from "./surfaceprops
 export function surfacepropOfBuild(file) {
   const record = file.replace(/\.mdl$/i, ".built.json");
   if (!existsSync(record)) return null;
-  const { materials = {}, parts = {} } = JSON.parse(readFileSync(record, "utf8"));
+  return surfacepropOfRecord(JSON.parse(readFileSync(record, "utf8")));
+}
+
+/** What a built model is made of, from its record ({ materials, parts }, summaryOf's): see surfacepropOfBuild. */
+export function surfacepropOfRecord({ materials = {}, parts = {} } = {}) {
   const area = {};
   for (const part of Object.values(parts)) {
     const base = materials[part.material]?.base ?? part.material;
@@ -52,6 +59,27 @@ export function portToGmod(file, { out, name, folder, collision, surfaceprop, ma
   const groups = sequenceGroups(src).length > 1 ? sequenceFilesOf(file, src) : undefined;
   // a model the kit built says what it is made of; one of a game's does not, and is "default" (or flesh, a ragdoll)
   const built = surfaceprop ? null : surfacepropOfBuild(file);
+  return toGmod(src, { name: name ?? sourceName(basename(file)), folder, groups, collision, surfaceprop, mass, built, out, studiomdl, gmod, compile, picture }); // prettier-ignore
+}
+
+/**
+ * A model the kit built for Source (buildModelSpec with engine "source": `mdl`, its `pictures` in full colour,
+ * `baseFile`, a character's base, beside which the animations it keeps apart are, and `record`, summaryOf's of the
+ * build, for what it is made of) made Source's compiler's files, compiled, held to itself and drawn, as portToGmod
+ * does for a file.
+ */
+export function builtToGmod(mdl, { pictures, record, baseFile, out, name, folder, collision, surfaceprop, mass, studiomdl, gmod, compile = true, picture = true } = {}) {
+  if (!out) throw new Error("builtToGmod: the folder the model goes to (out)");
+  if (!name) throw new Error("builtToGmod: the model's name in Source (name)");
+  const built = surfaceprop || !record ? null : surfacepropOfRecord(record);
+  const groups = baseFile && sequenceGroups(mdl).length > 1 ? sequenceFilesOf(baseFile, mdl) : undefined;
+  // bound in the stance it was built in, its base's first frame: at the bones' rest a body made in that stance is
+  // out of shape (a robot built on Half-Life's grunt stood with a leg kicked out)
+  return toGmod(mdl, { name, folder, groups, pictures, bind: { seq: 0, frame: 0 }, collision, surfaceprop, mass, built, out, studiomdl, gmod, compile, picture }); // prettier-ignore
+}
+
+/** What portToGmod and builtToGmod share: the port written, compiled, read back, held to what it was, and drawn. */
+function toGmod(src, { name, folder, groups, pictures, bind, collision, surfaceprop, mass, built, out, studiomdl, gmod, compile, picture }) {
   const material = surfaceprop ?? built?.surfaceprop;
   // its density from GMod's own surfaceproperties.txt (the kit's table where GMod is not): GMod's studiomdl
   // weighs everything as "default", so the port weighs it
@@ -63,7 +91,7 @@ export function portToGmod(file, { out, name, folder, collision, surfaceprop, ma
   } catch {
     // a pack that is not read: the kit's own table
   }
-  const port = portToSource(src, { name: name ?? sourceName(basename(file)), folder, groups, collision, surfaceprop: material, mass, density: densityOf(material ?? "default", props) }); // prettier-ignore
+  const port = portToSource(src, { name, folder, groups, pictures, bind, collision, surfaceprop: material, mass, densities: (prop) => densityOf(prop, props) }); // prettier-ignore
   if (built) port.warnings.push(`made of ${built.base} the most, by its build's record: $surfaceprop "${built.surfaceprop}"`);
   const qc = writePort(port, out);
   const result = { passed: true, faults: [], warnings: [...port.warnings], said: [], qc, files: port.files.map((f) => join(out, f.path)), modelname: port.modelname, picture: null, physics: null }; // prettier-ignore
@@ -91,7 +119,7 @@ export function portToGmod(file, { out, name, folder, collision, surfaceprop, ma
   if (phyFile) {
     const phy = readPhy(readFileSync(phyFile));
     result.physics = phy;
-    result.said.push(`collides as ${phy.solids} ${phy.solids === 1 ? "solid" : "solids"}${phy.joints ? ` joined by ${phy.joints} joints (a ragdoll)` : ""}, ${phy.mass.toFixed(1)} kg, ${phy.surfaceprops.join(", ") || "default"}`); // prettier-ignore
+    result.said.push(`collides as ${phy.solids} ${phy.solids === 1 ? "solid" : "solids"}${phy.joints ? ` joined by ${phy.joints} ${phy.joints === 1 ? "joint" : "joints"} (a ragdoll)` : ""}, ${phy.mass.toFixed(1)} kg, ${phy.surfaceprops.join(", ") || "default"}`); // prettier-ignore
   } else result.said.push("collides as nothing (no collision model)");
   if (picture) {
     const model = readSourceModel(`models/${port.modelname}`, sourceFiles({ folders: [addon] }));

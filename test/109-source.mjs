@@ -7,6 +7,7 @@
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import * as smak from "../src/index.mjs";
+import { buildModelSpec, validateModelSpec } from "../src/spec/model.mjs";
 import { test, sure, near, tmp, runSmak, inked } from "./helper.mjs";
 
 const { source } = smak;
@@ -227,6 +228,28 @@ test("port: a model of one bone collides as its hull, weighed at its density; a 
   sure(/taken for flesh/.test(said) && /weighs a person's 90 kg/.test(said), said);
   const pieces = f.files.find((x) => x.path === "src/figure_physics.smd").data.split("\n").filter((l) => l === "physics").length;
   sure(pieces === 36, `three boxes: ${pieces} triangles`);
+  // its one animation never turns a bone: its joints are not measured, and bend 40 degrees each way
+  sure(/\$jointconstrain "chest" y limit -40 40 0/.test(figureQc) && /chest, head: never turned by its animations/.test(said), said);
+});
+
+test("port: a ragdoll's joints bend as far as its animations bend them; an axis they never turn is held", () => {
+  // the chest bends forward about y from 0 to 60 degrees, and never about x or z; the head never turns on it
+  const bend = smak.buildMdl({
+    name: "bender.mdl",
+    bones: figureBones,
+    bodyparts: [{ name: "body", models: [{ name: "bender", meshes: [{ tris: [...cube([-4, -3, 25], [4, 3, 40], "hips"), ...cube([-5, -3, 40], [5, 3, 52], "chest"), ...cube([-2, -2, 52], [2, 2, 58], "head")], texture: plain("cloth.bmp") }] }] }], // prettier-ignore
+    sequences: [{ name: "bow", fps: 10, frames: [0, 10, 20, 30, 40, 50, 60].map((deg) => figureBones.map((b) => [...b.pos, 0, b.name === "chest" ? (deg * Math.PI) / 180 : 0, 0])) }], // prettier-ignore
+    hitboxes: [
+      { bone: "hips", group: 3, min: [-4, -3, -5], max: [4, 3, 10] },
+      { bone: "chest", group: 2, min: [-5, -3, 0], max: [5, 3, 12] },
+      { bone: "head", group: 1, min: [-2, -2, 0], max: [2, 2, 6] },
+    ],
+  });
+  const b = source.portToSource(bend, { name: "bender" });
+  const qc = b.files.find((x) => x.path === b.qc).data;
+  // 0 to 60, ten degrees spare each way
+  sure(/"chest" x limit 0 0 0/.test(qc) && /"chest" y limit -10 70 0/.test(qc) && /"chest" z limit 0 0 0/.test(qc), qc);
+  sure(/"head" y limit -40 40 0/.test(qc) && /head: never turned/.test(b.warnings.join("\n")), qc);
 });
 
 test("convexHull: the hull of points in a ball holds them all; a box's is its twelve triangles; points in a plane have none", () => {
@@ -399,4 +422,80 @@ testCompiled("compiled: the post collides as one solid of its weight; the figure
   const f = source.portToGmod(figureFile, { out: join(folder, "figure"), picture: false });
   sure(f.passed && f.physics.solids === 3 && f.physics.joints === 2, `${f.faults} ${JSON.stringify({ ...f.physics, text: undefined })}`);
   sure(/collides as 3 solids joined by 2 joints \(a ragdoll\)/.test(f.said.join("\n")), f.said.join(" | "));
+});
+
+// ── a model made for Source (6d): a spec built with engine "source" ──
+const crateSpec = (more = {}) => ({
+  spec: "smak.model/1",
+  name: "crate.mdl",
+  kind: "prop",
+  materials: { oak: { base: "wood" } },
+  parts: [{ id: "body", kind: "box", material: "oak", size: [24, 24, 24] }],
+  ...more,
+});
+/** How many colours a picture has. */
+const coloursOf = ({ rgba }) => {
+  const seen = new Set();
+  for (let i = 0; i < rgba.length; i += 4) seen.add((rgba[i] << 16) | (rgba[i + 1] << 8) | rgba[i + 2]);
+  return seen.size;
+};
+
+test("a spec made for Source: held to Half-Life 2's props, painted on 512, its picture kept in full colour", () => {
+
+  const made = buildModelSpec(crateSpec({ engine: "source" }));
+  sure(made.mdl && made.report.ok, made.report.errors.concat(made.report.faults).join("; "));
+  const facts = made.report.facts.join("\n");
+  sure(/made for Source: .* 512 by 512/.test(facts) && /Half-Life 2's props of this size/.test(facts), facts);
+  const [picture] = made.pictures.values();
+  sure(picture.width === 512 && picture.height === 512, `${picture.width}x${picture.height}`);
+  // the file's texture is cut to 256 colours; the picture beside it is not
+  sure(coloursOf(picture) > 256, `${coloursOf(picture)} colours`);
+  const goldsrc = buildModelSpec(crateSpec());
+  sure(!goldsrc.pictures && /Half-Life's props of this size/.test(goldsrc.report.facts.join("\n")), "a GoldSrc build keeps none, and is held to Half-Life's");
+  // a spec's own picture size and budget still bind: a low-poly look is the spec's to choose
+  const small = buildModelSpec(crateSpec({ engine: "source", texture: { width: 128, height: 128 }, budget: 12 }));
+  sure([...small.pictures.values()][0].width === 128 && small.report.ok, small.report.faults.join("; "));
+});
+
+test("a spec's engine: goldsrc or source; a Source weapon is refused; check holds the file to Source's limits", () => {
+
+  sure(/engine: "goldsrc" or "source"/.test(validateModelSpec(crateSpec({ engine: "xash" })).errors.join("\n")), "xash refused");
+  const weapon = validateModelSpec(crateSpec({ engine: "source", weapon: { kind: "sword" } })).errors.join("\n");
+  sure(/a Source weapon is not made yet/.test(weapon), weapon);
+  const big = smak.buildMdl({ name: "big.mdl", bodyparts: [{ name: "body", models: [{ name: "big", meshes: [{ tris: cube([0, 0, 0], [8, 8, 8]), texture: smak.indexed({ width: 1024, height: 1024, rgb: new Uint8Array(1024 * 1024 * 3).fill(90) }, "big.bmp") }] }] }] }); // prettier-ignore
+  sure(smak.check(big, "goldsrc").warnings.some((w) => /larger than 512/.test(w)), "GoldSrc shrinks a 1024 picture");
+  sure(!smak.check(big, "source").warnings.some((w) => /larger than/.test(w)), smak.check(big, "source").warnings.join("; "));
+});
+
+testCompiled("compiled: smak build --engine source writes the addon, compiled and whole, its texture in full colour", () => {
+  const specFile = join(folder, "crate.json");
+  writeFileSync(specFile, JSON.stringify(crateSpec()));
+  const out = join(folder, "crate");
+  const said = runSmak("build", specFile, "-o", out, "--engine", "source");
+  sure(/built, and every check passed/.test(said) && /Source: collides as 1 solid, [\d.]+ kg, wood/.test(said), said);
+  sure(existsSync(join(out, "crate-source-sheet.png")), "the compiled model drawn");
+  const vtf = source.readVtf(readFileSync(join(out, "crate_source", "addon", "materials", "models", "smak", "crate", "crate_sheet0.vtf")));
+  sure(vtf.width === 512 && coloursOf(vtf) > 256, `${vtf.width}x${vtf.height}, ${coloursOf(vtf)} colours`);
+});
+
+test("port: bind writes the model bound in a frame's pose: its rest, its ragdoll's pose and its joints' zero", () => {
+  // the chest's first frame bends 30 degrees about y from its rest
+  const leaning = smak.buildMdl({
+    name: "leaning.mdl",
+    bones: figureBones,
+    bodyparts: [{ name: "body", models: [{ name: "leaning", meshes: [{ tris: [...cube([-4, -3, 25], [4, 3, 40], "hips"), ...cube([-5, -3, 40], [5, 3, 52], "chest"), ...cube([-2, -2, 52], [2, 2, 58], "head")], texture: plain("cloth.bmp") }] }] }], // prettier-ignore
+    sequences: [{ name: "lean", fps: 10, frames: [0, 10].map((deg) => figureBones.map((b) => [...b.pos, 0, b.name === "chest" ? ((30 + deg) * Math.PI) / 180 : 0, 0])) }], // prettier-ignore
+    hitboxes: [
+      { bone: "hips", group: 3, min: [-4, -3, -5], max: [4, 3, 10] },
+      { bone: "chest", group: 2, min: [-5, -3, 0], max: [5, 3, 12] },
+    ],
+  });
+  const atRest = source.portToSource(leaning, { name: "leaning" });
+  const bound = source.portToSource(leaning, { name: "leaning", bind: { seq: 0, frame: 0 } });
+  const skeletonOf = (port) => port.files.find((f) => f.path === "src/leaning.smd").data.match(/skeleton\r?\ntime 0\r?\n([\s\S]*?)end/)[1];
+  sure(/^1 0 0 10 0 0 0$/m.test(skeletonOf(atRest)), skeletonOf(atRest));
+  sure(/^1 0 0 10 0 0\.523599 0$/m.test(skeletonOf(bound)), skeletonOf(bound));
+  // measured from the lean: the chest turns 0 to 10 degrees further, so its joint bends -10 to 20 about y
+  const qc = bound.files.find((f) => f.path === bound.qc).data;
+  sure(/"chest" y limit -10 20 0/.test(qc), qc);
 });

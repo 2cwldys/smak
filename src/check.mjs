@@ -4,6 +4,8 @@
 // The two engines read the same file and differ in how much of it they hold:
 //   goldsrc   Half-Life's own engine (Steam), which a GoldSrc mod runs on today
 //   xash      Xash3D FWGS, which holds more
+//   source    a model the kit builds for Source (builtToGmod, src/source/gmod.mjs): this file is only the step between, ported
+//             to Source's compiler's files, so it is held to what that port and Source take, not to GoldSrc's
 // A model that passes for goldsrc passes for xash.
 import {
   readMdl,
@@ -38,6 +40,19 @@ export const LIMITS = {
     meshes: 256,
     sequences: 2048,
     texture: 512,
+  },
+  // a submodel's corners are 16-bit numbers in this file (Source's own .vvd holds 65536); Source's bones are
+  // MAXSTUDIOBONES, 128; its pictures 4096 a side at the most here, the kit's choice: Half-Life 2's own are 2048 at
+  // the most (scripts/source-budgets.mjs)
+  source: {
+    verts: 32767,
+    bones: 128,
+    textures: 256,
+    bodyparts: 32,
+    models: 32,
+    meshes: 256,
+    sequences: 2048,
+    texture: 4096,
   },
   xash: {
     verts: 16384,
@@ -87,6 +102,7 @@ const CORNER = { vertex: 0, normal: 2, sizeof: 8 };
 const TEXTURES_READ = {
   goldsrc:
     "that is the compiler's limit (studiomdl's MAXSTUDIOSKINS), not one found in an engine: Xash and a dedicated server read as many as the file has, and GoldSrc's own client, whose source is closed, is not known to count them. A model made here never passes through that compiler; try it in the game on Steam's engine before it is relied on",
+  source: "a port writes one material a texture, and Source's compiler takes many more",
   xash: "Xash's studio.h names 256 (MAXSTUDIOSKINS) and nothing in the engine uses it: the textures are loaded as many as the file has, into the renderer's table of every texture of the game (8192; 1024 in the software renderer built for little memory)",
 };
 
@@ -460,7 +476,7 @@ const cutShort = (src) =>
  * said apart from this file's own; `inherited` counts those warnings.
  */
 export function check(src, engine = "goldsrc", { source, sourceTextures } = {}) {
-  if (!LIMITS[engine]) throw new Error(`engine: goldsrc or xash, not ${engine}`);
+  if (!LIMITS[engine]) throw new Error(`engine: ${Object.keys(LIMITS).join(", ")}, not ${engine}`);
   if (source) return withSource(check(src, engine, { sourceTextures: texturesOf(source) }), check(source, engine));
   const errors = [];
   const warnings = [];

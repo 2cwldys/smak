@@ -188,7 +188,10 @@ const LIGHTS = ["start", "off", "steady", "all"];
 const MARKED = ["all", "models", "game", "none"];
 const DOORS = ["open", "closed"];
 const VIEWS = ["orbit", "first", ...Object.keys(smak.NAMED_VIEWS)];
-const ENGINES = ["goldsrc", "xash"];
+// the engines --engine names: check holds a model to goldsrc, xash or source; a model spec is built for goldsrc or source
+const ENGINES = ["goldsrc", "xash", "source"];
+// the engines a GoldSrc file is held to wherever it may be played: an item is checked for both
+const GAME_ENGINES = ["goldsrc", "xash"];
 
 // ── the arguments ──────────────────────────────────────────────────────────
 /**
@@ -1383,7 +1386,7 @@ const importRow = (row) =>
 function sayChecks(mdl) {
   const told = new Set();
   let errors = 0;
-  for (const engine of ENGINES) {
+  for (const engine of GAME_ENGINES) {
     const checked = smak.check(mdl, engine);
     errors += checked.errors.length;
     for (const line of [
@@ -1557,7 +1560,7 @@ async function item({ command, file, flags, listed }) {
       if (!line.ok) wrong++;
       console.log(`${line.ok ? "ok   " : "FAIL "} ${path}: ${line.text}`);
     }
-    for (const engine of ENGINES) {
+    for (const engine of GAME_ENGINES) {
       const report = smak.check(mdl, engine);
       wrong += report.errors.length;
       for (const error of report.errors) console.log(`ERROR ${path} (${engine}): ${error}`);
@@ -1583,7 +1586,7 @@ async function item({ command, file, flags, listed }) {
   console.log(
     wrong
       ? `FAIL: ${wrong} faults in ${name} (above)`
-      : `PASS: ${name} added to ${result.files.size} files; each checks for ${ENGINES.join(" and ")} and keeps what it had`,
+      : `PASS: ${name} added to ${result.files.size} files; each checks for ${GAME_ENGINES.join(" and ")} and keeps what it had`,
   );
   process.exit(wrong ? 1 : 0);
 }
@@ -2751,6 +2754,46 @@ async function changedSince(folder, base, kind, spec, report) {
   return changesOf(before, now).lines.map((line) => `CHANGED since the last build of ${base}: ${line}`);
 }
 /**
+ * A model built for Source (the spec's engine "source"): under -o, <name>_source/ with src/ (the compiler's files)
+ * and addon/ (into garrysmod/addons/<name>/), compiled by GMod's studiomdl, held to the built model and drawn
+ * (<name>-source-sheet.png); what it says goes into the build's report. --no-compile writes the files only.
+ */
+async function sourceOfBuilt({ command, flags, spec, base, mdl, pictures, baseFile, report, out, shown }) {
+  const { summaryOf } = await import("../src/spec/changes.mjs");
+  if (flags.collision !== undefined && !smak.source.COLLISIONS.includes(flags.collision))
+    fail(`${command}: --collision ${smak.source.COLLISIONS.join(", ")}, not ${flags.collision}`);
+  const mass = numberOf(flags, "mass");
+  if (mass !== undefined && !(mass > 0)) fail(`${command}: --mass is kilograms, more than 0, not ${flags.mass}`);
+  const to = join(out, `${base}_source`);
+  let result;
+  try {
+    result = smak.source.builtToGmod(mdl, defined({
+      pictures,
+      baseFile,
+      record: summaryOf("model", spec, report),
+      out: to,
+      name: smak.source.sourceName(base),
+      folder: flags.folder,
+      collision: flags.collision,
+      surfaceprop: flags.surfaceprop,
+      mass,
+      studiomdl: flags.studiomdl,
+      gmod: flags.gmod,
+      compile: flags.compile !== false,
+    })); // prettier-ignore
+  } catch (error) {
+    report.errors.push(`Source: ${error.message}`);
+    report.ok = false;
+    return;
+  }
+  report.warnings.push(...result.warnings.map((line) => `Source: ${line}`));
+  report.faults.push(...result.faults.map((line) => `Source: ${line}`));
+  report.facts.push(...result.said.map((line) => `Source: ${line}`), `Source: the QC ${result.qc}; the addon ${join(to, "addon")} (into garrysmod/addons/<name>/), models/${result.modelname}`); // prettier-ignore
+  if (!result.passed) report.ok = false;
+  if (result.picture) shown("source-sheet", result.picture, "six views of the Source model, read back from its compiled files");
+}
+
+/**
  * model (smak.model/1, docs/SPEC.md): the model written under -o (beside the spec unless told) with its sheet of
  * six views; a character on a base seen running; a weapon's files in the game's names in a folder of their own,
  * the game's first-person view beside the new one and its attack; --reference drawn beside it; --focus the parts
@@ -2759,7 +2802,8 @@ async function changedSince(folder, base, kind, spec, report) {
  */
 async function modelSpecCommand({ command, file, flags, listed }) {
   const { buildModelSpec } = await import("../src/spec/model.mjs");
-  const spec = specOf(command, file, "model");
+  // --engine source: the spec made for Source whatever it says
+  const spec = flags.engine === undefined ? specOf(command, file, "model") : { ...specOf(command, file, "model"), engine: String(flags.engine) };
   const folder = dirname(resolve(file));
   const out = flags.o === undefined ? folder : String(flags.o);
   const name = spec.name ?? "model.mdl";
@@ -2772,7 +2816,7 @@ async function modelSpecCommand({ command, file, flags, listed }) {
     }
   };
   const readFile = (given) => readFileSync(existing(resolve(folder, String(given).replace(/^(work|models):/, ""))));
-  const { mdl, report, files = [] } = buildModelSpec(spec, { folder, out: join(out, name), games: (listed.game ?? []).map(existingFolder), readPicture, readFile });
+  const { mdl, report, files = [], pictures, baseFile } = buildModelSpec(spec, { folder, out: join(out, name), games: (listed.game ?? []).map(existingFolder), readPicture, readFile });
   if (mdl) {
     save(join(out, name), mdl);
     console.log(`      ${join(out, name)} (${mdl.length} bytes)`);
@@ -2830,6 +2874,9 @@ async function modelSpecCommand({ command, file, flags, listed }) {
       const views = [[35, 20], [215, 20], [35, -35]].map(([yaw, pitch]) => smak.render(mdl, { seq: 0, yaw, pitch, within, width: 320, height: 320 }));
       shown("focus", smak.tile(views, 3, ["front", "back", "from below"]), `${focus.join(", ")} close`);
     }
+    // made for Source: the file above is the step between; ported with its pictures in full colour, compiled by
+    // GMod's studiomdl, held to itself and drawn from the compiled files (src/source/gmod.mjs, builtToGmod)
+    if (spec.engine === "source") await sourceOfBuilt({ command, flags, spec, base, mdl, pictures, baseFile, report, out, shown });
   }
   reportOut(report, "built, and every check passed");
 }
@@ -3854,7 +3901,7 @@ const COMMANDS = {
   },
   check: {
     run: check,
-    help: `  check <mdl> [--engine goldsrc|xash] [--source original.mdl]   what would break or draw wrong in the game (exit code 1 on
+    help: `  check <mdl> [--engine goldsrc|xash|source] [--source original.mdl]   what would break or draw wrong in the game (exit code 1 on
                                             an error); --source: warnings the original has too are marked "inherited". Ends in a
                                             line PASS or FAIL; the facts go to a file (--report <file>), --verbose prints them`,
   },
@@ -4248,13 +4295,15 @@ const COMMANDS = {
   build: {
     run: buildCommand,
     own: true,
-    help: `  build <spec.json> [-o <folder>] [--game <folder>]... [--reference x.png] [--focus <part> ...] [--fgd x.fgd ...] [--vhlt <folder>] [--mod <profile>]
+    help: `  build <spec.json> [-o <folder>] [--game <folder>]... [--reference x.png] [--focus <part> ...] [--fgd x.fgd ...] [--vhlt <folder>] [--mod <profile>] [--engine source]
                                             a spec built by its kind (its "spec"; docs/SPEC.md): smak.map/1 a map of rooms laid
                                             out by words, in a folder of its name: its .map and own .wad, compiled when VHLT is
                                             found, walked, lit, its plan, views and sections drawn (--mod, or the spec's "mod":
                                             a mod's map, its starts, classes, textures and rooms' uses); smak.model/1 a model of parts,
                                             checked, with its sheet of six views (a character on a game's skeleton, a weapon in
-                                            place of a game's; --reference drawn beside it, --focus parts seen close); smak.wad/1
+                                            place of a game's; --reference drawn beside it, --focus parts seen close; --engine
+                                            source, or the spec's "engine": made for Source, held to Half-Life 2's, compiled for
+                                            GMod under <name>_source/, docs/SOURCE.md); smak.wad/1
                                             textures painted into a .wad with a sheet of them (preview: { map, each }: the map
                                             drawn wearing them, each at its place); smak.video/1 a video of models and maps from
                                             its shots (MP4 with ffmpeg, a GIF without; --preview its contact sheet alone);
@@ -4500,7 +4549,8 @@ const COMMANDS = {
                                             corner, and drawn (<folder>/sheet.png). <folder>/addon goes into garrysmod/addons/<name>/.
                                             What Source has no place for is warned of. Ends in PASS or FAIL.
                                             --collision (auto): a hull for a model of one bone (a physics prop that rolls), a
-                                            ragdoll for a figure with hit boxes (a box a bone, joined), box, none. --surfaceprop:
+                                            ragdoll for a figure with hit boxes (pieces fitted to the body, joints that bend as its
+                                            animations bend them), box, none. --surfaceprop:
                                             what it is made of (taken from a kit-built model's record, else default; flesh for a
                                             ragdoll); --mass: kg (else its hull's volume at its surfaceprop's density; 90 a ragdoll)`,
   },
