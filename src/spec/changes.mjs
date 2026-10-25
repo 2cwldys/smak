@@ -8,11 +8,15 @@
 /** How far a place or a box may move before it is said to have moved (units). */
 const MOVED = 0.5;
 
-/** A build's summary: a model's parts (their boxes), a map's rooms and the things put in it, both's materials. */
+/**
+ * A build's summary: a model's parts (their boxes, and the material each is made of: what a port to Source takes
+ * its surfaceprop from), a map's rooms and the things put in it, both's materials.
+ */
 export function summaryOf(kind, spec, report) {
   const materials = { ...(spec.theme ?? {}), ...(spec.materials ?? {}), ...(spec.textures ?? {}) };
+  const materialOf = (id) => (Array.isArray(spec.parts) ? spec.parts.find((part) => part.id === id)?.material : undefined);
   if (kind === "model")
-    return { kind, materials, parts: Object.fromEntries(Object.entries(report.parts ?? {}).map(([id, part]) => [id, { from: part.from, to: part.to }])) };
+    return { kind, materials, parts: Object.fromEntries(Object.entries(report.parts ?? {}).map(([id, part]) => [id, { from: part.from, to: part.to, material: materialOf(id) }])) }; // prettier-ignore
   return {
     kind,
     materials,

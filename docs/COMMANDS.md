@@ -112,7 +112,8 @@ node bin/smak.mjs wad-make <pictures...> -o out.wad   a .wad from PNG or BMP pic
 node bin/smak.mjs map-compile <file.map> -o out.bsp --wad a.wad [--wadinclude] [--fast] [--vhlt <folder>]
 node bin/smak.mjs map-compile <file.map> ... [--timeout 600 | --timeout hlvis=600,hlrad=1200] [--progress]   a stage seen and stopped
 node bin/smak.mjs map-decompile <bsp> -o out.map [--game <folder> ...]   a compiled map back into brush source, its own .wad beside it (docs/MAPS.md, "Decompiling")
-node bin/smak.mjs gmod-port <mdl> -o <folder> [--name n] [--folder smak] [--collision auto|box|none] [--studiomdl <exe>] [--no-compile]
+node bin/smak.mjs gmod-port <mdl> -o <folder> [--name n] [--folder smak] [--collision auto|hull|box|ragdoll|none] [--surfaceprop wood] [--mass kg]
+                              [--studiomdl <exe>] [--no-compile]
                                                    a GoldSrc model ported to Garry's Mod: the compiler's files (src/), the addon (addon/),
                                                    compiled by GMod's studiomdl, held to the original corner by corner, drawn (sheet.png)
                                                    (docs/SOURCE.md); exit code 1 when the compiled model lost anything

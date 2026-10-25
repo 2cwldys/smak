@@ -40,9 +40,31 @@ Under `-o <folder>`:
 Options:
 - `--name n`: its name in Source (the file's, lower case, unless given).
 - `--folder f`: the folder under `models/` and `materials/models/` (`smak` unless given).
-- `--collision auto|box|none`:
-  - `box` gives it a box to collide with, so it is a physics prop.
-  - `auto` (the default) gives a model of one bone a box, and a model with a skeleton none.
+- `--collision auto|hull|box|ragdoll|none`: what it collides as.
+  - `hull`: the convex hull of all its triangles, one solid. A physics prop that rolls as it is shaped (a barrel
+    rolls). The kit makes the hull: Source's compiler refuses a collision mesh of several pieces.
+  - `box`: the box about its triangles.
+  - `ragdoll`: a figure that falls as a body. Each bone with hit boxes gets a box about them, joined to its
+    parent's by a joint that bends 40 degrees each way about each axis. There are 24 pieces at most, the
+    smallest left to their parents. A `ragdoll` animation (its rest pose, `ACT_DIERAGDOLL`) is added.
+  - `auto` (the default): a hull for a model of one bone, a ragdoll for one with a skeleton and hit boxes, else
+    none.
+- `--surfaceprop wood`: what it is made of, to Source: the sound it makes when hit, how heavy a volume of it
+  is, how it breaks.
+  - A model the kit built from a spec takes it from its build's record (`<name>.built.json`): the material
+    with the most surface, by its base (`wood` → `wood`, `iron` → `metal`, `stone` → `rock`...).
+  - A ragdoll is `flesh`; anything else `default`. Each is said.
+- `--mass kg`. Unless it is given:
+  - a hull or a box weighs its volume at its surfaceprop's density, read from GMod's own
+    `scripts/surfaceproperties.txt` (wood 700 kg a cubic metre, metal 2700). GMod's compiler weighs everything
+    as `default` (2000), whatever its surfaceprop: measured, a barrel's hull 671 kg as wood and as metal.
+  - a ragdoll weighs a person's 90 kg: its pieces are the hit boxes, which GoldSrc made far bigger than the
+    body (Half-Life's grunt weighs 855 kg as flesh by them).
+
+  A solid barrel of wood 40 tall weighs 235 kg by its volume. An empty one is nearer 40: give `--mass 40`.
+
+The PASS line ends with what the compiled model collides as, read from its `.phy`: its solids, joints, mass
+and surfaceprop.
 
 ## What is kept, value for value
 
@@ -80,8 +102,9 @@ Each change is said in a `WARN` line.
 - **Bone controllers** (a head that follows its target). Source turns such bones by pose parameters.
 - **An animation's second blend and after** (an aim up and down). Source blends by pose parameters.
 - **An activity past 76.** It is the mod's own, and only its game code knows it.
-- **No ragdoll yet.** A figure has no `$collisionjoints`: in GMod it can be a prop or an NPC's model, and does
-  not fall as a body.
+- **What plays its animations.** In GMod a ported figure is a model: spawned as a ragdoll it falls as a body,
+  and as an effect (`gm_spawneffect`) it stands in its first pose. Its animations play only when an entity
+  plays them, or an NPC asks for them by activity. Half-Life's monsters' AI is not in GMod.
 
 ## How a port is checked
 
@@ -122,6 +145,7 @@ In a script: `smak.source`, see `docs/API.md` ("The Source engine").
 These are `PLAN.md`'s phases 6c to 6e:
 - the model seen in GMod by the kit itself;
 - new models made for Source, with its own limits;
-- ragdolls;
+- a ragdoll's joints set bone by bone (a knee bends one way), and its pieces fitted to the body, not to the hit
+  boxes;
 - blends and controllers as pose parameters;
 - maps.

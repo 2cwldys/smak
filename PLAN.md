@@ -244,6 +244,17 @@ Next, in order:
 3. a hull to collide with in place of the box;
 4. then 6d.
 
+**1 to 3 done 2026-10-25:**
+- `--collision hull` (the kit's own convex hull) and `ragdoll` (a box a bone from its hit boxes, joints ±40°).
+- `--surfaceprop`, from a built model's record.
+- `--mass`, or the hull's volume at GMod's own density. GMod's studiomdl weighs everything as `default`,
+  measured: 671 kg as wood and as metal.
+- The grunt: 22 pieces, 21 joints, 90 kg. The barrel: one hull that follows its bulge; 235 kg as solid wood,
+  given 40 for GMod.
+
+Not yet seen in GMod. Left for the ragdoll: joints bone by bone (a knee bends one way), and pieces fitted to
+the body rather than to GoldSrc's generous hit boxes.
+
 **6b. Source models read and drawn.** Begun with 6a, to check it:
 - `readSourceMdl`, `readVvd`, `readVtx`, `sourceTriangles`;
 - VTF read (DXT1, DXT3, DXT5);

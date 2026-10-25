@@ -744,12 +744,19 @@ map's monsters come: `spawnsOf`, `spawnsTable`; its character in numbers: `chara
 
 `import { source } from "smak"`. What a port keeps, changes and leaves, and why: `docs/SOURCE.md`.
 
-- `portToGmod(file, { out, name, folder, collision, studiomdl, gmod, compile, picture })` → `{ passed, faults,
-  warnings, said, qc, files, modelname, picture }`: the whole port of a GoldSrc model. It reads the model (its
-  `t.mdl` and `01.mdl` files beside it), writes the files, compiles them, holds the compiled model to the
-  original and draws it (`picture`, a sheet).
-- `portToSource(src, { name, folder = "smak", groups, collision = "auto" })` → `{ name, modelname, qc, files:
-  [{ path, data }], warnings, facts }`: the compiler's files of a model, with no disk and no compiler.
+- `portToGmod(file, { out, name, folder, collision, surfaceprop, mass, studiomdl, gmod, compile, picture })` →
+  `{ passed, faults, warnings, said, qc, files, modelname, picture, physics }`: the whole port of a GoldSrc model.
+  - It reads the model (its `t.mdl` and `01.mdl` files beside it), writes the files, compiles them, holds the
+    compiled model to the original and draws it (`picture`, a sheet).
+  - Its surfaceprop comes from a kit-built model's `<name>.built.json` (`surfacepropOfBuild(file)`).
+  - It is weighed at that surfaceprop's density, from GMod's `surfaceproperties.txt`.
+  - `physics`: what it collides as (`readPhy`).
+- `portToSource(src, { name, folder = "smak", groups, collision = "auto", surfaceprop, mass, density })` → `{ name,
+  modelname, qc, files: [{ path, data }], warnings, facts }`: the compiler's files of a model, with no disk and no
+  compiler. `collision`: one of `COLLISIONS` (`auto`, `hull`, `box`, `ragdoll`, `none`); `density` (kg a cubic
+  metre) weighs a hull or a box when no `mass` is given.
+- `convexHull(points)` → `{ points, faces }` or null; `readPhy(bytes)` → `{ solids, mass, surfaceprops, joints,
+  text }`; `readSurfaceProps(text)`, `densityOf(name, props)`, `massOf(volume, density)`, `SURFACEPROP_OF_BASE`.
   - `facts`: what the compiled model must have again (bones, sequences, materials, bodygroups, skins,
     attachments, hitboxes, corners).
   - `writePort(port, out)` writes the files and returns the QC's path.

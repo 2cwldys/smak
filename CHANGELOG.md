@@ -3,7 +3,7 @@
 The newest first. A version that changes what a model's file looks like, or that a model made before needs
 mending for, says so under **Mind**.
 
-## Unreleased
+## 0.29.0 (2026-10-25)
 
 The Source engine, first step (PLAN.md, phase 6): a GoldSrc model ported to Garry's Mod (`docs/SOURCE.md`).
 - `smak gmod-port <mdl> -o <folder>`, `source.portToGmod`. The kit reads the model and writes Source's
@@ -22,6 +22,16 @@ The Source engine, first step (PLAN.md, phase 6): a GoldSrc model ported to Garr
   - VMTs and VTFs, including DXT;
   - Valve's packs (`openVpk`), so Half-Life 2's own models are read from GMod's packs.
   - `render` takes another kind of model's triangles (`tris`), with textures of their own colours.
+- What a port collides as and weighs (seen in GMod: a barrel too heavy, a grunt with no collisions):
+  - `--collision hull` (by default for a model of one bone): the convex hull of all its triangles, made by the
+    kit (`convexHull`). Source's compiler refuses a collision mesh of several pieces.
+  - `--collision ragdoll` (by default for a figure with hit boxes): a box a bone from its hit boxes, joined,
+    with a `ragdoll` animation. Half-Life's grunt: 22 pieces, 21 joints.
+  - `--surfaceprop`: taken from a kit-built model's record, `flesh` for a ragdoll.
+  - `--mass`. Unless given, the hull's volume at the surfaceprop's density from GMod's
+    `surfaceproperties.txt`, since GMod's compiler weighs everything as `default`; 90 kg a ragdoll.
+  - `readPhy`: the PASS line says what it collides as.
+  - A built model's record (`<name>.built.json`) keeps each part's material.
 - `ACTIVITY` names every number of `activity.h`, 1 to 76, held to Half-Life's models. 47 is `ACT_IDLE_ANGRY`
   ("combatidle", "madidle"), where the table had `ACT_COMBAT_IDLE`, which is 62.
 

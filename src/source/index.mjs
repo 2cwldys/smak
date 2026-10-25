@@ -11,6 +11,9 @@
 //   vpk.mjs      openVpk                                      Valve's packs
 //   vtf.mjs      writeVtf readVtf powerOfTwo                  Source's textures
 //   smd.mjs      smdOf                                        the compiler's text of a mesh or an animation
+//   hull.mjs     convexHull                                   the one solid a physics prop collides as
+//   phy.mjs      readPhy                                      what a compiled model collides as
+//   surfaceprops.mjs  readSurfaceProps densityOf massOf SURFACEPROP_OF_BASE   what it is made of, and its weight
 export * from "./gmod.mjs";
 export * from "./port.mjs";
 export * from "./compile.mjs";
@@ -21,3 +24,6 @@ export * from "./draw.mjs";
 export * from "./vpk.mjs";
 export * from "./vtf.mjs";
 export * from "./smd.mjs";
+export * from "./hull.mjs";
+export * from "./phy.mjs";
+export * from "./surfaceprops.mjs";

@@ -2,14 +2,15 @@
 
 A toolkit an AI coding agent (Claude Code, or any agent that runs commands and looks at pictures) uses to make
 content for **GoldSrc games**, Half-Life and its mods: models, animations, textures and maps. The agent writes
-short scripts with it, draws what it made to check its own work, and plays the result in the game.
+short scripts with it, draws what it made to check its own work, and plays the result in the game. Since 0.29 it
+also takes them to **Source**: a GoldSrc model ported to Garry's Mod, with physics and a ragdoll.
 
-![version](https://img.shields.io/badge/version-0.28.0-blue)
-![tests](https://img.shields.io/badge/tests-755%20passing-brightgreen)
+![version](https://img.shields.io/badge/version-0.29.0-blue)
+![tests](https://img.shields.io/badge/tests-861%20passing-brightgreen)
 ![node](https://img.shields.io/badge/node-18%2B-339933)
 ![dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)
 ![licence](https://img.shields.io/badge/licence-MIT-lightgrey)
-![engines](https://img.shields.io/badge/engines-GoldSrc%20%C2%B7%20Xash3D-orange)
+![engines](https://img.shields.io/badge/engines-GoldSrc%20%C2%B7%20Xash3D%20%C2%B7%20Source%20%28GMod%29-orange)
 
 [![SMAK's showcase: Moria in Master Sword Classic, made and filmed with the kit](docs/media/demo.gif)](https://github.com/Deoroot/smak/releases/download/v0.26.0/smak-demo.mp4)
 
@@ -19,7 +20,7 @@ model, map and shot in it was made by an agent with SMAK.
 ## What it can do (measured)
 
 ![commands](https://img.shields.io/badge/commands-84-555)
-![functions](https://img.shields.io/badge/public%20functions-730-555)
+![functions](https://img.shields.io/badge/public%20functions-736-555)
 ![docs](https://img.shields.io/badge/guides-22-555)
 ![profiles](https://img.shields.io/badge/game%20profiles-Master%20Sword%20%C2%B7%20The%20Specialists%20%C2%B7%20Half--Life-555)
 
@@ -35,7 +36,7 @@ model, map and shot in it was made by an agent with SMAK.
 
 ![play](https://img.shields.io/badge/In%20the%20game-play%20%C2%B7%20fight%20%C2%B7%20test%20by%20its%20lines%20%C2%B7%20film-8957e5)
 ![assets](https://img.shields.io/badge/Assets-textures%20%28.wad%29%20%C2%B7%20sounds%20%C2%B7%20sprites%20%C2%B7%20video-8957e5)
-![source](https://img.shields.io/badge/Source-GoldSrc%20%E2%86%92%20Garry%27s%20Mod%20%C2%B7%20read%20%C2%B7%20draw-8957e5)
+![source](https://img.shields.io/badge/Source-GoldSrc%20%E2%86%92%20Garry%27s%20Mod%20%C2%B7%20physics%20%C2%B7%20ragdolls%20%C2%B7%20read%20%C2%B7%20draw-8957e5)
 ![judges](https://img.shields.io/badge/Judges-figure%20style%20%C2%B7%20texture%20%C2%B7%20shape%20vs%20the%20game-8957e5)
 
 ## What it has made
@@ -49,6 +50,15 @@ model, map and shot in it was made by an agent with SMAK.
   rules, apple trees, weapons from the kits, a rigid robot on a soldier's skeleton.
 - **The Specialists**: a team arena with bot waypoints and a role-play city.
 
+### In Garry's Mod
+
+![A barrel built by the kit rolling on gm_construct, and Half-Life's grunt ported as a ragdoll held by the gravity gun](docs/media/gmod.jpg)
+
+- **A barrel built from a spec** and **Half-Life's grunt, ported**, each by a Sonnet worker, compiled by GMod's own
+  studiomdl and held to the original corner by corner. The barrel collides as its convex hull and weighs as wood;
+  the grunt falls as a ragdoll of 22 pieces. `smak gmod-port model.mdl -o out` ([docs/SOURCE.md](docs/SOURCE.md)).
+- All 210 of Half-Life's models port and compile whole.
+
 ## How it works
 
 1. You say what you want: "a darker, more worn katana", "a walled town with an orchard", "a new monster".
@@ -56,7 +66,8 @@ model, map and shot in it was made by an agent with SMAK.
 3. SMAK builds the model or map, checks it against the engine's limits and the game's own rules, and draws it.
 4. The agent looks at the pictures, fixes what is wrong, and plays it in the game when a browser build is there.
 
-It reads and writes the game's files directly: no decompiler, no studiomdl, no Blender, nothing to install.
+It reads and writes the game's files directly: no decompiler, no studiomdl, no Blender, nothing to install. For
+Source, it writes what Valve's compiler reads and runs the one that comes with Garry's Mod.
 
 ## Start
 

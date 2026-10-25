@@ -7,7 +7,7 @@
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import * as smak from "../src/index.mjs";
-import { test, sure, tmp, runSmak, inked } from "./helper.mjs";
+import { test, sure, near, tmp, runSmak, inked } from "./helper.mjs";
 
 const { source } = smak;
 const folder = join(tmp, "source");
@@ -166,13 +166,88 @@ test("port: a walk's travel put back into its frames and LX said; the masked tex
   sure(source.vmtOf("x", 4).startsWith('"UnlitGeneric"') && /\$additive/.test(source.vmtOf("x", 32)), "fullbright unlit, additive additive");
 });
 
-test("port: a model of one bone gets a box to collide with; one with a skeleton none, unless asked", () => {
-  sure(!/\$collisionmodel/.test(qcText), "a skeleton: none");
+test("port: a box when asked, weighed by Source unless a density or a mass is given", () => {
+  sure(!/\$collision/.test(qcText), "a skeleton of one hit box: too few for a ragdoll, none");
+  sure(/too few bones with hit boxes for a ragdoll/.test(ported.warnings.join("\n")), "and said");
   const box = source.portToSource(portable, { name: "boxed", collision: "box" });
   const boxQc = box.files.find((f) => f.path === box.qc).data;
   sure(/\$collisionmodel "boxed_physics\.smd"\n\{\n\t\$automass\n\}/.test(boxQc), boxQc);
   const physics = box.files.find((f) => f.path === "src/boxed_physics.smd").data;
   sure(physics.split("\n").filter((l) => l === "physics").length === 12, "twelve triangles: a box");
+  // the triangles' box is 10 by 0 by 1 here (a flat model): its volume 0, so a density weighs it nothing; a mass
+  const heavy = source.portToSource(portable, { name: "boxed", collision: "box", mass: 12.5, surfaceprop: "wood" });
+  const heavyQc = heavy.files.find((f) => f.path === heavy.qc).data;
+  sure(/\$mass 12\.5/.test(heavyQc) && /\$surfaceprop "wood"/.test(heavyQc), heavyQc);
+  let said = "";
+  try {
+    source.portToSource(portable, { name: "x", collision: "spring" });
+  } catch (error) {
+    said = error.message;
+  }
+  sure(/collision is auto, hull, box, ragdoll, none, not spring/.test(said), said);
+});
+
+/** A post of one bone (a box 4 by 4 by 20) and a figure of three bones with a hit box each. */
+const cube = (lo, hi, bone) => {
+  const c = (x, y, z) => [x ? hi[0] : lo[0], y ? hi[1] : lo[1], z ? hi[2] : lo[2]];
+  const quads = [[[0,0,0],[0,1,0],[1,1,0],[1,0,0]], [[0,0,1],[1,0,1],[1,1,1],[0,1,1]], [[0,0,0],[1,0,0],[1,0,1],[0,0,1]], [[0,1,0],[0,1,1],[1,1,1],[1,1,0]], [[0,0,0],[0,0,1],[0,1,1],[0,1,0]], [[1,0,0],[1,1,0],[1,1,1],[1,0,1]]]; // prettier-ignore
+  return quads.flatMap(([a, b, cc, d]) => [[a, b, cc], [a, cc, d]].map((tri) => tri.map((k, i) => ({ p: c(...k), uv: [i / 2, 0.5], bone }))));
+};
+const post = smak.buildMdl({ name: "post.mdl", bodyparts: [{ name: "body", models: [{ name: "post", meshes: [{ tris: cube([0, 0, 0], [4, 4, 20]), texture: plain("wood.bmp") }] }] }] }); // prettier-ignore
+const figureBones = [
+  { name: "hips", parent: -1, pos: [0, 0, 30] },
+  { name: "chest", parent: 0, pos: [0, 0, 10] },
+  { name: "head", parent: 1, pos: [0, 0, 12] },
+];
+const figure = smak.buildMdl({
+  name: "figure.mdl",
+  bones: figureBones,
+  bodyparts: [{ name: "body", models: [{ name: "figure", meshes: [{ tris: [...cube([-4, -3, 25], [4, 3, 40], "hips"), ...cube([-5, -3, 40], [5, 3, 52], "chest"), ...cube([-2, -2, 52], [2, 2, 58], "head")], texture: plain("cloth.bmp") }] }] }], // prettier-ignore
+  sequences: [{ name: "idle", fps: 10, loops: true, frames: [figureBones.map((b) => [...b.pos, 0, 0, 0])] }],
+  hitboxes: [
+    { bone: "hips", group: 3, min: [-4, -3, -5], max: [4, 3, 10] },
+    { bone: "chest", group: 2, min: [-5, -3, 0], max: [5, 3, 12] },
+    { bone: "head", group: 1, min: [-2, -2, 0], max: [2, 2, 6] },
+  ],
+});
+
+test("port: a model of one bone collides as its hull, weighed at its density; a figure with hit boxes as a ragdoll", () => {
+  // a post 4 x 4 x 20 = 320 cubic units, as wood (700 kg a cubic metre): 320 * 0.0254^3 * 700 = 3.67 kg
+  const p = source.portToSource(post, { name: "post", surfaceprop: "wood", density: source.densityOf("wood") });
+  const postQc = p.files.find((f) => f.path === p.qc).data;
+  sure(/\$collisionmodel "post_physics\.smd"\n\{\n\t\$mass 3\.7\n\}/.test(postQc), postQc);
+  const hullFaces = p.files.find((f) => f.path === "src/post_physics.smd").data.split("\n").filter((l) => l === "physics").length;
+  sure(hullFaces === 12, `the hull of a box is the box: ${hullFaces} triangles`);
+  const f = source.portToSource(figure, { name: "figure" });
+  const figureQc = f.files.find((x) => x.path === f.qc).data;
+  sure(/\$collisionjoints "figure_physics\.smd"\n\{\n\t\$mass 90\n/.test(figureQc) && /\$rootbone "hips"/.test(figureQc), figureQc);
+  sure((figureQc.match(/\$jointconstrain/g) ?? []).length === 6, "two joints, three axes each");
+  sure(/\$surfaceprop "flesh"/.test(figureQc) && /\$sequence "ragdoll" "anims\/ragdoll\.smd" fps 30 activity ACT_DIERAGDOLL 1/.test(figureQc), figureQc);
+  const said = f.warnings.join("\n");
+  sure(/taken for flesh/.test(said) && /weighs a person's 90 kg/.test(said), said);
+  const pieces = f.files.find((x) => x.path === "src/figure_physics.smd").data.split("\n").filter((l) => l === "physics").length;
+  sure(pieces === 36, `three boxes: ${pieces} triangles`);
+});
+
+test("convexHull: the hull of points in a ball holds them all; a box's is its twelve triangles; points in a plane have none", () => {
+  const points = Array.from({ length: 400 }, (_, i) => {
+    const z = 1 - (2 * (i + 0.5)) / 400;
+    const r = Math.sqrt(1 - z * z);
+    return [Math.cos(i * 2.4) * r * 10, Math.sin(i * 2.4) * r * 10, z * 10];
+  });
+  const hull = source.convexHull([...points, [0, 0, 0], [1, 2, 3]]);
+  sure(hull.points.length === 400 && hull.faces.length === 2 * 400 - 4, `V ${hull.points.length}, F ${hull.faces.length} (F = 2V - 4)`);
+  const box = source.convexHull([0, 1].flatMap((x) => [0, 1].flatMap((y) => [0, 1].map((z) => [x, y, z]))));
+  sure(box.faces.length === 12, `a box: ${box.faces.length}`);
+  sure(source.convexHull([[0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0], [2, 3, 0]]) === null, "flat: none");
+});
+
+test("surfaceprops: a material's density through its bases, from a surfaceproperties.txt or the kit's table; a mass of a volume", () => {
+  const props = source.readSurfaceProps('// a comment\n"default" { "density" "2000" }\n"Wood" { "density" "700" }\n"wood_crate" { "base" "wood" "stepleft" "x" }\n"odd" { "base" "nothing" }'); // prettier-ignore
+  sure(source.densityOf("wood_crate", props) === 700 && source.densityOf("Wood", props) === 700, "through its base");
+  sure(source.densityOf("unknown", props) === 2000 && source.densityOf("metal") === 2700, "default, and the kit's table");
+  near(source.massOf(61023.7, 1000), 1000, 0.1, "a cubic metre of water");
+  sure(source.SURFACEPROP_OF_BASE.darkwood === "wood" && source.SURFACEPROP_OF_BASE.iron === "metal", "a spec's bases");
 });
 
 test("port: writePort writes src/ and addon/ under the folder given", () => {
@@ -311,4 +386,17 @@ test("smak gmod-port --no-compile writes the files with no compiler", () => {
   writeFileSync(file, portable);
   const said = runSmak("gmod-port", file, "-o", join(folder, "nc"), "--no-compile");
   sure(/PASS: written, not compiled/.test(said) && existsSync(join(folder, "nc", "src", "portable-nc.qc")), said);
+});
+
+testCompiled("compiled: the post collides as one solid of its weight; the figure as a ragdoll of three pieces and two joints", () => {
+  const postFile = join(folder, "post.mdl");
+  writeFileSync(postFile, post);
+  const p = source.portToGmod(postFile, { out: join(folder, "post"), surfaceprop: "wood", picture: false });
+  sure(p.passed && p.physics.solids === 1 && Math.abs(p.physics.mass - 3.7) < 0.05, `${p.faults} ${JSON.stringify({ ...p.physics, text: undefined })}`);
+  sure(p.physics.surfaceprops[0] === "wood", `wood: ${p.physics.surfaceprops}`);
+  const figureFile = join(folder, "figure.mdl");
+  writeFileSync(figureFile, figure);
+  const f = source.portToGmod(figureFile, { out: join(folder, "figure"), picture: false });
+  sure(f.passed && f.physics.solids === 3 && f.physics.joints === 2, `${f.faults} ${JSON.stringify({ ...f.physics, text: undefined })}`);
+  sure(/collides as 3 solids joined by 2 joints \(a ragdoll\)/.test(f.said.join("\n")), f.said.join(" | "));
 });

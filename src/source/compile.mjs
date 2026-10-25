@@ -90,6 +90,9 @@ export function compileQc(qcFile, { studiomdl, out, gmod, timeout = TIMEOUT } = 
   try {
     const searched = [`\t\t\tgame\t|gameinfo_path|.`];
     if (game && existsSync(join(game, "garrysmod"))) searched.push(`\t\t\tgame\t${JSON.stringify(join(game, "garrysmod").replace(/\\/g, "/"))}`); // prettier-ignore
+    // GMod's pack, named as a search path names one (without _dir): its scripts/surfaceproperties.txt gives each
+    // $surfaceprop its density, without which $automass weighs every material as "default"
+    if (game && existsSync(join(game, "garrysmod", "garrysmod_dir.vpk"))) searched.push(`\t\t\tgame\t${JSON.stringify(join(game, "garrysmod", "garrysmod.vpk").replace(/\\/g, "/"))}`); // prettier-ignore
     writeFileSync(
       join(run, "gameinfo.txt"),
       `"GameInfo"\n{\n\tgame\t"smak"\n\tFileSystem\n\t{\n\t\tSteamAppId\t4000\n\t\tSearchPaths\n\t\t{\n${searched.join("\n")}\n\t\t}\n\t}\n}\n`,

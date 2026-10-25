@@ -149,6 +149,8 @@ const VALUE_FLAGS = [
   "studiomdl",
   "gmod",
   "addon",
+  "surfaceprop",
+  "mass",
 ];
 // the flags of the map commands that may be given more than once: each time adds to a list
 const LISTED_FLAGS = [
@@ -3529,8 +3531,10 @@ function mapDecompile({ command, file, flags, listed }) {
  */
 function gmodPort({ command, file, flags }) {
   const out = need(command, flags.o, "-o <folder>: where the port goes (src/ and addon/ under it)");
-  if (flags.collision !== undefined && !["auto", "box", "none"].includes(flags.collision))
-    fail(`${command}: --collision auto, box or none, not ${flags.collision}`);
+  if (flags.collision !== undefined && !smak.source.COLLISIONS.includes(flags.collision))
+    fail(`${command}: --collision ${smak.source.COLLISIONS.join(", ")}, not ${flags.collision}`);
+  const mass = numberOf(flags, "mass");
+  if (mass !== undefined && !(mass > 0)) fail(`${command}: --mass is kilograms, more than 0, not ${flags.mass}`);
   const result = smak.source.portToGmod(
     file,
     defined({
@@ -3538,6 +3542,8 @@ function gmodPort({ command, file, flags }) {
       name: flags.name,
       folder: flags.folder,
       collision: flags.collision,
+      surfaceprop: flags.surfaceprop,
+      mass,
       studiomdl: flags.studiomdl,
       gmod: flags.gmod,
       compile: flags.compile !== false,
@@ -3559,7 +3565,7 @@ function gmodPort({ command, file, flags }) {
       flags.compile === false
         ? `written, not compiled (--no-compile): ${result.qc}`
         : result.passed
-          ? `compiled and whole: ${where}${warnings.length ? `, with ${warnings.length} warnings` : ""}`
+          ? `compiled and whole: ${where}; ${result.said.find((line) => /^collides as/.test(line))}${warnings.length ? `; ${warnings.length} warnings` : ""}`
           : `${faults.length} things lost on the way to Source`,
     shown: [...faults, ...warnings],
     look,
@@ -4484,14 +4490,19 @@ const COMMANDS = {
   "gmod-port": {
     run: gmodPort,
     own: true,
-    help: `  gmod-port <mdl> -o <folder> [--name n] [--folder smak] [--collision auto|box|none] [--studiomdl <exe>] [--gmod <folder>] [--no-compile]
+    help: `  gmod-port <mdl> -o <folder> [--name n] [--folder smak] [--collision auto|hull|box|ragdoll|none] [--surfaceprop wood] [--mass kg]
+                              [--studiomdl <exe>] [--gmod <folder>] [--no-compile]
                                             a GoldSrc model ported to Garry's Mod: its bones, animations (those in <name>01.mdl
                                             too), bodygroups, skins, attachments and hit boxes as Source's compiler's files
                                             (<folder>/src: the QC and SMDs) and its textures as VTF and VMT (<folder>/addon), then
                                             compiled by GMod's own studiomdl (an outside program that comes with GMod; --studiomdl,
                                             SMAK_STUDIOMDL), the compiled model read back and held to the original, corner by
                                             corner, and drawn (<folder>/sheet.png). <folder>/addon goes into garrysmod/addons/<name>/.
-                                            What Source has no place for is warned of. Ends in PASS or FAIL`,
+                                            What Source has no place for is warned of. Ends in PASS or FAIL.
+                                            --collision (auto): a hull for a model of one bone (a physics prop that rolls), a
+                                            ragdoll for a figure with hit boxes (a box a bone, joined), box, none. --surfaceprop:
+                                            what it is made of (taken from a kit-built model's record, else default; flesh for a
+                                            ragdoll); --mass: kg (else its hull's volume at its surfaceprop's density; 90 a ragdoll)`,
   },
   "source-info": {
     run: sourceInfo,
