@@ -413,8 +413,8 @@ every bone of each animation's sampled frames held to GoldSrc's `poseAt` within 
 (measured: 0.025 at most on barney, houndeye, scientist, hgrunt; 0.19 at the end of tentacle2's tentacle). The
 editor open on the project is used, else one is opened and closed. All 210 of Half-Life's models pass in 8 minutes.
 
-**7c. Next, in order.** Collision (a hull, a ragdoll as s&box's physics
-shapes and joints); blends as an animation graph; sounds as `.sound` assets; then the kit's own models built
+**7c. Next, in order.** Collision: done (a hull, a ragdoll as s&box's physics
+shapes and joints, held in its physics by sbox-check, `docs/SBOX.md`); blends as an animation graph; sounds as `.sound` assets; then the kit's own models built
 for s&box, then maps (a runtime GoldSrc map mount, as s&box's Quake mount, or a conversion to `.vmap`).
 
 ## Which model does the work (measured 2026-10-25)

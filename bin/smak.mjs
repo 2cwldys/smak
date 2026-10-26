@@ -3640,18 +3640,33 @@ function gmodPort({ command, file, flags }) {
  * sbox-port: a GoldSrc model ported to s&box (src/sbox/port.mjs): DMX, a .vmdl, PNG and .vmat under -o (a project's
  * Assets folder), compiled by s&box's own resourcecompiler.
  */
-function sboxPort({ command, file, flags }) {
-  const out = need(command, flags.o, "-o <folder>: an s&box project's Assets folder (models/ and materials/ under it)");
+/** The options a model's port to s&box is made with, from the flags (sbox-port's, and sbox-check's to make it again). */
+function sboxPortOptions(command, flags) {
   if (flags.kind !== undefined && !smak.source.PORT_KINDS.includes(flags.kind))
     fail(`${command}: --kind ${smak.source.PORT_KINDS.join(", ")}, not ${flags.kind}`);
+  if (flags.collision !== undefined && !smak.source.COLLISIONS.includes(flags.collision))
+    fail(`${command}: --collision ${smak.source.COLLISIONS.join(", ")}, not ${flags.collision}`);
+  const mass = numberOf(flags, "mass");
+  if (mass !== undefined && !(mass > 0)) fail(`${command}: --mass is kilograms, more than 0, not ${flags.mass}`);
+  return { name: flags.name, folder: flags.folder, kind: flags.kind, collision: flags.collision, surfaceprop: flags.surfaceprop, mass, sbox: flags.sbox }; // prettier-ignore
+}
+
+function sboxPort({ command, file, flags }) {
+  const out = need(command, flags.o, "-o <folder>: an s&box project's Assets folder (models/ and materials/ under it)");
   const result = smak.sbox.portToSboxFile(
     existing(file),
-    defined({ out, name: flags.name, folder: flags.folder, kind: flags.kind, sbox: flags.sbox, compile: flags.compile !== false }),
+    defined({ out, ...sboxPortOptions(command, flags), compile: flags.compile !== false }),
   );
   const f = result.facts;
   const warnings = result.warnings.map((warning) => `WARN  ${warning}`);
   const notes = (result.compiled?.notes ?? []).map((note) => `NOTE  ${note}`);
-  const made = `${f.bones.length} bones, ${f.meshes.length} meshes, ${f.sequences.length} animations, ${f.skins} ${f.skins === 1 ? "skin" : "skins"}, ${f.bodygroups.length} bodygroups, ${f.attachments.length} attachments, ${f.hitboxes} hit boxes`; // prettier-ignore
+  const { physics } = result;
+  const collides = !physics
+    ? "collides as nothing"
+    : f.collision === "ragdoll"
+      ? `collides as a ragdoll of ${physics.shapes.length} pieces and ${physics.joints.length} joints (${physics.shapes[0].surface})`
+      : `collides as its ${f.collision} (${physics.shapes[0].surface})`;
+  const made = `${f.bones.length} bones, ${f.meshes.length} meshes, ${f.sequences.length} animations, ${f.skins} ${f.skins === 1 ? "skin" : "skins"}, ${f.bodygroups.length} bodygroups, ${f.attachments.length} attachments, ${f.hitboxes} hit boxes; ${collides}`; // prettier-ignore
   answered(command, file, flags, {
     detail: [`      ${made}`, `      the model: ${result.written}`, ...notes, ...warnings],
     passed: true,
@@ -3669,16 +3684,11 @@ function sboxPort({ command, file, flags }) {
  */
 async function sboxCheck({ command, file, flags }) {
   const project = need(command, flags.project, "--project <folder>: the s&box project the port is in (its .sbproj's folder)");
-  if (flags.kind !== undefined && !smak.source.PORT_KINDS.includes(flags.kind))
-    fail(`${command}: --kind ${smak.source.PORT_KINDS.join(", ")}, not ${flags.kind}`);
   const result = await smak.sbox.checkSboxPort(
     existing(file),
     defined({
       project,
-      name: flags.name,
-      folder: flags.folder,
-      kind: flags.kind,
-      sbox: flags.sbox,
+      ...sboxPortOptions(command, flags),
       perSequence: numberOf(flags, "frames"),
       tolerance: numberOf(flags, "tolerance"),
       shot: flags.o,
@@ -4789,25 +4799,34 @@ const COMMANDS = {
   "sbox-port": {
     run: sboxPort,
     own: true,
-    help: `  sbox-port <mdl> -o <Assets folder> [--name n] [--folder smak] [--kind thing|view|held|player] [--sbox <folder>] [--no-compile]
+    help: `  sbox-port <mdl> -o <Assets folder> [--name n] [--folder smak] [--kind thing|view|held|player] [--collision auto|hull|box|ragdoll|none]
+                              [--surfaceprop wood] [--mass kg] [--sbox <folder>] [--no-compile]
                                             a GoldSrc model ported to s&box: its meshes and animations (those in <name>01.mdl
                                             too) as DMX, its bodygroups, skins, attachments, hit boxes, animations' activities,
                                             events and travel in a .vmdl (models/<folder>/<name>.vmdl), its textures as PNG and
                                             .vmat (materials/models/<folder>/<name>/), under -o, an s&box project's Assets folder;
                                             then compiled by s&box's own resourcecompiler (an outside program that comes with
                                             s&box; --sbox, SMAK_SBOX). A loop's travel is taken out as root motion; an event is
-                                            kept as s&box's generic one (its number, its options). What s&box has no place for
-                                            yet is warned of: blends after the first, collision, the sounds events name.`,
+                                            kept as s&box's generic one (its number, its options). It collides as gmod-port's
+                                            does (--collision, --surfaceprop, --mass as there): its hull, or a ragdoll of a hull
+                                            a piece and joints that bend as its animations bend it (a hinge or a cone), its weight
+                                            shared by volume; pieces that meet at rest and are not joined are trimmed apart. What
+                                            s&box has no place for yet is warned of: blends after the first, the sounds events name.`,
   },
   "sbox-check": {
     run: sboxCheck,
     own: true,
-    help: `  sbox-check <mdl> --project <folder> [-o shot.png] [--name n] [--folder smak] [--kind ...] [--frames 2] [--tolerance 0.1] [--sbox <folder>]
+    help: `  sbox-check <mdl> --project <folder> [-o shot.png] [--name n] [--folder smak] [--kind ...] [--collision ...] [--surfaceprop s] [--mass kg]
+                              [--frames 2] [--tolerance 0.1] [--sbox <folder>]
                                             a model's port (sbox-port's, in the project's Assets) read back in s&box's own editor
                                             and held to the original: every bone under its parent, every animation of its length,
                                             the bodygroups, skins, attachments and hit boxes, and each animation stopped at
                                             --frames of its frames (its first and middle by default) with every bone where
-                                            GoldSrc's frame puts it, within --tolerance units. Uses the editor open on the
+                                            GoldSrc's frame puts it, within --tolerance units. What it collides as: each piece's
+                                            hull, mass, surface and joint as the port wrote them, then tried in a physics world
+                                            of its own: held at rest (no piece pushes another), held in the poses inside its
+                                            joints' limits, and dropped onto a floor (it comes to rest, its joints together). Give
+                                            it the port's options (--name, --collision...). Uses the editor open on the
                                             project, else opens one (sbox-cli, which comes with s&box) and closes it after.
                                             -o: the editor's picture of it. Ends in PASS or FAIL.`,
   },

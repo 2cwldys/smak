@@ -12,4 +12,5 @@ export * from "./dmx.mjs";
 export * from "./vmdl.mjs";
 export * from "./compile.mjs";
 export * from "./editor.mjs";
+export * from "./physics.mjs";
 export * from "./check.mjs";

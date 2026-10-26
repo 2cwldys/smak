@@ -62,7 +62,8 @@ Options:
       126, and +z is the turn that bends that knee. GMod's compiler writes the QC's limits into the `.phy` as
       they are.
   - `auto` (the default): a hull for a model of one bone, a ragdoll for one with a skeleton and hit boxes, else
-    none.
+    none. Gibs are no ragdoll: a body part whose choices are each on bones of their own, the model as first drawn
+    on one bone with hit boxes at most (hgibs.mdl, woodgibs.mdl), shows one choice at a time; said, and none.
 - `--surfaceprop wood`: what it is made of, to Source: the sound it makes when hit, how heavy a volume of it
   is, how it breaks.
   - A model the kit built from a spec takes it from its build's record (`<name>.built.json`): the material

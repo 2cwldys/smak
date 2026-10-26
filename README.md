@@ -6,8 +6,8 @@ short scripts with it, draws what it made to check its own work, and plays the r
 also takes them to **Source**: a GoldSrc model ported to Garry's Mod, with physics and a ragdoll, and since 0.30 a
 GoldSrc map, held to the original in the running game. Since 0.31 a GoldSrc model goes to **s&box** (Source 2) too.
 
-![version](https://img.shields.io/badge/version-0.31.0-blue)
-![tests](https://img.shields.io/badge/tests-919%20passing-brightgreen)
+![version](https://img.shields.io/badge/version-0.32.0-blue)
+![tests](https://img.shields.io/badge/tests-935%20passing-brightgreen)
 ![node](https://img.shields.io/badge/node-18%2B-339933)
 ![dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)
 ![licence](https://img.shields.io/badge/licence-MIT-lightgrey)
@@ -21,7 +21,7 @@ model, map and shot in it was made by an agent with SMAK.
 ## What it can do (measured)
 
 ![commands](https://img.shields.io/badge/commands-86-555)
-![functions](https://img.shields.io/badge/public%20functions-759-555)
+![functions](https://img.shields.io/badge/public%20functions-774-555)
 ![docs](https://img.shields.io/badge/guides-22-555)
 ![profiles](https://img.shields.io/badge/game%20profiles-Master%20Sword%20%C2%B7%20The%20Specialists%20%C2%B7%20Half--Life-555)
 
@@ -70,6 +70,9 @@ model, map and shot in it was made by an agent with SMAK.
   attachments, root motion and events in a `.vmdl`, compiled by s&box's own resourcecompiler. All 210 compile,
   and all 210 read back in its editor pose as GoldSrc's, bone by bone (`smak sbox-check`). `smak sbox-port
   model.mdl -o MyProject/Assets` ([docs/SBOX.md](docs/SBOX.md)).
+- **And they collide**: a prop as its hull, a figure as a ragdoll of s&box's own joints, its pieces' weights and
+  surfaces as the GMod port's. All 210 pass in s&box's physics: held at rest and in their animations' poses, and
+  dropped onto a floor until still, nothing through it.
 
 ## How it works
 

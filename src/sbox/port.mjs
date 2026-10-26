@@ -1,13 +1,14 @@
 // A GoldSrc model (.mdl, version 10) made the files s&box's compiler builds a model from: a DMX for each submodel
 // and each animation, a .vmdl that says how they go together, and a PNG and a .vmat for each texture.
 //
-//   portToSbox(src, { name, folder, groups, kind })   -> { name, vmdl, files, warnings, facts }
+//   portToSbox(src, { name, folder, groups, kind, collision, surfaceprop, mass })   -> { name, vmdl, files, warnings, facts }
 //   writeSboxPort(port, out)                         the files written under `out` (a project's Assets folder)
-//   portToSboxFile(file, { out, name, folder, kind, compile, sbox })   read, written, compiled: the whole port
+//   portToSboxFile(file, { out, name, folder, kind, collision, surfaceprop, mass, compile, sbox })   the whole port
 //
 // WHAT GOES WHERE (under `out`, laid out as an s&box project's Assets):
 //   models/<folder>/<name>.vmdl                          the model's document; compiled beside it (.vmdl_c)
 //   models/<folder>/<name>/<submodel>.dmx, anims/*.dmx   its meshes and animations
+//   models/<folder>/<name>/physics/*.dmx                 what it collides as: a hull, or a ragdoll's pieces
 //   materials/models/<folder>/<name>/<texture>.png .vmat (and <texture>_mask.png, a masked one's holes)
 //
 // IT IS SOURCE'S PORT, WRITTEN FOR s&box: portToSource (source/port.mjs) works the model out once (its bones and
@@ -21,8 +22,9 @@
 // - an event kept as s&box's generic one (AE_GENERIC_EVENT): its number as Int, its options (a sound's file, a
 //   script's words) as StringData, for the game's code (SkinnedModelRenderer.OnGenericEvent). The sounds are not
 //   copied: s&box plays a .sound asset, not a file named in an event;
-// - nothing it collides as yet (s&box's physics shapes are its own nodes), and the first of an animation's blends
-//   only: each said in a warning.
+// - what it collides as made by Source's port (a prop's convex hull, a figure's ragdoll) and written as ModelDoc's
+//   physics nodes (physics.mjs);
+// - the first of an animation's blends only, said in a warning.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { readStudio, sequenceFilesOf } from "../studio-file.mjs";
@@ -32,6 +34,7 @@ import { portToSource, sourceName, PORT_FOLDER } from "../source/port.mjs";
 import { dmxOf, boneNameOf } from "./dmx.mjs";
 import { vmdlOf, vmatOf } from "./vmdl.mjs";
 import { compileVmdl } from "./compile.mjs";
+import { physicsOf } from "./physics.mjs";
 
 /** GoldSrc's masked texture flag (STUDIO_NF_MASKED): its palette's last colour a hole. */
 const MASKED = 64;
@@ -49,13 +52,26 @@ function maskOf({ width, height, rgba }) {
 }
 
 /** The port of a model read from its file's bytes (`src`, its textures in it). */
-export function portToSbox(src, { name, folder = PORT_FOLDER, groups, kind } = {}) {
+export function portToSbox(
+  src,
+  { name, folder = PORT_FOLDER, groups, kind, collision = "auto", surfaceprop, mass } = {},
+) {
   if (!name) throw new Error("portToSbox: the model's name in s&box (name)");
   // a v_ model is a view model, as for GMod; a p_ one is not made a held one unless told: GMod's port gives it
   // Valve's biped's bone names (ValveBiped.Bip01_R_Hand) so GMod finds its hand, which s&box does not look for, and
   // whose hit boxes it then could not find ("Unknown bone", Half-Life's p_ models)
   const madeAs = kind ?? (/^v_/i.test(sourceName(name)) ? "view" : "thing");
-  const port = portToSource(src, { name, folder, groups, kind: madeAs, collision: "none" });
+  // a p_ model is a weapon in a hand: nothing to collide as unless told, as GMod's port's held one
+  const collides = collision === "auto" && /^p_/i.test(sourceName(name)) ? "none" : collision;
+  const port = portToSource(src, {
+    name,
+    folder,
+    groups,
+    kind: madeAs,
+    collision: collides,
+    surfaceprop,
+    mass,
+  });
   const { parts } = port;
   const where = sourceName(folder);
   const base = `models/${where}/${port.name}`;
@@ -181,7 +197,6 @@ export function portToSbox(src, { name, folder = PORT_FOLDER, groups, kind } = {
   if (renamed.length) warnings.push(`animations named as s&box's compiler takes them: ${renamed.join(", ")}`);
   const events = sequences.reduce((n, s) => n + s.events.length, 0);
   if (events) warnings.push(`${events} events kept as s&box's generic ones (AE_GENERIC_EVENT: its number as Int, its options as StringData), for the game's code; the sounds they name are not copied`); // prettier-ignore
-  warnings.push("nothing to collide as: s&box's physics shapes are not made by a port yet");
 
   // ── what a monster has ──
   const attachments = parts.attachments.map((a) => ({ name: a.name, bone: boneOf.get(a.bone), pos: a.pos }));
@@ -193,10 +208,29 @@ export function portToSbox(src, { name, folder = PORT_FOLDER, groups, kind } = {
     max: h.max,
   }));
 
+  // ── what it collides as: Source's port's hull or ragdoll (an animated model with no hit boxes, a view model:
+  // nothing) ──
+  let physics = null;
+  if (parts.collision) {
+    const data = parts.smd.get(parts.collision.file);
+    physics = physicsOf(parts.collision, data, sboxBones, data.frames[0], { base, nameOf: (bone) => boneOf.get(bone) }); // prettier-ignore
+    files.push(...physics.files);
+    warnings.push(...physics.warnings);
+  } else if (!view) warnings.push("nothing to collide as (collision: hull, box or ragdoll to make it)");
+
   const vmdl = `models/${where}/${port.name}.vmdl`;
   files.push({
     path: vmdl,
-    data: vmdlOf({ meshes, materials, skins, bodygroups, sequences: animations, attachments, hitboxes }),
+    data: vmdlOf({
+      meshes,
+      materials,
+      skins,
+      bodygroups,
+      sequences: animations,
+      attachments,
+      hitboxes,
+      physics,
+    }),
   });
   return {
     name: port.name,
@@ -205,6 +239,8 @@ export function portToSbox(src, { name, folder = PORT_FOLDER, groups, kind } = {
     warnings,
     // Source's port's parts it was written from (sbox/check.mjs holds the compiled model to them)
     parts,
+    // what it collides as, as written (sbox/check.mjs holds the compiled model's physics to it), or null
+    physics,
     facts: {
       bones: boneNames,
       meshes: meshes.map((m) => m.name),
@@ -214,6 +250,7 @@ export function portToSbox(src, { name, folder = PORT_FOLDER, groups, kind } = {
       bodygroups: bodygroups.map((g) => ({ name: g.name, choices: g.choices.length })),
       attachments: attachments.map((a) => a.name),
       hitboxes: hitboxes.length,
+      collision: parts.collision?.kind ?? "none",
     },
   };
 }
@@ -233,12 +270,23 @@ export function writeSboxPort(port, out) {
  * when they are beside it), written under `out`, and compiled by s&box's resourcecompiler (unless compile is false).
  * Returns { ...the port, written (the .vmdl's path), compiled: { compiled, notes, took } or null }.
  */
-export function portToSboxFile(file, { out, name, folder, kind, compile = true, sbox } = {}) {
+export function portToSboxFile(
+  file,
+  { out, name, folder, kind, collision, surfaceprop, mass, compile = true, sbox } = {},
+) {
   if (!out) throw new Error("portToSboxFile: the folder the port goes to (out: a project's Assets)");
   const { src } = readStudio(file);
   const groups = sequenceGroups(src).length > 1 ? sequenceFilesOf(file, src) : undefined;
   const own = String(file).replace(/\\/g, "/").split("/").pop();
-  const port = portToSbox(src, { name: name ?? sourceName(own), folder, groups, kind });
+  const port = portToSbox(src, {
+    name: name ?? sourceName(own),
+    folder,
+    groups,
+    kind,
+    collision,
+    surfaceprop,
+    mass,
+  });
   const written = writeSboxPort(port, resolve(out));
   const compiled = compile ? compileVmdl(resolve(out), port.vmdl, { sbox }) : null;
   return { ...port, written, compiled };

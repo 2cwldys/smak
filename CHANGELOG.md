@@ -3,6 +3,33 @@
 The newest first. A version that changes what a model's file looks like, or that a model made before needs
 mending for, says so under **Mind**.
 
+## 0.32.0 (2026-10-26)
+
+s&box: what a port collides as (`docs/SBOX.md`, `src/sbox/physics.mjs`):
+- `sbox-port` makes what the GMod port makes, from the same code (`--collision`, `--surfaceprop`, `--mass`): a
+  model of one bone its convex hull, a figure with hit boxes a ragdoll, a view model and a `p_` model nothing. Each
+  piece a `PhysicsHullFile` of its own on its bone; each joint a revolute one (a bone its animations turn about one
+  axis) or a conical one along the bone, anchored at the child's place at rest; a ragdoll's 90 kg shared by volume,
+  its pieces' inertia and damping as the GMod port's QC has them; GMod's surfaceprop as the s&box surface like it.
+- Measured in s&box's editor and its own physics: a hull file is read in the model's space and put on its bone, a
+  body a bone; a joint turns about its frame's z; a cone holds 90 degrees of swing at most (wider ones are held to
+  it, said); a hull of more than 255 half-edges is dropped ("Hull Too Complex for Runtime"), and the compiler's own
+  simplifying left hulls up to 14 units off, so the port keeps a hull to 44 corners itself and has it made exactly;
+  s&box pushes pieces that start inside each other apart (barney's hands 13 units, 10 to 44 as a game's ragdoll), so
+  pieces that meet at rest and are not joined are trimmed apart; a joint between pieces of weights far apart gives
+  (loader thrown thousands of units), so no piece weighs less than a tenth of one joined to it, and the rest presses
+  a light piece through the floor (big_mom's), so none weighs less than 1% of the whole; s&box's code cannot read a
+  model with a `PhysicsJointNull`.
+- Gibs are no ragdoll (both ports, `--collision auto`): a body part whose choices are each on bones of their own,
+  the model as first drawn on one bone with hit boxes at most (hgibs.mdl, woodgibs.mdl), is shown a choice at a
+  time; said, and nothing made unless told. Before, GMod's port made a ragdoll of all its gibs together.
+- `sbox-check` holds the physics too: each piece's hull, mass, surface and joint as written, then tried in physics
+  worlds of its own: held at rest (no piece pushes another), held in the sampled poses inside its joints' limits
+  that its animations do not stretch, and dropped onto a floor until still (not through the floor, its joints
+  together). All 210 of Half-Life's models pass: 60 ragdolls, 55 hulls.
+- `source.portToSource` also returns `parts.collision`; `RAGDOLL_BODY` (the QC's `$inertia`, `$damping`,
+  `$rotdamping`).
+
 ## 0.31.0 (2026-10-26)
 
 s&box (Source 2), models first (`docs/SBOX.md`):

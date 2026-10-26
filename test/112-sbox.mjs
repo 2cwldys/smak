@@ -428,7 +428,393 @@ test("portToSbox: a bodygroup's name ending in a number after a letter (loader.m
   sure(names === "body,leg_2,leg_2_2", `the groups: ${names}`);
 });
 
-// ── held to the original in the editor (the parts that need no editor) ──
+// ── what it collides as: a figure of boxes, a ragdoll; a prop of one bone, a hull ──
+/** A closed box's twelve triangles about `middle`, `half` each way, on `bone`, in the model's space. */
+const boxTris = (middle, half, bone) => {
+  const at = (x, y, z) => [0, 1, 2].map((a) => middle[a] + [x, y, z][a] * half[a]);
+  const quad = (a, b, c, d) => [
+    [a, b, c],
+    [a, c, d],
+  ];
+  const faces = [
+    ...quad(at(-1, -1, -1), at(-1, 1, -1), at(1, 1, -1), at(1, -1, -1)),
+    ...quad(at(-1, -1, 1), at(1, -1, 1), at(1, 1, 1), at(-1, 1, 1)),
+    ...quad(at(-1, -1, -1), at(1, -1, -1), at(1, -1, 1), at(-1, -1, 1)),
+    ...quad(at(-1, 1, -1), at(-1, 1, 1), at(1, 1, 1), at(1, 1, -1)),
+    ...quad(at(-1, -1, -1), at(-1, -1, 1), at(-1, 1, 1), at(-1, 1, -1)),
+    ...quad(at(1, -1, -1), at(1, 1, -1), at(1, 1, 1), at(1, -1, 1)),
+  ];
+  return faces.map((corners) => corners.map((p) => ({ p, uv: [0, 0], bone })));
+};
+// the pelvis at 40 up; the spine above it, the leg and shin below; the arm off the spine, hanging against the pelvis
+const figureBones = [
+  { name: "Pelvis", parent: -1, pos: [0, 0, 40] },
+  { name: "Spine", parent: 0, pos: [0, 0, 5] },
+  { name: "Leg", parent: 0, pos: [0, 0, -4] },
+  { name: "Shin", parent: 2, pos: [0, 0, -16] },
+  { name: "Arm", parent: 1, pos: [6, 0, 5] },
+];
+const figureRest = figureBones.map((b) => [...b.pos, 0, 0, 0]);
+// the knee bends about its z alone; the spine turns about all three
+const bend = (k) =>
+  figureRest.map((six, i) =>
+    i === 3
+      ? [...six.slice(0, 3), 0, 0, -0.4 * k]
+      : i === 1
+        ? [...six.slice(0, 3), 0.1 * k, -0.2 * k, 0.15 * k]
+        : six,
+  );
+const figure = smak.buildMdl({
+  name: "figure.mdl",
+  bones: figureBones,
+  bodyparts: [
+    {
+      name: "body",
+      models: [
+        {
+          name: "body",
+          meshes: [
+            {
+              tris: [
+                ...boxTris([0, 0, 40], [4, 4, 4], "Pelvis"),
+                ...boxTris([0, 0, 52], [4, 4, 6], "Spine"),
+                ...boxTris([0, 0, 28], [3, 3, 8], "Leg"),
+                ...boxTris([0, 0, 12], [2.5, 2.5, 7], "Shin"),
+                ...boxTris([5, 0, 41], [1.5, 1.5, 6], "Arm"),
+              ],
+              texture: plain("skin.bmp"),
+            },
+          ],
+        },
+      ],
+    },
+  ],
+  sequences: [{ name: "bend", fps: 10, frames: [0, 1, 2, 3, 4].map(bend) }],
+  hitboxes: ["Pelvis", "Spine", "Leg", "Shin", "Arm"].map((bone) => ({
+    bone,
+    group: 1,
+    min: [-1, -1, -1],
+    max: [1, 1, 1],
+  })),
+});
+const figurePort = sbox.portToSbox(figure, { name: "figure" });
+const figureVmdl = String(figurePort.files.find((f) => f.path === figurePort.vmdl).data);
+
+test("portToSbox: a figure collides as a ragdoll: a hull on each piece's bone, a file each, its weight shared by volume", () => {
+  const { physics } = figurePort;
+  sure(figurePort.facts.collision === "ragdoll", figurePort.facts.collision);
+  sure(physics.shapes.map((s) => s.bone).join(",") === "Pelvis,Spine,Leg,Shin,Arm", physics.shapes.map((s) => s.bone).join()); // prettier-ignore
+  sure((figureVmdl.match(/_class = "PhysicsHullFile"/g) ?? []).length === 5, "five hull nodes");
+  sure(/name = "physics_Shin"\n\t+parent_bone = "Shin"\n\t+surface_prop = "flesh"/.test(figureVmdl), "the shin's hull on its bone, as flesh"); // prettier-ignore
+  sure(
+    figurePort.files.some((f) => f.path === "models/smak/figure/physics/physics_Shin.dmx"),
+    "the shin's file",
+  );
+  near(
+    physics.bodies.reduce((sum, b) => sum + b.mass, 0),
+    90,
+    1e-6,
+    "a person's 90 kg, shared",
+  );
+  sure(/_class = "PhysicsBodyMarkup"\n\t+target_body = "Pelvis"\n\t+mass_override = /.test(figureVmdl), "a mass on each body"); // prettier-ignore
+});
+
+test("portToSbox: a joint that turns about one axis is a hinge about it, one that turns about more a cone along its bone", () => {
+  const joints = Object.fromEntries(figurePort.physics.joints.map((j) => [j.child, j]));
+  sure(joints.Shin.kind === "hinge" && joints.Shin.axis === 2 && joints.Shin.min < -100 && joints.Shin.max >= 0, JSON.stringify(joints.Shin)); // prettier-ignore
+  sure(joints.Spine.kind === "cone" && joints.Spine.axis === 0, JSON.stringify(joints.Spine));
+  // the anchor: the child's place in the piece above at rest; a hinge's frame its bone's, a cone's z on its bone's x
+  sure(joints.Shin.origin.map((v) => Math.round(v * 1000) / 1000).join() === "0,0,-16" && joints.Shin.angles.every((a) => Math.abs(a) < 1e-6), JSON.stringify(joints.Shin)); // prettier-ignore
+  sure(
+    joints.Spine.angles.map((a) => Math.round(a)).join() === "0,-90,-90",
+    `citizen's turn: ${joints.Spine.angles}`,
+  );
+  sure(/_class = "PhysicsJointRevolute"\n\t+parent_body = "Leg"\n\t+child_body = "Shin"/.test(figureVmdl) && /_class = "PhysicsJointConical"\n\t+parent_body = "Pelvis"\n\t+child_body = "Spine"/.test(figureVmdl), "the joints written"); // prettier-ignore
+});
+
+test("portToSbox: a ragdoll's pieces that meet at rest and are not joined are trimmed apart (s&box pushes them away)", () => {
+  const { physics } = figurePort;
+  sure(
+    physics.trimmed.some(([a, b]) => `${a}/${b}` === "Pelvis/Arm"),
+    JSON.stringify(physics.trimmed),
+  );
+  const shape = (bone) => physics.shapes.find((s) => s.bone === bone).points;
+  sure(!sbox.hullsMeet(shape("Pelvis"), shape("Arm")), "the pelvis and the arm apart");
+  sure(
+    sbox.hullsMeet(shape("Pelvis"), shape("Leg")),
+    "joined pieces left meeting (a joint keeps them from colliding)",
+  );
+  sure(
+    figurePort.warnings.some((w) => /trimmed apart/.test(w)),
+    "said",
+  );
+});
+
+test("portToSbox: gibs, a body part's choices each on a bone of its own, are no ragdoll; the figure with a gun to choose is", () => {
+  const gib = (bone, middle) => ({ name: `gib_${bone}`, meshes: [{ tris: boxTris(middle, [2, 2, 2], bone), texture: plain("skin.bmp") }] }); // prettier-ignore
+  const gibs = smak.buildMdl({
+    name: "gibs.mdl",
+    bones: figureBones,
+    bodyparts: [
+      { name: "gibs", models: [gib("Pelvis", [0, 0, 40]), gib("Spine", [0, 0, 52]), gib("Leg", [0, 0, 28])] },
+    ],
+    sequences: [{ name: "idle", fps: 10, frames: [figureRest] }],
+    hitboxes: ["Pelvis", "Spine", "Leg"].map((bone) => ({
+      bone,
+      group: 1,
+      min: [-1, -1, -1],
+      max: [1, 1, 1],
+    })),
+  });
+  const port = sbox.portToSbox(gibs, { name: "gibs" });
+  sure(port.physics === null, "no ragdoll");
+  sure(
+    port.warnings.some((w) => /body part gibs shows one of its choices at a time/.test(w)),
+    port.warnings.join("\n"),
+  );
+  // the figure with a second body part to choose a gun on the arm or none: still one body
+  const armed = smak.buildMdl({
+    name: "armed.mdl",
+    bones: figureBones,
+    bodyparts: [
+      { name: "body", models: [{ name: "body", meshes: [{ tris: [...boxTris([0, 0, 40], [4, 4, 4], "Pelvis"), ...boxTris([0, 0, 52], [4, 4, 6], "Spine"), ...boxTris([0, 0, 28], [3, 3, 8], "Leg")], texture: plain("skin.bmp") }] }] }, // prettier-ignore
+      { name: "gun", models: [gib("Arm", [5, 0, 41]), gib("Shin", [0, 0, 12])] },
+    ],
+    sequences: [{ name: "idle", fps: 10, frames: [figureRest] }],
+    hitboxes: ["Pelvis", "Spine", "Leg"].map((bone) => ({
+      bone,
+      group: 1,
+      min: [-1, -1, -1],
+      max: [1, 1, 1],
+    })),
+  });
+  sure(sbox.portToSbox(armed, { name: "armed" }).physics?.joints.length >= 1, "armed: a ragdoll");
+});
+
+test("portToSbox: a prop of one bone collides as its hull; a view model, and a figure told none, as nothing", () => {
+  const prop = smak.buildMdl({
+    name: "crate.mdl",
+    bones: [{ name: "Crate", parent: -1, pos: [0, 0, 0] }],
+    bodyparts: [{ name: "body", models: [{ name: "crate", meshes: [{ tris: boxTris([0, 0, 8], [8, 8, 8], "Crate"), texture: plain("wood.bmp") }] }] }], // prettier-ignore
+    sequences: [{ name: "idle", fps: 10, frames: [[[0, 0, 0, 0, 0, 0]]] }],
+  });
+  const port = sbox.portToSbox(prop, { name: "crate", surfaceprop: "wood_crate" });
+  sure(port.facts.collision === "hull" && port.physics.shapes.length === 1 && port.physics.joints.length === 0, JSON.stringify(port.facts)); // prettier-ignore
+  sure(port.physics.shapes[0].surface === "wood" && port.physics.shapes[0].bone === "Crate", JSON.stringify(port.physics.shapes[0])); // prettier-ignore
+  sure(sbox.portToSbox(prop, { name: "v_crate" }).physics === null, "a view model");
+  sure(sbox.portToSbox(figure, { name: "figure", collision: "none" }).physics === null, "told none");
+});
+
+test("portToSbox: a ragdoll's pieces' inertia and damping as the GMod port's QC has them; hulls made exactly, 44 corners at most", () => {
+  sure(/inertia_scale = 10\.0\n\t+linear_damping = 0\.01\n\t+angular_damping = 1\.5/.test(figureVmdl), "$inertia 10, $damping 0.01, $rotdamping 1.5"); // prettier-ignore
+  sure(
+    /optimization_algorithm = "Exact"/.test(figureVmdl) && !/QEM/.test(figureVmdl),
+    "made exactly: s&box's own simplifying left hulls off",
+  );
+  sure(
+    figurePort.physics.shapes.every((s) => s.points.length <= sbox.HULL_CORNERS),
+    "44 corners at most",
+  );
+});
+
+test("portToSbox: a p_ model collides as nothing unless told, as the GMod port's held one", () => {
+  sure(sbox.portToSbox(figure, { name: "p_figure" }).physics === null, "p_ untold");
+  sure(
+    sbox.portToSbox(figure, { name: "p_figure", collision: "ragdoll" }).physics?.joints.length === 4,
+    "p_ told",
+  );
+});
+
+test("jointOf: a cone swings 90 degrees at most, the widest s&box holds, its limits' own kept as wider", () => {
+  const wide = sbox.jointOf([
+    [-20, 20],
+    [-130, 40],
+    [-30, 30],
+  ]);
+  sure(wide.kind === "cone" && wide.swing === 90 && wide.wider === 130, JSON.stringify(wide));
+  const narrow = sbox.jointOf([
+    [-20, 20],
+    [-60, 40],
+    [-30, 30],
+  ]);
+  sure(narrow.swing === 60 && narrow.wider === undefined, JSON.stringify(narrow));
+});
+
+test("simplifyHull: a hull of many corners kept to 44, cut in by little; one of few left as it is", () => {
+  const ball = [];
+  for (let i = 0; i < 300; i++) {
+    const z = 1 - (2 * (i + 0.5)) / 300;
+    const r = Math.sqrt(1 - z * z);
+    const a = i * 2.399963;
+    ball.push([10 * r * Math.cos(a), 10 * r * Math.sin(a), 10 * z]);
+  }
+  const { hull, inset } = sbox.simplifyHull(smak.source.convexHull(ball));
+  sure(
+    hull.points.length <= sbox.HULL_CORNERS && inset > 0 && inset < 2,
+    `${hull.points.length} corners, cut in ${inset}`,
+  );
+  const cube = smak.source.convexHull(
+    [0, 1].flatMap((x) => [0, 1].flatMap((y) => [0, 1].map((z) => [x, y, z]))),
+  );
+  const kept = sbox.simplifyHull(cube);
+  sure(kept.hull.points.length === 8 && kept.inset === 0, "a cube kept");
+});
+
+test("evenOut: a ragdoll's piece lighter than a tenth of one joined to it is made that, the whole as heavy as it was", () => {
+  const bodies = [
+    { bone: "body", mass: 80 },
+    { bone: "leg", mass: 9.9 },
+    { bone: "toe", mass: 0.1 },
+  ];
+  const joints = [
+    { parent: "body", child: "leg" },
+    { parent: "leg", child: "toe" },
+  ];
+  const raised = sbox.evenOut(bodies, joints);
+  near(
+    bodies.reduce((sum, b) => sum + b.mass, 0),
+    90,
+    1e-9,
+    "90 kg still",
+  );
+  sure(
+    raised.join() === "toe" && bodies[2].mass * sbox.MASS_RATIO >= bodies[1].mass * (1 - 1e-9),
+    JSON.stringify(bodies),
+  );
+  sure(bodies[1].mass * sbox.MASS_RATIO >= bodies[0].mass * (1 - 1e-9), "the leg a tenth of the body");
+});
+
+test("evenOut: a piece lighter than MASS_LEAST of the whole is made that, though no piece joined to it outweighs it ten times", () => {
+  // each a tenth of the one above it, the hand 0.9% of the whole
+  const bodies = [
+    { bone: "body", mass: 100 },
+    { bone: "arm", mass: 10 },
+    { bone: "hand", mass: 1 },
+  ];
+  const joints = [
+    { parent: "body", child: "arm" },
+    { parent: "arm", child: "hand" },
+  ];
+  const raised = sbox.evenOut(bodies, joints);
+  const total = bodies.reduce((sum, b) => sum + b.mass, 0);
+  near(total, 111, 1e-9, "as heavy as it was");
+  sure(raised.join() === "hand" && bodies[2].mass > 1.1, JSON.stringify(bodies));
+});
+
+test("trimApart: a small piece inside a big one keeps some of itself; two that cannot be cut so are said", () => {
+  const cube = (o, s) => smak.source.convexHull([0, 1].flatMap((x) => [0, 1].flatMap((y) => [0, 1].map((z) => [o[0] + x * s, o[1] + y * s, o[2] + z * s])))); // prettier-ignore
+  const hulls = [cube([0, 0, 0], 10), cube([7, 4, 4], 2)];
+  const { trimmed, left } = sbox.trimApart(hulls, ["body", "knob"], []);
+  sure(
+    trimmed.length === 1 && !left.length && !sbox.hullsMeet(hulls[0].points, hulls[1].points),
+    JSON.stringify(trimmed),
+  );
+  const span = Math.max(...hulls[1].points.map((p) => p[0])) - Math.min(...hulls[1].points.map((p) => p[0]));
+  sure(span >= 0.5 - 1e-9, `the knob kept ${span} of itself`);
+  const tiny = [cube([0, 0, 0], 0.6), cube([0.1, 0.1, 0.1], 0.4)];
+  sure(
+    sbox.trimApart(tiny, ["a", "b"], []).left.length === 1,
+    "too small to cut and keep half a unit of each",
+  );
+});
+
+test("comparePhysics: what the port wrote read back and tried passes; a body missing, a joint turned, pieces pushing, a fall through the floor do not", () => {
+  const expected = sbox.expectedOf(figure, figurePort).physics;
+  sure(expected.poses.length > 0, "poses inside the joints' limits to hold it in");
+  const read = {
+    bodies: expected.shapes.map((s) => ({ bone: s.bone, mass: 0, surface: s.surface, points: s.points })),
+    weighs: expected.shapes.map((s) => expected.masses.find((m) => m.bone === s.bone).mass),
+    joints: expected.joints.map((j) => ({ type: j.kind === "hinge" ? "Hinge" : "Ball", parent: j.parent, child: j.child, at1: j.at, at2: j.at, z1: j.along, swing: j.swing ?? 0, twist: j.kind === "hinge" ? [-(j.max - j.min) / 2, (j.max - j.min) / 2] : j.twist })), // prettier-ignore
+    restMoved: 0,
+    held: expected.poses.map((p) => ({ name: p.name, moved: 0.05, bone: "Shin" })),
+    dropped: { settled: 2, speed: 0, lowest: -0.1, lowestPiece: "Shin", gap: 0.1, gapAt: "Shin" },
+  };
+  const good = sbox.comparePhysics(expected, read);
+  sure(
+    !good.faults.length && /5 bodies \(90\.0 kg\), 4 joints/.test(good.said[0]),
+    `${good.faults} ${good.said}`,
+  );
+  const bad = sbox.comparePhysics(expected, {
+    ...read,
+    bodies: read.bodies.slice(1),
+    joints: read.joints.map((j) => (j.child === "Shin" ? { ...j, z1: [1, 0, 0] } : j)),
+    restMoved: 3,
+    dropped: { ...read.dropped, lowest: -5, lowestPiece: "Pelvis" },
+  });
+  for (const fault of [
+    /no physics body on Pelvis/,
+    /Shin's joint turns about another axis/,
+    /pushed each other 3\.00 units/,
+    /Pelvis went 5\.0 units through the floor/,
+  ])
+    // prettier-ignore
+    sure(bad.faults.some((f) => fault.test(f)), `${fault} in ${bad.faults.join(" | ")}`);
+  sure(
+    /Bip01|PhysicsWorld/.test(sbox.physicsProbeCode("models/smak/figure.vmdl", expected.poses)),
+    "the probe makes its own worlds",
+  );
+});
+
+test("surfaceOf: a GMod surfaceprop as the s&box surface it starts with or is kin to; none like it is default, said", () => {
+  const of = (name) => sbox.surfaceOf(name);
+  sure(of("metal_box").surface === "metal" && of("alienflesh").surface === "flesh" && of("porcelain").surface === "ceramic", "kin"); // prettier-ignore
+  sure(of("concrete").surface === "default" && !of("concrete").kept && of("default").kept, "none like it");
+});
+
+test("hullsMeet: two convex sets of points meet when they overlap or come within the margin", () => {
+  const cube = (o, s = 1) => [0, 1].flatMap((x) => [0, 1].flatMap((y) => [0, 1].map((z) => [o[0] + x * s, o[1] + y * s, o[2] + z * s]))); // prettier-ignore
+  const a = cube([0, 0, 0]);
+  sure(
+    sbox.hullsMeet(a, cube([0.5, 0.5, 0.5])) && sbox.hullsMeet(a, cube([0.2, 0.2, 0.2], 0.5)),
+    "overlapping, and inside",
+  );
+  sure(
+    !sbox.hullsMeet(a, cube([1.2, 0, 0])) && !sbox.hullsMeet(a, cube([1.1, 1.1, 1.1])),
+    "apart, and apart past a corner",
+  );
+  sure(
+    sbox.hullsMeet(a, cube([1.2, 0, 0]), 0.3) && !sbox.hullsMeet(a, cube([1.2, 0, 0]), 0.1),
+    "within a margin",
+  );
+});
+
+test("insideLimits, jointStretch: how far inside its joint a bone is in a pose, and how far the pose moves it off", () => {
+  const rest = sbox.restOf(figureBones, figureRest);
+  const limits = [
+    [-20, 30],
+    [-10, 10],
+    [-15, 15],
+  ];
+  const turns = rest.map((r) => r.turn);
+  // a cone: its twist about x -20 to 30, its swing as far as y's or z's widest, 15
+  near(sbox.insideLimits(limits, turns, turns, 0, 1), 15, 1e-6, "at rest: 15 from the cone's edge");
+  // the spine turned 25 degrees about its x (a twist): 5 inside the cone's twist; 35 is 5 outside
+  const about = (deg) => {
+    const c = Math.cos((deg * Math.PI) / 180);
+    const s = Math.sin((deg * Math.PI) / 180);
+    return turns.map((t, i) =>
+      i === 1
+        ? [
+            [1, 0, 0],
+            [0, c, -s],
+            [0, s, c],
+          ]
+        : t,
+    );
+  };
+  near(sbox.insideLimits(limits, turns, about(25), 0, 1), 5, 1e-6, "twisted 25 of 30");
+  near(sbox.insideLimits(limits, turns, about(35), 0, 1), -5, 1e-6, "twisted 35 of 30");
+  // a hinge's held-still axes may turn a degree
+  const hinge = [
+    [0, 0],
+    [0, 0],
+    [-90, 10],
+  ];
+  sure(sbox.insideLimits(hinge, turns, about(0.5), 0, 1) > 5 && sbox.insideLimits(hinge, turns, about(3), 0, 1) < 0, "a hinge's still axis"); // prettier-ignore
+  const moved = rest.map((r, i) => (i === 1 ? { ...r, at: [r.at[0], r.at[1] + 2, r.at[2]] } : r));
+  near(sbox.jointStretch(rest, rest, 0, 1), 0, 1e-9, "at rest, held where it is");
+  near(sbox.jointStretch(rest, moved, 0, 1), 2, 1e-9, "a bone moved 2 off its piece above");
+});
 test("expectedOf: each animation's first and middle frames, GoldSrc's pose at each, its length; probeCode asks for them", () => {
   const expected = sbox.expectedOf(portable, port, { perSequence: 2 });
   // idle has 1 frame (one sample), walk 3 (frames 0 and 2), Idle_2 2 (0 and 1)

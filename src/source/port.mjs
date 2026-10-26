@@ -188,7 +188,8 @@ export function vmtOf(path, flags = 0) {
  *                         (jointTurns): a figure that falls as a body ($collisionjoints)
  *              "none"     nothing
  *              "auto"     a hull for a model of one bone, a ragdoll for one with a skeleton and hit boxes, else none;
- *                         none for a view model, which is drawn in front of the eyes and never touches the world
+ *                         none for a view model, which is drawn in front of the eyes and never touches the world,
+ *                         and for gibs (a body part shown a choice at a time, each on bones of its own)
  *   surfaceprop: what it is made of to Source (its sounds, its weight a volume, how it breaks): "wood", "metal",
  *              "flesh"... ("flesh" for a ragdoll, "default" else, unless told)
  *   pictures:  Map(texture name -> { width, height, rgba }): the textures in full colour, for a model the kit built
@@ -297,11 +298,14 @@ export function portToSource(src, { name, folder = PORT_FOLDER, groups, collisio
   const submodelFiles = uniqueNames(info.bodyparts.flatMap((part) => part.models.map((m) => sourceName(m.name))));
   let fileIndex = 0;
   let flat = 0;
-  const bodygroups = info.bodyparts.map((part) => ({
+  // each body part's choices as the bones their triangles are on (an empty choice's none)
+  const choiceBones = info.bodyparts.map(() => []);
+  const bodygroups = info.bodyparts.map((part, partIndex) => ({
     name: part.name,
     models: part.models.map((sub) => {
       const file = submodelFiles[fileIndex++];
       const triangles = [];
+      const bonesOn = new Set();
       for (const mesh of sub.meshes) {
         if (!mesh.numtris) continue;
         usedRefs.add(mesh.skinref);
@@ -315,6 +319,7 @@ export function portToSource(src, { name, folder = PORT_FOLDER, groups, collisio
             continue;
           }
           bodyTriangles.push(tri.map(({ bone }, k) => ({ bone, p: at[k] })));
+          tri.forEach(({ bone }) => bonesOn.add(bone));
           const chromed = info.textures[texture].flags & NF.chrome;
           const corners = tri.map(({ p, n, bone, s: fileS, t: fileT }) => {
             const [s, t] = chromed ? chromeAt(seen, bone, n, chromeEye) : [fileS, fileT];
@@ -329,6 +334,7 @@ export function portToSource(src, { name, folder = PORT_FOLDER, groups, collisio
           triangles.push({ material: materialNames[texture], corners: [corners[0], corners[2], corners[1]] });
         }
       }
+      choiceBones[partIndex].push(bonesOn);
       if (!triangles.length) return null;
       smd(`${file}.smd`, { bones: smdBones, frames: [restFrame], triangles });
       return `${file}.smd`;
@@ -510,10 +516,24 @@ export function portToSource(src, { name, folder = PORT_FOLDER, groups, collisio
   const boxes = modelBoxes(src);
 
   // ── what it collides as ──
+  // a body part whose choices are on bones of their own (hgibs.mdl's gibs, each its own piece) when the model as
+  // first drawn (each part's first choice) is on one bone with hit boxes at most: the game shows one of them at a
+  // time, so its pieces are never one body to make a ragdoll of
+  const hitBones = new Set(hitboxes.map((h) => h.bone));
+  const drawn = new Set(choiceBones.flatMap((choices) => [...(choices[0] ?? [])]).filter((bone) => hitBones.has(bone)));
+  const shownApart =
+    drawn.size < 2 &&
+    info.bodyparts.find((part, i) =>
+      choiceBones[i].some((bones, a) => bones.size && choiceBones[i].some((other, b) => b > a && other.size && ![...bones].some((bone) => other.has(bone)))),
+    ); // prettier-ignore
   const collides =
-    collision !== "auto" ? collision : viewModel || madeAs === "held" ? "none" : skeleton.length === 1 ? "hull" : hitboxes.length ? "ragdoll" : "none"; // prettier-ignore
+    collision !== "auto" ? collision : viewModel || madeAs === "held" ? "none" : skeleton.length === 1 ? "hull" : hitboxes.length && !shownApart ? "ragdoll" : "none"; // prettier-ignore
+  if (collision === "auto" && shownApart && hitboxes.length && skeleton.length > 1 && collides === "none")
+    warnings.push(`its body part ${shownApart.name} shows one of its choices at a time, each on bones of its own (gibs): no ragdoll made of them, nor anything to collide as (give collision)`); // prettier-ignore
   const massLine = () => (mass === undefined ? "\t$automass" : `\t$mass ${num(mass)}`);
   let collisionLines = [];
+  // what the lines say, as data (s&box: sbox/physics.mjs)
+  let collisionData = null;
   const physicsFile = `${model}_physics.smd`;
   const physics = (triangles) => smd(physicsFile, { bones: smdBones, frames: [restFrame], triangles });
   if ((collides === "hull" || collides === "box") && Number.isFinite(bodyBox[0][0])) {
@@ -524,6 +544,7 @@ export function portToSource(src, { name, folder = PORT_FOLDER, groups, collisio
     const weight = density ?? densities?.(surfaceprop ?? "default");
     const weighed = mass === undefined && weight > 0 ? Math.round(massOf(volume, weight) * 10) / 10 : undefined;
     collisionLines = [`$collisionmodel ${quote(physicsFile)}\n{\n${weighed === undefined ? massLine() : `\t$mass ${num(weighed)}`}\n}`]; // prettier-ignore
+    collisionData = { kind: collides, file: physicsFile, mass: weighed ?? mass, pieces: [{ bone: skeleton[0].name, above: null, volume }], joints: [] }; // prettier-ignore
   } else if (collides === "ragdoll") {
     const pieces = ragdollPieces(skeleton, hitboxes, bound, bodyTriangles);
     if (pieces.dropped.length)
@@ -550,7 +571,25 @@ export function portToSource(src, { name, folder = PORT_FOLDER, groups, collisio
       // the pieces by their volume
       if (mass === undefined) warnings.push(`a ragdoll weighs a person's ${RAGDOLL_MASS} kg unless told (mass), as Valve's do`);
       const weighed = mass ?? RAGDOLL_MASS;
-      collisionLines = [`$collisionjoints ${quote(physicsFile)}\n{\n\t$mass ${num(weighed)}\n\t$inertia 10\n\t$damping 0.01\n\t$rotdamping 1.5\n\t$rootbone ${quote(skeleton[root].name)}\n${joints.join("\n")}\n}`]; // prettier-ignore
+      collisionLines = [`$collisionjoints ${quote(physicsFile)}\n{\n\t$mass ${num(weighed)}\n\t$inertia ${RAGDOLL_BODY.inertia}\n\t$damping ${RAGDOLL_BODY.damping}\n\t$rotdamping ${RAGDOLL_BODY.rotdamping}\n\t$rootbone ${quote(skeleton[root].name)}\n${joints.join("\n")}\n}`]; // prettier-ignore
+      const pieceBones = new Set(pieces.list.map((piece) => piece.bone));
+      const above = (bone) => {
+        let at = skeleton[bone].parent;
+        while (at >= 0 && !pieceBones.has(at)) at = skeleton[at].parent;
+        return at < 0 ? null : skeleton[at].name;
+      };
+      collisionData = {
+        kind: "ragdoll",
+        file: physicsFile,
+        mass: weighed,
+        body: RAGDOLL_BODY,
+        pieces: pieces.list.map((piece) => ({ bone: skeleton[piece.bone].name, above: above(piece.bone), volume: piece.volume })), // prettier-ignore
+        joints: joined.map((piece) => ({
+          bone: skeleton[piece.bone].name,
+          above: above(piece.bone),
+          limits: turns?.get(piece.bone) ?? [0, 1, 2].map(() => [-RAGDOLL_TURN, RAGDOLL_TURN]),
+        })),
+      };
       // the pose a ragdoll is built in and falls from: the bones at rest
       smd("anims/ragdoll.smd", { bones: smdBones, frames: [restFrame] });
       sequenceLines.push(`$sequence "ragdoll" "anims/ragdoll.smd" fps 30 activity ACT_DIERAGDOLL 1`);
@@ -558,6 +597,7 @@ export function portToSource(src, { name, folder = PORT_FOLDER, groups, collisio
   }
   const material = surfaceprop ?? (collides === "ragdoll" && collisionLines.length ? "flesh" : "default");
   if (!surfaceprop && material === "flesh") warnings.push(`a ragdoll taken for flesh ($surfaceprop "flesh"): give surfaceprop for a robot, a statue`); // prettier-ignore
+  if (collisionData) collisionData.surfaceprop = material;
 
   // ── the QC ──
   const qc = [
@@ -629,6 +669,10 @@ export function portToSource(src, { name, folder = PORT_FOLDER, groups, collisio
       attachments: attachments.map((a, i) => ({ name: attachmentNames[i], bone: skeleton[a.bone].name, pos: a.pos })),
       hitboxes: hitboxes.map((h) => ({ group: h.group, bone: skeleton[h.bone].name, min: h.min, max: h.max })),
       eyes: isZero(boxes.eyes) ? null : up(boxes.eyes),
+      // what it collides as: { kind ("hull", "box", "ragdoll"), file (its SMD in smd), mass (kg; none for
+      // $automass), surfaceprop, body (a ragdoll's: RAGDOLL_BODY), pieces: [{ bone, above (the piece's above it), volume }], joints: [{ bone, above,
+      // limits: [[lo, hi] about x, y, z] (degrees) }] }, or null
+      collision: collisionData,
     },
     facts: {
       bones: skeleton.map((b) => b.name),
@@ -769,6 +813,9 @@ const RAGDOLL_TURN = 40;
  * figures are bulky.
  */
 const RAGDOLL_MASS = 90;
+/** How a ragdoll's pieces turn and slow: their inertia scaled up ($inertia), their motion and turning damped
+ * ($damping, $rotdamping), as Valve's figures have them. */
+export const RAGDOLL_BODY = { inertia: 10, damping: 0.01, rotdamping: 1.5 };
 /**
  * A joint's limits from its animations: the turns between these shares of its frames (the few frames past them,
  * Half-Life's grunt's dives and falls, turn a thigh almost round), widened by TURN_SPARE each way, at most

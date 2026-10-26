@@ -3,7 +3,7 @@
 //
 //   kv3(value)                        a value as KV3 text (KV3_FLOAT and KV3_INT mark a number's kind)
 //   vmdlOf(model)                     the text of a .vmdl: { meshes, materials, skins, bones, bodygroups,
-//                                     sequences, attachments, hitboxes } (sbox/port.mjs makes it)
+//                                     sequences, attachments, hitboxes, physics } (sbox/port.mjs makes it)
 //   vmatOf({ color, mask, flags })    the text of a .vmat for a GoldSrc texture
 //
 // THE DOCUMENT is a RootNode whose children are lists, each of its nodes as ModelDoc writes them (s&box's own
@@ -17,6 +17,10 @@
 //   AnimationList       an AnimFile an animation (.dmx), its events (AnimEvent) and its travel (ExtractMotion)
 //   AttachmentList      an Attachment on its bone
 //   HitboxSetList       one HitboxSet of Hitbox boxes on their bones, GoldSrc's hit group as a tag
+//   PhysicsShapeList    a PhysicsHullFile a piece (its .dmx made one hull, on its bone)
+//   PhysicsBodyMarkupList  a PhysicsBodyMarkup a piece whose mass is given (mass_override), a ragdoll's its inertia
+//                       and damping as Source's port's QC has them
+//   PhysicsJointList    a PhysicsJointRevolute or PhysicsJointConical a ragdoll's joint (physics.mjs)
 //
 // THE MATERIAL is complex.shader's (the shader every s&box model's material names): the picture as its colour, no
 // shine (GoldSrc lit a model by its normals alone), and a texture's flags as its features: masked (64) alpha-tested
@@ -68,6 +72,7 @@ const list = (_class, children, more = {}) => ({ _class, children, ...more });
  *   sequences:   [{ name, file, fps, loops, activity, weight, fade, travel: ["LX"...], root, events: [{ frame, event, options }] }]
  *   attachments: [{ name, bone, pos }]
  *   hitboxes:    [{ name, bone, group, min, max }]
+ *   physics:     physics.mjs's { shapes, bodies, joints }, or null
  */
 export function vmdlOf({
   meshes = [],
@@ -77,6 +82,7 @@ export function vmdlOf({
   sequences = [],
   attachments = [],
   hitboxes = [],
+  physics = null,
 }) {
   const children = [];
   children.push(
@@ -206,6 +212,79 @@ export function vmdlOf({
             hitbox_maxs: h.max,
           })),
         },
+      ]),
+    );
+  if (physics?.shapes.length)
+    children.push(
+      list(
+        "PhysicsShapeList",
+        physics.shapes.map((s) => ({
+          _class: "PhysicsHullFile",
+          name: s.name,
+          parent_bone: s.bone,
+          surface_prop: s.surface,
+          collision_tags: "solid",
+          recenter_on_parent_bone: false,
+          offset_origin: [0, 0, 0],
+          offset_angles: [0, 0, 0],
+          align_origin_x_type: "None",
+          align_origin_y_type: "None",
+          align_origin_z_type: "None",
+          filename: s.file,
+          import_scale: 1,
+          faceMergeAngle: 10,
+          maxHullVertices: KV3_INT(0),
+          import_mode: "SingleHull",
+          optimization_algorithm: "Exact",
+          import_filter: { exclude_by_default: false, exception_list: [] },
+        })),
+      ),
+    );
+  if (physics?.bodies.length)
+    children.push(
+      list(
+        "PhysicsBodyMarkupList",
+        physics.bodies.map((b) => ({
+          _class: "PhysicsBodyMarkup",
+          target_body: b.bone,
+          mass_override: b.mass,
+          // a ragdoll's pieces as Source's: $inertia, $damping, $rotdamping
+          inertia_scale: b.inertia,
+          linear_damping: b.damping,
+          angular_damping: b.rotdamping,
+        })),
+      ),
+    );
+  if (physics?.joints.length)
+    children.push(
+      list("PhysicsJointList", [
+        ...physics.joints.map((j) => {
+          const joint = {
+            parent_body: j.parent,
+            child_body: j.child,
+            anchor_origin: j.origin,
+            anchor_angles: j.angles,
+            collision_enabled: false,
+          };
+          return j.kind === "hinge"
+            ? {
+                _class: "PhysicsJointRevolute",
+                ...joint,
+                enable_limit: true,
+                min_angle: j.min,
+                max_angle: j.max,
+              }
+            : {
+                _class: "PhysicsJointConical",
+                ...joint,
+                enable_swing_limit: true,
+                swing_limit: j.swing,
+                swing_offset_angle: [0, 0, 0],
+                enable_twist_limit: true,
+                min_twist_angle: j.twist[0],
+                max_twist_angle: j.twist[1],
+              };
+        }),
       ]),
     );
   const root = {

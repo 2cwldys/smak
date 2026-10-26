@@ -69,6 +69,59 @@ animation's fps, looping and activity, a loop's travel, chrome worked out once),
   normals alone), and the texture's flags as its features. Masked (64) is alpha-tested on a mask of its holes,
   additive (32) is added to what is behind it, and fullbright (4) lights itself.
 
+## What it collides as
+
+As the GMod port does, made by the same code (`--collision auto`, the default): a model of one bone collides as
+its convex hull, a figure with hit boxes as a ragdoll, a view model and a held one as nothing, and a model of many
+bones with no hit boxes as nothing (`--collision hull` or `box` makes one; `ragdoll`, `none`). Gibs are no ragdoll
+either: a body part whose choices are each on bones of their own, the model as first drawn on one bone with hit
+boxes at most (hgibs.mdl, woodgibs.mdl, mil_crate.mdl), is shown one choice at a time, its pieces never one body;
+said, and nothing made unless told. `--surfaceprop` and `--mass` as gmod-port's. `src/sbox/physics.mjs` writes it
+as ModelDoc's physics nodes:
+
+- **A hull a piece, on its bone**: a `PhysicsHullFile` of its own DMX (`models/<folder>/<name>/physics/`), on its
+  bone. s&box reads the file in the model's space at rest and puts the hull in the bone's frame, a body each bone.
+  A skinned file on no bone is one body on no bone whatever its vertices are on, so a ragdoll is a file a piece.
+- **A joint a piece** but the first. A bone its animations turn about one axis only (a knee, an elbow) has a
+  revolute joint (a hinge) about it, from its least to its most; one they turn about more a conical joint, twisting
+  about the bone (its x, along it to its child) and swinging as far as the widest of its other two. The anchor is
+  the child's place at rest, turned so its z is that axis: s&box turns a joint about its frame's z (citizen's elbows,
+  its cones along its limbs). Tried on barney's poses inside his limits, cones about the frames' z held 93 of 95,
+  about their x 68. A cone is round, where Source's limits are a box an axis: a pose near two limits at once is
+  outside it (barney's upper arm in shootgun, 87 degrees of swing against 86). A cone holds 90 degrees of swing at
+  most: at 100 or more s&box's flips the piece over; a wider one is held to 90, said.
+- **A hull of 44 corners at most**, made exactly (`optimization_algorithm "Exact"`). s&box drops a hull of more than
+  255 half-edges ("Hull Too Complex for Runtime"), and the compiler's own simplifying (QEM) left hulls 0.5 to 14
+  units off theirs (nihilanth's head), so the port simplifies each itself, said when one is cut in more than 0.5.
+- **Weight**: a ragdoll a person's 90 kg unless told, shared among its pieces by their volume (`mass_override` a
+  body), as Source's compiler shares it; a prop what s&box's surface makes of its volume (its density) unless told.
+  Then evened out, said: no piece weighs less than 1% of the whole, nor a tenth of one joined to it. s&box's joints
+  give between pieces of weights far apart (loader thrown thousands of units, with 31 to 1366 times across a joint),
+  and the rest dropped on a light piece presses it through the floor (archer's fin, 0.2% of it, 1.1 units through;
+  big_mom's Bone26, 0.08%, its joint 3.4 apart).
+- **Its inertia and damping** as the GMod port's QC has them (`$inertia 10`, `$damping 0.01`, `$rotdamping 1.5`):
+  `inertia_scale`, `linear_damping`, `angular_damping`.
+- **Surface**: GMod's surfaceprop as the s&box surface it starts with or is kin to (`metal_box` metal, `alienflesh`
+  flesh, `porcelain` ceramic); none like it is `default`, said. s&box has 13: cardboard, ceramic, default, dirt,
+  fabric, flesh, glass, grass, metal, plastic, rubber, water, wood.
+- **Pieces that meet at rest are trimmed apart.** Source's physics let a ragdoll's pieces start inside each other;
+  s&box's pushes them apart: barney's arms out of his chest, his hands 13 units off, 10 to 44 units a piece as a
+  game's ragdoll (`ModelPhysics`). A joint keeps its two pieces from colliding, so two that are not joined and meet
+  (within 0.1) are cut along the plane across which they reach into each other least, each kept on its side, 0.1
+  apart; said, with how far they reached (barney's chest and arms 1 to 5 units; loader's cockpit and neck 26, its
+  meshes through each other). A `PhysicsJointNull` would keep them from colliding as they are, but s&box's own code
+  cannot read a model that has one ("Unhandled joint type: NULL_JOINT").
+- **A flat hull** (a model whose triangles lie in one plane) is made 0.5 thick, as the GMod port's pieces are.
+
+Measured in a running game (the editor's play mode): barney as a game makes a ragdoll (`ModelPhysics`) dropped onto a
+floor falls whole, its 19 pieces together, crumples, and is still in 3 seconds, nothing through the floor.
+
+All 210 of Half-Life's models pass `sbox-check` with their physics (2026-10-26): 60 ragdolls, 55 hulls, the rest
+nothing (view models, `p_` models, gibs, many bones and no hit boxes). Dropped, every ragdoll comes to rest, none
+0.4 units through the floor; most within 4 seconds, the biggest slower (tentacle2 7.7, rengine 11.2, nihilanth
+13.3). The runs before found the cone that flipped, the hulls s&box dropped,
+the pieces too light for their joints and the floor, and gibs made one ragdoll.
+
 ## What changes, and why
 
 Measured on Half-Life's barney in s&box's editor, its bones read back while it played (2026-10-26):
@@ -92,8 +145,6 @@ Measured on Half-Life's barney in s&box's editor, its bones read back while it p
 
 ## What is left behind, and said
 
-- **Collision.** s&box's physics shapes are nodes of their own, not made by a port yet: a ported model collides
-  as nothing.
 - **An animation's blends after the first** (Half-Life's aiming up and down). s&box blends by its animation graph,
   which a port does not make yet.
 - **The sounds events name are not copied.** s&box plays a `.sound` asset, not a file named in an event; the path
@@ -121,7 +172,16 @@ compiled model back in the editor and holds it to what the original says:
   `--tolerance` units (0.1) and 0.0005 of the bone's chain (its links to the root, end to end): s&box compresses
   rotations, which moves the end of a long chain farther (a turn of 0.03 degrees; a model turned one degree is 35
   times that). A turned model, a misnamed bone (its channel then moves nothing), a dropped bone, a
-  walk whose travel was not taken out all show here as bones off their place.
+  walk whose travel was not taken out all show here as bones off their place;
+- **what it collides as**: a body on each piece's bone, its hull's corners within 0.5 units of the port's, its mass
+  and surface, and each joint between its pieces, of its kind and limits, at the
+  child's place, about its axis. Then tried in physics worlds of its own (made and deleted; nothing in the scene):
+  held at rest with its pieces colliding (none may move 0.1: none pushes another); held in each pose the check
+  samples that is 5 degrees inside every joint's limits and moves no bone 0.5 off the piece above, its collisions
+  off (none may move 1: the joints hold what the animation does; GoldSrc's animations move bones as well as turn
+  them, barney's head 2 units off his neck in smlflinch, which no joint holds); dropped from 20 units onto a floor
+  with s&box's gravity until it is still (no piece moved 1 unit in the last second), 15 seconds at most: it comes
+  to rest, nothing through the floor, its joints together, within 1 unit or 1% of its size, whichever is more.
 
 It talks to the editor through `sbox-cli` (which comes with s&box: `sbox/bin/managed/sbox-cli.exe`), over a local
 pipe, never the network. It uses the editor open on the project, or opens one and closes it after (a minute). Its
@@ -143,6 +203,5 @@ a call now tries once more.
 
 ## Not yet
 
-- Collision: a hull for a prop, a ragdoll for a figure.
 - Blends as an animation graph; sounds as `.sound` assets.
 - Maps.

@@ -837,12 +837,25 @@ map's monsters come: `spawnsOf`, `spawnsTable`; its character in numbers: `chara
 
 `import { sbox } from "smak"`. What a port keeps, changes and leaves, and why: `docs/SBOX.md`.
 
-- `portToSboxFile(file, { out, name, folder, kind, compile = true, sbox })` → the port and `{ written, compiled }`: a
-  GoldSrc model read (its `t.mdl` and `01.mdl` files beside it), written under `out` (an s&box project's `Assets`)
-  and compiled (`compiled`: `compileVmdl`'s, or null).
-- `portToSbox(src, { name, folder = "smak", groups, kind })` → `{ name, vmdl, files: [{ path, data }], warnings, facts }`:
-  the files from the model's bytes. `facts`: `bones`, `meshes`, `sequences`, `materials`, `skins`, `bodygroups`,
-  `attachments`, `hitboxes`. `writeSboxPort(port, out)` writes them and returns the `.vmdl`'s path.
+- `portToSboxFile(file, { out, name, folder, kind, collision, surfaceprop, mass, compile = true, sbox })` → the port
+  and `{ written, compiled }`: a GoldSrc model read (its `t.mdl` and `01.mdl` files beside it), written under `out`
+  (an s&box project's `Assets`) and compiled (`compiled`: `compileVmdl`'s, or null).
+- `portToSbox(src, { name, folder = "smak", groups, kind, collision = "auto", surfaceprop, mass })` → `{ name, vmdl,
+  files: [{ path, data }], warnings, physics, facts }`: the files from the model's bytes. `facts`: `bones`, `meshes`,
+  `sequences`, `materials`, `skins`, `bodygroups`, `attachments`, `hitboxes`, `collision` (`hull`, `box`, `ragdoll`
+  or `none`). `physics`: `physicsOf`'s, or null. `writeSboxPort(port, out)` writes them and returns the `.vmdl`'s path.
+- What it collides as (`physics.mjs`): `physicsOf(collision, data, bones, rest, { base, nameOf })` → `{ shapes: [{
+  name, file, bone, surface, points }], bodies: [{ bone, mass }], joints: [{ parent, child, kind, axis, min, max |
+  twist, swing, origin, angles }], trimmed: [[bone, bone, depth]], files, warnings }` from Source's port's
+  `parts.collision`. `jointOf(limits)` (a hinge about the one axis turned, else a cone along x), `surfaceOf(name)` →
+  `{ surface, kept }` and `SBOX_SURFACES`, `restOf(bones, rest)` (each bone's turn and place at rest),
+  `anchorOf(placed, above, bone, axis)` → `{ origin, angles }`, `anglesOf(turn)` (Source's pitch, yaw, roll),
+  `quaternionOfTurn(turn)`, `hullsMeet(a, b, margin)` (GJK), `trimApart(hulls, names, joints)` and `TRIM_GAP` (0.1),
+  `insideLimits(limits, rest, pose, above, bone)` (degrees inside its joint as s&box holds it; `STILL_SLACK`, 1) and
+  `jointStretch(rest, pose, above, bone)` (units a pose moves a bone off the piece above), `CONE_MOST` (90, the
+  widest swing a cone holds), `simplifyHull(hull, most)` → `{ hull, inset }` and `HULL_CORNERS` (44),
+  `evenOut(bodies, joints)` (weights evened in place, the pieces raised returned; `MASS_LEAST`
+  0.01 of the whole, `MASS_RATIO` 10 across a joint).
 - `dmxOf({ bones, frames, triangles }, { fps, name })` → the text of a mesh's DMX (with triangles) or an
   animation's: `smdOf`'s input. `boneNameOf(name)` (spaces as underscores, as s&box keeps them),
   `quaternionOf([rx, ry, rz])`.
@@ -853,12 +866,17 @@ map's monsters come: `spawnsOf`, `spawnsTable`; its character in numbers: `chara
 - `portToSource(...)` also returns `parts`: its SMDs as data by path (`smd`), its `bones`, `bodygroups`, `skins`,
   `textures` (pixels and flags), `sequences` (each with its `index` in the original), `attachments`, `hitboxes` and
   `eyes`, which the s&box port writes from; `portToSbox` hands them on as its `parts`.
-- `checkSboxPort(file, { project, name, folder, kind, sbox, perSequence = 2, tolerance = 0.1, shot })` →
-  `{ passed, faults, said, worst, shot, opened }` (async): the port read back and posed in the project's editor and
-  held to the original. Its parts: `expectedOf(src, port, { groups, perSequence })` (the bones, animations' lengths,
-  parts, skins, attachments, hit boxes, and GoldSrc's poses at the sampled frames), `probeCode(vmdl, samples)` (the C#
+- `checkSboxPort(file, { project, name, folder, kind, collision, surfaceprop, mass, sbox, perSequence = 2, tolerance =
+  0.1, shot })` → `{ passed, faults, said, worst, shot, opened }` (async): the port read back and posed in the
+  project's editor and held to the original. Its parts: `expectedOf(src, port, { groups, perSequence })` (the bones,
+  animations' lengths, parts, skins, attachments, hit boxes, GoldSrc's poses at the sampled frames, and `physics`:
+  the hulls, masses and joints written, and the poses to hold the ragdoll in), `probeCode(vmdl, samples)` (the C#
   that reads and poses it), `removeProbeCode()`, `compareSbox(expected, read, { tolerance })` → `{ passed, faults,
-  said, worst }`, `POSE_TOLERANCE` (0.1 units) and `REACH_TOLERANCE` (0.0005 of a bone's chain).
+  said, worst }`, `POSE_TOLERANCE` (0.1 units) and `REACH_TOLERANCE` (0.0005 of a bone's chain);
+  `physicsProbeCode(vmdl, poses)` (the C# that reads its physics and tries it in worlds of its own: at rest, posed,
+  dropped), `comparePhysics(expected, read)` → `{ faults, said }`, `REST_HOLD` (0.1 units), `POSE_HOLD` (1),
+  `LIMIT_MARGIN` (5 degrees), `STRETCH_MOST` (0.5 units), `HULL_TOLERANCE` (0.5 units), `DROP_TOLERANCE` (dropped,
+  through the floor or a joint apart: 1 unit or 0.01 of its size, whichever is more).
 - The editor, through sbox-cli: `editorFor(project, { sbox, wait })` → `{ opened, close() }` (async: the one open, or
   one opened that close() closes), `sboxCall(project, tool, args)`, `runCsharp(project, code)`, `projectFolder(project)`,
   `sboxCli(sbox)`.
