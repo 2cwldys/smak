@@ -5,11 +5,12 @@
 //   brushesOfTree(bsp, head, isBrush, mins, maxs)      one brush for each solid or liquid leaf of the drawn tree
 //   brushesOfClipHull(bsp, head, half, mins, maxs)     the brushes of a clip hull, shrunk back to the drawn shape
 //   clipContents(bsp, head, point)                     GoldSrc's contents at a point of a clip hull
+//   clipOutsideHull(bsp, brush, head, half)            how much of a rebuilt clip brush, grown, leaves a hull
 //
 // THE DRAWN TREE (hull 0). Each of its solid or liquid leaves is the convex region the planes on the way down to it
 // cut out, so each becomes one brush: those planes facing out of it, less the ones that do not touch it, plus
-// axial bevels (vbsp adds them so that a box trace does not catch on a slanted brush's corners). A region open to
-// the void is closed by a box a little outside the map.
+// bevels, axial and on slanted edges, as vbsp adds them (so that a box trace does not catch on a slanted brush's
+// edges and corners). A region open to the void is closed by a box a little outside the map.
 //
 // THE CLIP HULLS (1 to 3). GoldSrc's CLIP brushes block players and monsters but not bullets or sight: qcsg builds
 // them into the player's hulls only, each brush first grown by the player's box. Each solid region of a hull, its
@@ -136,7 +137,7 @@ export function brushesOfTree(bsp, head, isBrush, worldMins, worldMaxs) {
               side,
               leafChild: child,
               contents,
-              planes: withBevels(region.sides.map((i) => planes[i]), region.mins, region.maxs),
+              planes: withBevels(region.sides.map((i) => planes[i]), region.mins, region.maxs, region.windings),
               mins: region.mins,
               maxs: region.maxs,
             });
@@ -196,7 +197,9 @@ export function brushesOfClipHull(bsp, head, half, worldMins, worldMaxs) {
             const at = wide?.sides.indexOf(k) ?? -1;
             const w = at >= 0 ? wide.windings[at] : grown.windings[k];
             const mid = [0, 1, 2].map((c) => w.reduce((sum, v) => sum + v[c], 0) / w.length);
-            const probes = [mid];
+            // a grid across the side too: an opening in a long side (datacore's window in a wall 900 high) fell
+            // between the few probes at its middle, corners and edges, and the wall's growth came back as clip
+            const probes = [mid, ...facePoints(w, pl.normal, mid)];
             for (let v = 0; v < w.length; v++) {
               const a = w[v].map((x, c) => mid[c] + (x - mid[c]) * 0.98);
               const b = w[(v + 1) % w.length].map((x, c) => mid[c] + (x - mid[c]) * 0.98);
@@ -227,7 +230,7 @@ export function brushesOfClipHull(bsp, head, half, worldMins, worldMaxs) {
           // a clip brush on the map's edge can share its region with the void): harmless as clip
           if (region)
             found.push({
-              planes: withBevels(region.sides.map((i) => shrunk[i]), region.mins, region.maxs),
+              planes: withBevels(region.sides.map((i) => shrunk[i]), region.mins, region.maxs, region.windings),
               points: region.windings.flat(),
               mins: region.mins,
               maxs: region.maxs,
@@ -241,8 +244,75 @@ export function brushesOfClipHull(bsp, head, half, worldMins, worldMaxs) {
   return found;
 }
 
-// axial planes at the region's bounds where it has none of its own
-function withBevels(sides, mins, maxs) {
+/**
+ * How much of a rebuilt clip brush, grown by a player's box (`half`), falls outside that player's hull (`head`)
+ * where it should be solid: the share of points, in a grid across each of its faces pushed out to a unit short of
+ * the box's reach, that the hull has open. GoldSrc compiles a clip brush into every hull, so a true one grown by
+ * the ducked box lies inside hull 3 as it does by the standing one inside hull 1; a sliver of a wall's growth
+ * that one hull's rebuild kept (datacore: a 2 unit plate 36 high under a ledge, from hull 1) does not.
+ */
+export function clipOutsideHull(bsp, brush, head, half) {
+  const region = regionOf(brush.planes.filter((p) => !p.bevel));
+  if (!region) return 1;
+  let open = 0;
+  let all = 0;
+  region.sides.forEach((i, k) => {
+    const { normal } = brush.planes.filter((p) => !p.bevel)[i];
+    const w = region.windings[k];
+    const mid = [0, 1, 2].map((c) => w.reduce((sum, v) => sum + v[c], 0) / w.length);
+    const out =
+      Math.abs(normal[0]) * half[0] + Math.abs(normal[1]) * half[1] + Math.abs(normal[2]) * half[2] - 1;
+    for (const q of [mid, ...facePoints(w, normal, mid)]) {
+      all++;
+      if (
+        clipContents(
+          bsp,
+          head,
+          q.map((v, c) => v + normal[c] * out),
+        ) !== GS_SOLID
+      )
+        open++;
+    }
+  });
+  return all ? open / all : 1;
+}
+
+/**
+ * Points in a grid across a convex face (`w`, its plane's normal `n`, its middle `mid`), drawn 2% in from its
+ * edges: about 24 a side across the longer way, none closer than 4 units.
+ */
+function facePoints(w, n, mid) {
+  const u = unit(cross(n, Math.abs(n[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0]));
+  const v = cross(n, u);
+  const flat = w.map((p) => {
+    const d = [p[0] - mid[0], p[1] - mid[1], p[2] - mid[2]];
+    return [dot(d, u) * 0.98, dot(d, v) * 0.98];
+  });
+  const lo = [Math.min(...flat.map((p) => p[0])), Math.min(...flat.map((p) => p[1]))];
+  const hi = [Math.max(...flat.map((p) => p[0])), Math.max(...flat.map((p) => p[1]))];
+  const step = Math.max(4, Math.max(hi[0] - lo[0], hi[1] - lo[1]) / 24);
+  // inside when on the same side of every edge as the middle (0, 0)
+  const sides = flat.map((a, i) => {
+    const b = flat[(i + 1) % flat.length];
+    return (q) => (b[0] - a[0]) * (q[1] - a[1]) - (b[1] - a[1]) * (q[0] - a[0]);
+  });
+  const inward = sides.map((s) => Math.sign(s([0, 0])) || 1);
+  const out = [];
+  for (let a = lo[0] + step / 2; a < hi[0]; a += step)
+    for (let b = lo[1] + step / 2; b < hi[1]; b += step)
+      if (sides.every((s, i) => s([a, b]) * inward[i] >= 0))
+        out.push([0, 1, 2].map((c) => mid[c] + u[c] * a + v[c] * b));
+  return out;
+}
+
+/**
+ * A brush's bevels, as vbsp's AddBrushBevels adds them: axial planes at the region's bounds where it has none of
+ * its own, then edge bevels: for each slanted edge of a side, the plane through it at right angles to an axis
+ * that the whole brush is behind. Source tests a box against a brush's planes only, so without them a box near
+ * a slanted edge is caught where it is clear (stalkyard, 2026-10-25: a player blocked up to 8 units short of
+ * where GoldSrc's hull 1 stops it, by the beams under its ceilings).
+ */
+function withBevels(sides, mins, maxs, windings = []) {
   const out = [...sides];
   for (let k = 0; k < 3; k++)
     for (const sign of [1, -1]) {
@@ -250,6 +320,29 @@ function withBevels(sides, mins, maxs) {
       const n = [0, 0, 0];
       n[k] = sign;
       out.push({ normal: n, dist: sign > 0 ? maxs[k] : -mins[k], bevel: true });
+    }
+  const points = windings.flat();
+  const has = (n, d) => out.some((p) => Math.abs(dot(p.normal, n) - 1) < 1e-5 && Math.abs(p.dist - d) < 0.01);
+  for (const w of windings)
+    for (let j = 0; j < w.length; j++) {
+      const a = w[j];
+      const b = w[(j + 1) % w.length];
+      const edge = [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+      if (Math.hypot(...edge) < 0.5) continue;
+      const along = unit(edge);
+      // an axial edge has its bevels among the axial planes already
+      if (along.some((x) => Math.abs(Math.abs(x) - 1) < 1e-5)) continue;
+      for (let k = 0; k < 3; k++)
+        for (const sign of [1, -1]) {
+          const axis = [0, 0, 0];
+          axis[k] = sign;
+          const c = cross(along, axis);
+          if (Math.hypot(...c) < 0.5) continue;
+          const n = unit(c);
+          const d = dot(a, n);
+          if (has(n, d)) continue;
+          if (points.every((p) => dot(p, n) - d <= 0.1)) out.push({ normal: n, dist: d, bevel: true });
+        }
     }
   return out;
 }

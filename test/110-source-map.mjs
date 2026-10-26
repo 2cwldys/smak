@@ -222,3 +222,29 @@ test("map port: a texture's type from the game's sound/materials.txt, read as th
   sure((pak.match(/"\$surfaceprop" "concrete"/g) ?? []).length === 3, "the two rooms' three textures, listed nowhere, are concrete");
   sure(ported.physics[0].every((c) => c.surfaceprop === "concrete" && c.planes.length >= 4), "the world's convexes say what they are made of");
 });
+
+test("map port: a clip brush is held to the hulls, grown by the player's box: a wall's own fits hull 1, moved into a room it does not", () => {
+  const world = gold.models[0];
+  const solid = (leaf) => (gold.leaves[leaf].contents === -2 ? "solid" : null);
+  const walls = source.brushesOfTree(gold, world.headNodes[0], solid, world.mins, world.maxs);
+  const half = [16, 16, 36];
+  // the walls' brushes inside the map (not the closing box outside it)
+  const inside = walls.filter((b) => b.planes.every((p) => Math.abs(p.dist) < 60000));
+  const fits = inside.map((b) => source.clipOutsideHull(gold, b, world.headNodes[1], half));
+  sure(
+    fits.length && fits.every((f) => f <= 0.02),
+    `the walls grown fit hull 1: ${fits.map((f) => f.toFixed(2)).join(" ")}`,
+  );
+  // the room's middle: open in hull 1
+  const mid = [0, 1, 2].map((k) => (world.mins[k] + world.maxs[k]) / 2);
+  const roomy = [...Array(9).keys()]
+    .map((i) => [mid[0] + (i - 4) * 32, mid[1], mid[2]])
+    .find((p) => smak.maps.contentsAt(gold, p, { hull: 1 }) === -1);
+  sure(roomy, "an open spot in hull 1");
+  const cube = [0, 1, 2].flatMap((k) =>
+    [1, -1].map((s) => ({ normal: [0, 1, 2].map((c) => (c === k ? s : 0)), dist: s * roomy[k] + 4 })),
+  );
+  const open = source.clipOutsideHull(gold, { planes: cube }, world.headNodes[1], half);
+  // its sides grown sideways land in the open; its top and bottom in the low room's ceiling and floor
+  sure(open > 0.25, `a cube in the open does not: ${open.toFixed(2)} outside`);
+});

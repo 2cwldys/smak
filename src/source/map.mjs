@@ -33,7 +33,7 @@ import { readStudio } from "../studio-file.mjs";
 import { sequences } from "../mdl.mjs";
 import { writeVtf, bleedHoles, powerOfTwo, VTF_FLAG } from "./vtf.mjs";
 import { CONTENTS, SOURCE_LUMP as LUMP, Packer, SURF, colorRgbExp, storedZip, visibilityLump, writeSourceBsp } from "./bsp.mjs";
-import { brushesOfClipHull, brushesOfTree, regionOf } from "./mapbrushes.mjs";
+import { brushesOfClipHull, brushesOfTree, clipOutsideHull, regionOf } from "./mapbrushes.mjs";
 
 // GoldSrc's contents (bspfile.h)
 const GS = { EMPTY: -1, SOLID: -2, WATER: -3, SLIME: -4, LAVA: -5, SKY: -6 };
@@ -380,7 +380,10 @@ export function portMapToSource(file, { name, folder = "smak", folders = [], val
           if (b.planes.every((pl) => dot3(pl.normal, p) - pl.dist < -0.25) && openInDrawn(p)) return true;
         }
     return false;
-  });
+  })
+    // a true clip brush grown by either player's box lies inside that player's hull; a piece of a wall's growth
+    // that one hull's rebuild kept does not (2% let by, for the trees' rounding: none lost a clip brush of c1a0's)
+    .filter((b) => clipOutsideHull(bsp, b, world.headNodes[1], PLAYER_HALF) <= 0.02 && clipOutsideHull(bsp, b, world.headNodes[3], DUCKED_HALF) <= 0.02); // prettier-ignore
   const CLIP = CONTENTS.PLAYERCLIP | CONTENTS.MONSTERCLIP;
   const worldBox = [0, 1, 2].flatMap((k) => [
     { normal: [0, 1, 2].map((c) => (c === k ? 1 : 0)), dist: world.maxs[k] + 64 },

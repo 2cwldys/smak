@@ -820,6 +820,12 @@ map's monsters come: `spawnsOf`, `spawnsTable`; its character in numbers: `chara
   probe run in the game (`probeLua(name, body)` puts `check`, `note` and `done` before it; `probeAnswer(text)`
   reads its lines). `builtInProbe(name)`, `builtInProbes()`: `map`.
 - `shoot([x, y, z], [pitch, yaw], { game, fov, wait, ...rcon })` → the new screenshot's file, from GMod's client.
+- `startGmodServer(folder, { map, port = 27016, password, gamemode, players })` → `{ process, port, log }`: a
+  dedicated server (SteamCMD's app 4020) started on a map.
+- `checkCollision(file, { name, count = 5000, seed = 1, ducked, noclip, game, wait, ...rcon })` → `{ spots, both, free,
+  onlyGoldSrc, onlySource, probe }`: a GoldSrc map held against its port loaded in the game, spot by spot;
+  `collisionSpots(bsp, { count, seed })`, `worldInBox(bsp, point, half)`.
+- `clipOutsideHull(bsp, brush, head, half)` → the share of a rebuilt clip brush's grown faces a player's hull has open.
 - `writeSourceBsp(lumps, { revision })`, `readSourceBsp(bytes)` → `{ version, revision, lumps: [{ version, bytes }] }`,
   `Packer`, `colorRgbExp`, `visibilityLump(pvs, pas)`, `storedZip(files)`, `SOURCE_LUMP`, `SURF`, `CONTENTS`.
 

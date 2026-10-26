@@ -28,6 +28,14 @@ GMod driven while it runs (`docs/SOURCE.md` "GMod while it runs"), after stevenl
 - `smak gmod-probe`, `source.runProbe`: Lua run inside the game, PASS or FAIL from its `check()` lines. The
   built-in `map` probe holds a `gmod-map` port: physics, starts, floors' surfaceprops, a crate that lands.
 - `smak gmod-shoot`, `source.shoot`: a screenshot from a spot, the HUD and view model hidden, no setting changed.
+- `smak gmod-server`, `source.startGmodServer`: a dedicated server from SteamCMD, on port 27016.
+- `smak gmod-collision`, `source.checkCollision`: where a player is blocked in the GoldSrc map and in its port,
+  spot by spot (stevenlafl's `check-collision`). Eight of Half-Life's maps agree on all but 0.02 to 0.34 in a
+  hundred spots.
+- Clip brushes rebuilt closer to the map's: each side sampled in a grid, and one that does not lie inside both
+  players' hulls when grown left out (`source.clipOutsideHull`). Datacore's came out 8 to 16 units too big.
+  Brushes carry vbsp's edge bevels too. **Mind:** a map ported before is ported again for it; a port takes 5 to
+  24 s where it took 1 to 6.
 
 A ported ragdoll fitted to the body, its joints measured on its animations (`docs/SOURCE.md`):
 - Each piece is the convex hull of its bone's corners, the triangles' sides between pieces shared out among

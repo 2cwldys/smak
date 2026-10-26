@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import net from "node:net";
 import { join } from "node:path";
 import * as smak from "../src/index.mjs";
-import { test, testAsync, sure, tmp } from "./helper.mjs";
+import { test, testAsync, sure, tmp, HERE } from "./helper.mjs";
 
 const { source } = smak;
 
@@ -141,3 +141,25 @@ await testAsync(
     }
   },
 );
+
+test("gmod collision: spots inside the GoldSrc map, open in hull 0, the same for the same seed", () => {
+  const bsp = smak.maps.readBsp(readFileSync(join(HERE, "fixtures", "tworooms.bsp")));
+  const spots = source.collisionSpots(bsp, { count: 200, seed: 7 });
+  sure(spots.length === 200, `${spots.length} spots`);
+  sure(
+    spots.every((p) => p.every((v) => v - Math.floor(v) === 0.5)),
+    "each on a half unit, off the planes",
+  );
+  sure(
+    spots.every((p) => bsp.leaves[smak.maps.leafAt(bsp, p)].contents === -1),
+    "each open in hull 0",
+  );
+  sure(
+    JSON.stringify(source.collisionSpots(bsp, { count: 200, seed: 7 })) === JSON.stringify(spots),
+    "the same seed, the same spots",
+  );
+  sure(
+    JSON.stringify(source.collisionSpots(bsp, { count: 200, seed: 8 })) !== JSON.stringify(spots),
+    "another seed, others",
+  );
+});

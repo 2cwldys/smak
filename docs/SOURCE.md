@@ -352,6 +352,38 @@ must take RCON: a dedicated server does; the game itself only when started with 
   crate dropped 96 over the start furthest from the players comes to rest on its floor. The models the game
   lacks are noted, not failed. On stalkyard: 7 passed; floors concrete 12, wood 7, metalgrate 2; 8 of Half-Life:
   Source's pickups lacking.
+- **A dedicated server.** `gmod-server <folder> --map <name> --password <p>` starts one from a SteamCMD install
+  (`steamcmd +force_install_dir <folder> +login anonymous +app_update 4020 +quit`; SteamCMD's first run only
+  updates itself, so run it twice). It is off the server list, has cheats on, and uses port 27016, so the game's own
+  27015 stays free. Its console goes to `garrysmod/console.log`. A map's port goes in its `garrysmod/addons/`, and
+  `--game <folder> --port 27016` sends the probes there.
+- **Where a player is blocked.** `gmod-collision <GoldSrc bsp>`, ported from stevenlafl's `check-collision`:
+  random spots inside the map (open in hull 0, a seed giving the same ones), each asked of the GoldSrc map's
+  hull 1, clip brushes and all (`--ducked`: hull 3), and of the port loaded in the game (a player-sized
+  `TraceHull` standing on its origin, `MASK_PLAYERSOLID`, the world only; `--noclip` leaves the clip brushes
+  out, to show what they add). The spots go by `garrysmod/data/`, as a console line cannot hold them. Each spot is
+  on a half unit: a map's planes are mostly on whole ones, and a spot on a plane is open to GoldSrc where Source's
+  box, its feet on the floor, starts solid (that alone was half of stalkyard's disagreements). A spot blocked only
+  in the port with the drawn world (hull 0) inside the player's box is said apart and not counted: GoldSrc's
+  compiled hull 1 is looser than its own geometry at slanted beams and corners, and Source blocks it rightly
+  (stalkyard: 25 of 35 such spots). PASS when the rest disagree on no more than `--allow` (0.5) in a hundred.
+  An empty dedicated server stops its timers and physics unless `sv_hibernate_think 1`, which `gmod-server` sets.
+  Measured 2026-10-25, 5000 spots, standing and ducked, in a hundred: stalkyard 0.10 and 0.12, crossfire 0.10 and
+  0.06, bounce 0.12 and 0.14, datacore 0.16 and 0.34, boot_camp 0.06 and 0.06, snark_pit 0.06 and 0.10, c1a0 0.02
+  and 0.10, c2a5 0.14 and 0.18: all PASS.
+- **Clip brushes, rebuilt from the hulls.** GoldSrc keeps no clip brushes, only the player's hulls with them
+  grown in. Each solid region of hulls 1 and 3 has its sides moved back in by the box's reach, less where more
+  solid lies beyond (stevenlafl's rule). Two things made datacore's clip come out 8 to 16 units too big (1.02 and
+  1.74 in a hundred, FAIL):
+  - a side was sampled at its middle, corners and edges only, and a window in a wall 900 high fell between the
+    samples: the wall's growth stayed whole and came back as clip. Each side is now sampled in a grid too;
+  - a region that is only a wall's growth in one hull (a 2 unit plate 36 high under a ledge, from hull 1) was
+    kept. A true clip brush is compiled into every hull, so grown by either player's box it lies inside that
+    player's hull; a rebuilt one that does not, at more than 2 of a hundred points across its grown faces, is
+    left out (`clipOutsideHull`). At none, one of c1a0's real clip brushes was lost too.
+
+  The port of a map takes longer for the grid: 5 to 24 s where it took 1 to 6. The brushes carry vbsp's edge
+  bevels too (`AddBrushBevels`), which changed nothing measured.
 - **A screenshot.** The server puts player 1 there in noclip, so that the server sends what the spot sees. The
   client's view, its HUD and view model hidden, is set by hooks that are taken away after. No setting of the
   person's is changed. GMod blocks `fov_desired` sent from the server, and it would be saved in their config;

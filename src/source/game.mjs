@@ -8,6 +8,7 @@
 // ("tried to get banned using HTTP"): Lua longer than a line goes in a file under garrysmod/lua/, run by
 // lua_openscript, and its answer comes back through garrysmod/data/.
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { spawn } from "node:child_process";
 import net from "node:net";
 import { networkInterfaces } from "node:os";
 import { dirname, join } from "node:path";
@@ -254,4 +255,37 @@ end)`;
     for (const script of scripts) rmSync(join(folder, "lua", script), { force: true });
   }
   throw new Error(`no screenshot appeared in ${shots} in ${wait / 1000} s: is player 1 in the game?`);
+}
+
+/**
+ * A dedicated GMod server (SteamCMD's app 4020, installed in `folder`) started on `map`: off the server list,
+ * cheats on, RCON with `password` (else SMAK_RCON_PASSWORD), its console written to garrysmod/console.log as it
+ * goes (-condebug; its output to a pipe is held back). Port 27016 by default, so the game's own 27015 stays
+ * free. Returns `{ process, port, log }`. On Windows `process` is only the launcher's: the server runs on in a
+ * minimized window of its own until it is told `quit` (gmod-rcon quit --port 27016) or the window is closed.
+ */
+export function startGmodServer(
+  folder,
+  { map, port = 27016, password, gamemode = "sandbox", players = 4, env = process.env } = {},
+) {
+  const exe = ["srcds_win64.exe", "srcds.exe", "srcds_run"]
+    .map((f) => join(folder, f))
+    .find((f) => existsSync(f));
+  if (!exe) throw new Error(`no srcds in ${folder}: install the server with SteamCMD (+force_install_dir ${folder} +login anonymous +app_update 4020 +quit)`); // prettier-ignore
+  if (!/^[\w.-]+$/.test(map)) throw new Error(`a map's name is letters, digits, _ . and -: ${map}`);
+  const pass = password ?? env[RCON_PASSWORD_VARIABLE];
+  if (!pass) throw new Error(`the server needs an rcon_password: --password, or ${RCON_PASSWORD_VARIABLE}`);
+  // it goes through cmd's start below, which reads & ^ | < > as its own
+  if (!/^[\w.-]+$/.test(pass) || !/^\w+$/.test(gamemode))
+    throw new Error("the rcon_password and gamemode: letters, digits, _ . and -");
+  const args = ["-console", "-game", "garrysmod", "-norestart", "-condebug", "-port", String(port), "+maxplayers", String(players),
+    "+gamemode", gamemode, "+sv_lan", "1", "+sv_cheats", "1", "+sv_hibernate_think", "1", "+rcon_password", pass, "+map", map]; // prettier-ignore
+  // -console reads its input from a console: spawned without one, or with a hidden one whose input is not the
+  // console's, srcds stops on "CTextConsoleWin32::GetLine: !GetNumberOfConsoleInputEvents". cmd's start gives
+  // it a console window of its own, minimized
+  const child =
+    process.platform === "win32"
+      ? spawn("cmd.exe", ["/d", "/c", "start", '"srcds"', "/min", `"${exe}"`, ...args], { cwd: folder, stdio: "ignore", windowsVerbatimArguments: true }) // prettier-ignore
+      : spawn(exe, args, { cwd: folder, stdio: "ignore" });
+  return { process: child, port, log: join(folder, "garrysmod", "console.log") };
 }

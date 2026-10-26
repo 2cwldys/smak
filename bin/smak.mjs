@@ -36,6 +36,12 @@ const BONES_LISTED = 4;
 // the flags that are followed by a value: one given with nothing after it is said, not guessed at
 const VALUE_FLAGS = [
   "password",
+  "allow",
+  "seed",
+  "show",
+  "map",
+  "gamemode",
+  "players",
   "host",
   "wait",
   "reference",
@@ -3698,6 +3704,62 @@ async function gmodProbe({ command, file, flags }) {
   process.exit(passed ? 0 : 1);
 }
 
+/**
+ * gmod-collision: a GoldSrc map held against its port loaded in the game, spot by spot. PASS when they agree
+ * on all but --allow of the spots (in hundredths of one: 0.5 is half of one in a hundred).
+ */
+async function gmodCollision({ command, file, flags }) {
+  const allow = numberOf(flags, "allow") ?? 0.5;
+  const result = await smak.source.checkCollision(
+    existing(file),
+    defined({
+      name: flags.name,
+      count: numberOf(flags, "count"),
+      seed: numberOf(flags, "seed"),
+      ducked: flags.ducked === true,
+      noclip: flags.noclip === true,
+      game: flags.game,
+      wait: numberOf(flags, "wait"),
+      ...rconOf(flags),
+    }),
+  );
+  const { spots, both, free, onlyGoldSrc, onlySource, intoWorld, unexplained } = result;
+  const show = (list) => list.slice(0, numberOf(flags, "show") ?? 15).map((p) => p.join(" ")).join(" | ");
+  // a spot where the drawn world is inside the player's box is blocked rightly by Source, whatever GoldSrc's
+  // looser hull says
+  const off = onlyGoldSrc.length + unexplained.length;
+  const share = (100 * off) / spots;
+  const passed = share <= allow;
+  answered(command, file, flags, {
+    detail: [
+      `      ${spots} spots: blocked in both ${both}, free in both ${free}`,
+      `      blocked only in GoldSrc ${onlyGoldSrc.length}${onlyGoldSrc.length ? `: ${show(onlyGoldSrc)}` : ""}`,
+      `      blocked only in the port ${onlySource.length}: ${intoWorld.length} with the drawn world inside the player's box (GoldSrc's hull looser than its geometry), ${unexplained.length} not${unexplained.length ? `: ${show(unexplained)}` : ""}`, // prettier-ignore
+    ],
+    passed,
+    said: `${spots} spots, ${off} where GoldSrc and the port disagree (${share.toFixed(2)} in a hundred; ${allow} allowed); ${intoWorld.length} more blocked only in the port, rightly, the world inside the box`, // prettier-ignore
+    shown: [
+      ...(onlyGoldSrc.length ? [`only GoldSrc (the player's middle): ${show(onlyGoldSrc)}`] : []),
+      ...(unexplained.length ? [`only the port, the world not in the box (the player's middle): ${show(unexplained)}`] : []),
+    ],
+  });
+  process.exit(passed ? 0 : 1);
+}
+
+/**
+ * gmod-server: a dedicated GMod server (SteamCMD's app 4020) started on a map, the console in
+ * garrysmod/console.log; it runs until it is stopped.
+ */
+async function gmodServer({ command, file, flags }) {
+  const map = need(command, flags.map, "--map <name>: the map it starts on");
+  const child = smak.source.startGmodServer(
+    file,
+    defined({ map, port: numberOf(flags, "port"), password: flags.password, gamemode: flags.gamemode, players: numberOf(flags, "players") }),
+  );
+  console.log(`gmod-server: srcds started on ${map}, port ${child.port}, its console in ${child.log}; stopped by gmod-rcon quit --port ${child.port}`);
+  await new Promise((resolve) => child.process.on("exit", resolve));
+}
+
 /** gmod-shoot: a screenshot from GMod's client with the eye at x y z, looking along pitch yaw. */
 async function gmodShoot({ command, file, rest, flags }) {
   const [y, z, pitch = 0, yaw = 0] = rest;
@@ -4687,6 +4749,28 @@ const COMMANDS = {
                                             the world's physics, each start's floor and room, the floors' surfaceprops, a crate
                                             dropped that lands; the models the game lacks noted). --game: the folder holding
                                             garrysmod/ (a dedicated server's install), else GMod's.`,
+  },
+  "gmod-collision": {
+    run: gmodCollision,
+    own: true,
+    help: `  gmod-collision <GoldSrc bsp> [--count 5000] [--seed 1] [--ducked] [--noclip] [--allow 0.5] [--name n] [--game <folder>] [--port p] [--password p]
+                                            where a player is blocked in a GoldSrc map and in its gmod-map port loaded in the
+                                            game, ported from stevenlafl's check-collision: random spots inside the map, each asked
+                                            of the GoldSrc map's hull 1 (the standing player's, clip brushes in it; --ducked: hull 3)
+                                            and of the game (a player-sized TraceHull, MASK_PLAYERSOLID, the world only; --noclip:
+                                            player and NPC clip left out). PASS when they disagree on no more than --allow spots in
+                                            a hundred. --game: the server's install (the folder holding garrysmod/).`,
+  },
+  "gmod-server": {
+    run: gmodServer,
+    own: true,
+    folder: true,
+    help: `  gmod-server <dedicated server folder> --map <name> [--port 27016] [--password p] [--gamemode sandbox] [--players 4]
+                                            a dedicated GMod server (SteamCMD: app_update 4020) started on a map for probes and
+                                            gmod-collision: off the server list (sv_lan 1), cheats on, RCON with --password
+                                            (SMAK_RCON_PASSWORD), its console in garrysmod/console.log. Port 27016 by default, so the
+                                            game's own 27015 stays free. On Windows in a minimized window of its own, until
+                                            gmod-rcon quit --port 27016.`,
   },
   "gmod-shoot": {
     run: gmodShoot,

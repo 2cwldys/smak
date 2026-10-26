@@ -378,6 +378,15 @@ a probe's error and a probe that never ends both FAIL, and a screenshot came cle
 straight after the first is dropped without a word; the client's Lua may not run `jpeg`; GMod blocks
 `fov_desired` from the server. Left: `check-collision` on a SteamCMD dedicated server, and the twin map.
 
+**check-collision done 2026-10-25:** `gmod-server` (SteamCMD's app 4020, in `C:/Herramientas/gmod-ds` here) and
+`gmod-collision`. Seven of eight maps PASS standing and ducked (`docs/SOURCE.md`). Found: spots on whole units
+sat on planes; GoldSrc's hull 1 is looser than its geometry at slanted beams; brushes now carry vbsp's edge
+bevels too (no change measured). Left: datacore's clip brushes, rebuilt 8 to 16 units too big at 43 spots.
+Then fixed the same day (`docs/SOURCE.md`, "Clip brushes"): each side of a hull's region sampled in a grid, and a
+rebuilt clip brush that does not lie inside both players' hulls when grown is left out. All eight maps PASS,
+datacore at 0.16 and 0.34 in a hundred. Found with an offline twin of Source's box test (each brush's planes
+against the box's reach), which agreed with the server within a few spots and took seconds a map.
+
 Their converter does not do, and nor will this at first: outputs (GoldSrc's targets as Source's I/O), water
 surfaces, animated textures, decals.
 
