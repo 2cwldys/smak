@@ -3,10 +3,11 @@
 A toolkit an AI coding agent (Claude Code, or any agent that runs commands and looks at pictures) uses to make
 content for **GoldSrc games**, Half-Life and its mods: models, animations, textures and maps. The agent writes
 short scripts with it, draws what it made to check its own work, and plays the result in the game. Since 0.29 it
-also takes them to **Source**: a GoldSrc model ported to Garry's Mod, with physics and a ragdoll.
+also takes them to **Source**: a GoldSrc model ported to Garry's Mod, with physics and a ragdoll, and since 0.30 a
+GoldSrc map, held to the original in the running game.
 
-![version](https://img.shields.io/badge/version-0.29.0-blue)
-![tests](https://img.shields.io/badge/tests-861%20passing-brightgreen)
+![version](https://img.shields.io/badge/version-0.30.0-blue)
+![tests](https://img.shields.io/badge/tests-891%20passing-brightgreen)
 ![node](https://img.shields.io/badge/node-18%2B-339933)
 ![dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)
 ![licence](https://img.shields.io/badge/licence-MIT-lightgrey)
@@ -36,7 +37,7 @@ model, map and shot in it was made by an agent with SMAK.
 
 ![play](https://img.shields.io/badge/In%20the%20game-play%20%C2%B7%20fight%20%C2%B7%20test%20by%20its%20lines%20%C2%B7%20film-8957e5)
 ![assets](https://img.shields.io/badge/Assets-textures%20%28.wad%29%20%C2%B7%20sounds%20%C2%B7%20sprites%20%C2%B7%20video-8957e5)
-![source](https://img.shields.io/badge/Source-GoldSrc%20%E2%86%92%20Garry%27s%20Mod%20%C2%B7%20physics%20%C2%B7%20ragdolls%20%C2%B7%20read%20%C2%B7%20draw-8957e5)
+![source](https://img.shields.io/badge/Source-GoldSrc%20%E2%86%92%20Garry%27s%20Mod%20%C2%B7%20models%20%C2%B7%20maps%20%C2%B7%20physics%20%C2%B7%20ragdolls%20%C2%B7%20read%20%C2%B7%20draw-8957e5)
 ![judges](https://img.shields.io/badge/Judges-figure%20style%20%C2%B7%20texture%20%C2%B7%20shape%20vs%20the%20game-8957e5)
 
 ## What it has made
@@ -58,6 +59,10 @@ model, map and shot in it was made by an agent with SMAK.
   studiomdl and held to the original corner by corner. The barrel collides as its convex hull and weighs as wood;
   the grunt falls as a ragdoll of 22 pieces. `smak gmod-port model.mdl -o out` ([docs/SOURCE.md](docs/SOURCE.md)).
 - All 210 of Half-Life's models port and compile whole.
+- **Half-Life's maps**, rewritten as Source maps from stevenlafl's converter: their geometry, light and visibility
+  kept, their collision rebuilt, their physics made by GMod's own. All 115 port. In the running game the kit puts
+  a probe that answers PASS or FAIL, and holds each map's collision to the original's: eight of them agree on all
+  but 0.02 to 0.34 in a hundred spots. `smak gmod-map map.bsp -o out`, `gmod-probe map`, `gmod-collision`.
 
 ## How it works
 
@@ -99,13 +104,14 @@ node bin/smak.mjs help                              every command
 | [docs/TROUBLE.md](docs/TROUBLE.md) | What the kit can and cannot do, and what a message means when something is wrong. |
 | [docs/IMPORT.md](docs/IMPORT.md), [docs/ITEMS.md](docs/ITEMS.md) | Bought models, and new weapons in a game's own files. |
 | [docs/ENGINES.md](docs/ENGINES.md) | GoldSrc against Xash3D. |
-| [docs/SOURCE.md](docs/SOURCE.md) | A GoldSrc model ported to Garry's Mod (Source), checked corner by corner; Source models read and drawn. |
+| [docs/SOURCE.md](docs/SOURCE.md) | A GoldSrc model or map ported to Garry's Mod (Source), checked corner by corner and in the running game; Source models read and drawn. |
 | [CHANGELOG.md](CHANGELOG.md) | What changed, version by version. |
 
 ## Limits
 
-- Made for GoldSrc (model version 10, map version 30). Source: a GoldSrc model ported to Garry's Mod, and Source
-  models read and drawn; new models made for Source, and maps, not yet.
+- Made for GoldSrc (model version 10, map version 30). Source: a GoldSrc model or map ported to Garry's Mod, and
+  Source models read and drawn; new models made for Source in part. A map's outputs, water surfaces, animated
+  textures and decals are not ported yet.
 - One bone a vertex, as the format has it. Animations kept in `name01.mdl` files are read, not edited.
 - The kit's pictures use a plain light of their own: shape, size, texture and pose are true, brightness is not.
 - It does not ship any game's content. A game's models and textures belong to its authors.

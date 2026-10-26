@@ -121,6 +121,16 @@ node bin/smak.mjs gmod-port <mdl> -o <folder> [--name n] [--folder smak] [--coll
                                                    model lost anything. --kind: a v_ model is a view model, a p_ one held, one under
                                                    models/player/ a player (Valve's bone names and hands); --upper: a player's
                                                    animations copied from the spine up. The sounds its events play go into the addon
+node bin/smak.mjs gmod-map <bsp> -o <folder> [--name n] [--game <mod folder>] [--valve <folder>|none] [--no-physics]
+                                                   a GoldSrc map rewritten as a Source map for Garry's Mod (docs/SOURCE.md, "A GoldSrc
+                                                   map in GMod"); <folder>/addon goes into garrysmod/addons/<name>/
+node bin/smak.mjs gmod-rcon <command> [...] [--password p] [--port 27015]   console commands to a running GMod over RCON
+node bin/smak.mjs gmod-probe <file.lua | map> [--client] [--wait ms] [--game <folder>] [--port p]
+                                                   Lua run inside the game, PASS or FAIL from its check() lines; built in: map
+node bin/smak.mjs gmod-shoot <x> <y> <z> [pitch yaw] -o shot.jpg   a screenshot from GMod's client, HUD and view model hidden
+node bin/smak.mjs gmod-server <folder> --map <name> [--port 27016] [--password p]   a dedicated server from SteamCMD
+node bin/smak.mjs gmod-collision <GoldSrc bsp> [--count 5000] [--ducked] [--noclip] [--game <folder>] [--port p]
+                                                   where a player is blocked in the GoldSrc map and in its port, spot by spot
 node bin/smak.mjs source-info <mdl | models/...mdl> [--json] [--gmod <folder>] [--addon <folder>]
                                                    what a Source model holds; a path under the game is read from GMod's folders and packs
 node bin/smak.mjs source-sheet <mdl | models/...mdl> -o s.png   /   source-render ... -o r.png [--yaw] [--pitch] [--body] [--skin]

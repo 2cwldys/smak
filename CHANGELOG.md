@@ -3,7 +3,7 @@
 The newest first. A version that changes what a model's file looks like, or that a model made before needs
 mending for, says so under **Mind**.
 
-## Unreleased
+## 0.30.0 (2026-10-26)
 
 GoldSrc maps in GMod (PLAN.md 6f, `docs/SOURCE.md` "A GoldSrc map in GMod"), ported from stevenlafl's converter:
 - `smak gmod-map`, `source.portMapToSource` and `portMapToGmod`. The BSP 30 is rewritten as BSP 20 lump by lump:
