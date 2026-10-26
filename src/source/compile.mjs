@@ -30,8 +30,9 @@ const ERROR_LINE = /^\s*ERROR\b/i;
 const WARNING_LINE = /^\s*WARNING\b/i;
 /** GMod's compiler's own warning in a game folder that is not GMod's: nothing of the model's. */
 const MOUNT_WARNING = /mount\.cfg/i;
-/** The files of a compiled model beside its .mdl. */
-const MODEL_FILES = /\.(mdl|vvd|phy|ani|dx80\.vtx|dx90\.vtx|sw\.vtx|vtx)$/i;
+/** The files of a compiled model beside its .mdl. Not its .dx80.vtx and .sw.vtx: GMod reads only the .dx90.vtx,
+ * and gmad, which packs an addon for the Workshop, refuses a .sw.vtx (stevenlafl's finding). */
+const MODEL_FILES = /(\.(mdl|vvd|phy|ani)|(?<!\.(dx80|sw))\.vtx)$/i;
 
 const isFile = (file) => {
   try {

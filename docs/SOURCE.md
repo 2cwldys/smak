@@ -29,8 +29,9 @@ Under `-o <folder>`:
 | | |
 | --- | --- |
 | `src/<name>.qc`, `src/*.smd`, `src/anims/*.smd` | what the compiler reads. Kept, so a person may change the QC and compile it again |
-| `addon/models/smak/<name>.mdl`, `.vvd`, `.dx90.vtx`, `.dx80.vtx`, `.phy` | the compiled model |
+| `addon/models/smak/<name>.mdl`, `.vvd`, `.dx90.vtx`, `.phy` | the compiled model. Not the `.dx80.vtx` and `.sw.vtx` the compiler also writes: GMod reads only the `.dx90.vtx`, and gmad, which packs an addon for the Workshop, refuses a `.sw.vtx` |
 | `addon/materials/models/smak/<name>/*.vtf`, `*.vmt` | its textures and materials |
+| `addon/sound/smak/...` | the sounds its events play, copied from the game |
 | `sheet.png` | six views of the compiled model, drawn from its own files |
 
 **`addon/` goes into `garrysmod/addons/<any name>/` as it is.** In the game, the model is
@@ -124,9 +125,77 @@ bone a vertex, pose parameters.
 - **The attachments, the hit boxes and their groups, the eyes and the boxes.**
 - **Each animation's fps, looping, activity and weight, and its events by their numbers.** Activities take
   their names from `activity.h`, numbers 1 to 76.
-- **An animation's travel.** GoldSrc's compiler took a walk's travel out of its frames, along the axes marked
-  LX, LY and LZ. The port puts it back into the root bones' frames and tells Source's compiler `LX` in its
-  turn.
+- **A looping animation's travel.** GoldSrc's compiler took a walk's travel out of its frames, along the axes
+  marked LX, LY and LZ, in one straight line. The port puts it back into the root bones' frames and tells
+  Source's compiler `LX` in its turn, with `$motionrollback 0`: Source's default rollback treats the last
+  0.3 s on its own, and the root drifts off the line. A one-shot (a jump, a lunge) stays in place, as GoldSrc
+  played it: Source takes a one-shot's travel out along a curve, and a jump straight ahead lurched back. These
+  are stevenlafl's findings, in their port of The Specialists to GMod.
+- **An animation's blends** (Half-Life's aiming up and down), on a pose parameter. Each GoldSrc axis is one,
+  named by the motion it was: `blend_xr` for a pitch (every aim of Half-Life's), `blend_x` for the tentacle's
+  reach, `blend` for a blend of no motion (the icky's swim). Each animation keeps the values GoldSrc gave its
+  first and last blend (barney's `shootgun`: -50 to 50), and the pose parameter ranges over all of them. Four
+  blends of two axes are a grid two by two (`blendwidth 2`). In GMod, `ent:SetPoseParameter("blend_xr", 30)`
+  aims as GoldSrc's `SetBlending(0, 30)` did.
+- **A view model's animations start outright** (`fadein 0 fadeout 0`), as GoldSrc's did. Source fades a new
+  animation in over 0.2 s, which swallows a gun's short kick. A model whose name begins `v_` is taken for a
+  view model; `--kind` tells it otherwise (`kind` in portToSource). A view model also:
+  - collides as nothing: it is drawn before the eyes and never touches the world;
+  - has its animations with no activity given Source's by their names (`VIEW_ACTIVITIES`), as a GMod weapon's
+    script plays them (`self:SendWeaponAnim(ACT_VM_PRIMARYATTACK)`): idle `ACT_VM_IDLE`, draw or deploy
+    `ACT_VM_DRAW`, holster `ACT_VM_HOLSTER`, reload `ACT_VM_RELOAD`, shoot or fire `ACT_VM_PRIMARYATTACK`,
+    shoot_empty `ACT_VM_DRYFIRE`, grenade or shoot_big `ACT_VM_SECONDARYATTACK`, attack1miss
+    `ACT_VM_MISSCENTER`, throw, pinpull, fidget. The 9mmAR's three shoots share `ACT_VM_PRIMARYATTACK`, so
+    Source picks one, as Half-Life's code did. A name that fits none (`add_silencer`, the gauss's `spin`) gets
+    none; the port says which it named;
+  - has its first attachment, when it has no name, named `muzzle`, which GMod's muzzle flash looks for, and
+    turned along the gun's forward in its first animation: a Source attachment points along its x, a GoldSrc
+    one has no turn.
+- **A player, and a weapon held in a player's hand** (`--kind player`, `--kind held`; a model under
+  `models/player/` is a player, one whose name begins `p_` held), made a biped GMod knows (`valveBiped`,
+  `src/source/biped.mjs`):
+  - its bones under Valve's names, by Half-Life's biped names: `Bip01 R Arm2` is
+    `ValveBiped.Bip01_R_Forearm`, `Bip01 L Leg1` `ValveBiped.Bip01_L_Calf`, `Bip01 Spine3`
+    `ValveBiped.Bip01_Spine4`. GMod finds a held weapon by `ValveBiped.Bip01_R_Hand`, and Source merges a
+    held model onto its holder bone by bone name, as GoldSrc's renderer drew a `p_` model. A bone of no biped's
+    (`Dummy08`) keeps its name;
+  - its hands turned as Valve's are. Every Half-Life player's hand is turned half round its arm from GMod's
+    male_07's: its thumb stands at 86 degrees about the hand's x where male_07's stands at -105. The turn is
+    measured by the thumb, to the nearest quarter, and a hand with no thumb (a `p_` model's) is turned
+    Half-Life's 180, said (`--hand-roll` says otherwise). Nothing moves: the hand's own axes turn, what hangs
+    from it is turned back, and every bone stays where it was in every frame (Gordon's 1,751, within 3e-14);
+  - a player also gets GMod's `anim_attachment_RH` and `anim_attachment_LH`, on bones of those names under the
+    hands, where GMod puts a held thing and the flashlight, and stands on its feet. GoldSrc's player stands about
+    the middle of its hull, 36 above its feet; Source's on its feet. Its animations are lifted 36, and it is lit
+    from its middle (`$illumposition 0 0 36`; male_07's is 35): lit from its origin under the floor it would draw
+    black. Its reference is not lifted, so its triangles are held where the original has them;
+  - with `--upper`, each of a player's animations is copied as `<name>_upper`, moving the body from
+    `ValveBiped.Bip01_Spine` up (`$weightlist "upper"`), with no activity, events or travel: a layer a gamemode
+    lays over a walk. The copies come after the animations, which game code plays by number;
+  - a held model collides as nothing.
+
+  This is stevenlafl's finding, in their port of The Specialists to GMod, where a ported player plays its own
+  animations, its gamemode's. **GMod's own player animations** (`m_anm.mdl`, what a sandbox player model plays)
+  are not made to work on a port: they turn each bone about Valve's own axes, which a GoldSrc skeleton does not
+  have. That takes the skeleton rebuilt as Valve's (PLAN.md).
+- **The sounds its events play** (1004 a step, 1008 a voice, 5004 a gun's clip, by the same numbers): moved
+  to `sound/smak/<their path>` and copied there from the mod's `sound/` folder, or from `valve/`'s, which
+  every mod plays. Under the port's folder they stay clear of GMod's own sounds of the same names (Half-Life 2
+  has `weapons/` and `common/`). One the game does not have is said; Half-Life's own models name 19 such
+  voices. Source plays 8 or 16-bit PCM at 11025, 22050 or 44100 Hz only, and a file at another rate silently
+  (stevenlafl's finding: The Specialists' 48000 Hz `block.wav` was never heard): such a file is rewritten as
+  16-bit PCM at 44100, one channel, its loop point kept (`sourceWav`), and said; Half-Life's own are all 8-bit
+  at 22050 or 11025 and are copied as they are. A sentence (`!HG_ALERT`) is kept as it was: GMod has no Half-Life sentences. 1004 and 1008 play
+  only on an NPC whose code answers them.
+
+  **A view model's** (5004, its clip coming out and going in) GMod never plays from the model: v_9mmar's
+  reload was silent in GMod with the events compiled in and the files in place, and stevenlafl found the same
+  in The Specialists' port. So they are left out of the model and written as Lua beside it,
+  `addon/lua/autorun/client/smak_sounds_<folder>_<name>.lua` (`viewSoundsLua`), as their weapon base plays
+  them: each as the view model's animation passes its frame, a loop's again each time round, an animation begun
+  again (a second reload) from its start, heard by the holder alone, as GoldSrc's client played it. Any weapon
+  that shows the model gets them, with no code of its own. The sounds a weapon's code played in GoldSrc (the
+  shot, a shotgun's pump) were never in the model, and are the weapon script's to play.
 
 ## What changes, and why
 
@@ -146,10 +215,17 @@ Each change is said in a `WARN` line.
 
 ## What is left behind, and said
 
-- **Chrome (flag 2).** GoldSrc draws the picture turned with the view. Source has no such shader, so it is
-  written as the picture with the room's reflection over it (`$envmap env_cubemap`).
+- **Chrome (flag 2).** GoldSrc never draws a chrome texture by the file's s and t: it works out where each
+  corner is in the picture by how its surface faces the eye, again each frame (R_StudioChrome), so the picture
+  slides over the surface as it turns. Source has no such shader. It is worked out once, in the first animation's
+  first frame: for a view model from the view's eye, where a view model's always is, so its gloves and barrel
+  look as in GoldSrc while it idles; for anything else from in front of it. What moves far from that frame keeps
+  the picture as it was there. No room's reflection is laid over it: GoldSrc had none (an `$envmap` of the room
+  drew a view model's gloves as mirrors).
 - **Bone controllers** (a head that follows its target). Source turns such bones by pose parameters.
-- **An animation's second blend and after** (an aim up and down). Source blends by pose parameters.
+- **Blends GoldSrc's renderer does not blend**: of three, or of more than four, the first two are ported. A
+  blend whose first and last stand for one value is ported as its first, since no pose parameter ranges over
+  nothing. None of Half-Life's models has either.
 - **An activity past 76.** It is the mod's own, and only its game code knows it.
 - **What plays its animations.** In GMod a ported figure is a model: spawned as a ragdoll it falls as a body,
   and as an effect (`gm_spawneffect`) it stands in its first pose. Its animations play only when an entity
@@ -160,6 +236,9 @@ Each change is said in a `WARN` line.
 Every check a port passes was measured on Half-Life's 301 models, all 210 that are models (2026-10-25). Each
 compiled with no error and held:
 - every bone, animation, material, bodygroup and its submodels, skin family, attachment and hit box;
+- **each loop's travel**, taken out by Source's compiler in one straight piece, as far as GoldSrc took it out
+  (the grunt's walk1 112.19 units, its run 172.27);
+- each animation's blends, on their pose parameters; a view model's animations, with no fade;
 - **every corner of the original**, within 0.05 units of where it was and on the same place of its picture.
 
 The tolerance is there because Source's compiler turns each bone through a quaternion. On garg.mdl's toes, a
@@ -194,5 +273,5 @@ In a script: `smak.source`, see `docs/API.md` ("The Source engine").
 These are `PLAN.md`'s phases 6c to 6e:
 - the model seen in GMod by the kit itself;
 - new models made for Source: weapons, normal maps, more than one bone a vertex;
-- blends and controllers as pose parameters;
+- controllers as pose parameters;
 - maps.

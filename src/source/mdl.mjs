@@ -1,8 +1,8 @@
 // Source's studio models (.mdl, versions 44 to 49: Half-Life 2, Garry's Mod) read: what is in one, from its
 // header and tables. Its triangles are in the .vvd and .vtx beside it (mesh.mjs).
 //
-//   readSourceMdl(bytes)   { version, name, bones, sequences, materials, cdmaterials, skins, bodyparts,
-//                           attachments, hitboxes, flags, eyes, hull, view }
+//   readSourceMdl(bytes)   { version, name, bones, sequences, animations, poses, materials, cdmaterials, skins,
+//                           bodyparts, attachments, hitboxes, flags, eyes, hull, view }
 //
 // Each table is one struct of the SDK's studio.h (2013), under its name there, with where its fields are in
 // bytes from the struct's start. A name is kept apart from its struct and found by an offset counted from the
@@ -46,11 +46,19 @@ const HDR = {
   bodypartindex: 236,
   numlocalattachments: 240,
   localattachmentindex: 244,
+  numlocalposeparameters: 300,
+  localposeparamindex: 304,
 };
 // mstudiobone_t
 const BONE = { sznameindex: 0, parent: 4, pos: 32, quat: 44, rot: 60, flags: 160, sizeof: 216 };
 // mstudioseqdesc_t
-const SEQ = { szlabelindex: 4, szactivitynameindex: 8, flags: 12, activity: 16, actweight: 20, numevents: 24, eventindex: 28, numblends: 56, sizeof: 212 }; // prettier-ignore
+const SEQ = { szlabelindex: 4, szactivitynameindex: 8, flags: 12, activity: 16, actweight: 20, numevents: 24, eventindex: 28, numblends: 56, animindexindex: 60, groupsize: 68, paramindex: 76, paramstart: 84, paramend: 92, fadeintime: 104, fadeouttime: 108, sizeof: 212 }; // prettier-ignore
+// mstudioanimdesc_t, and mstudiomovement_t: a piece of the travel taken out of its frames, `position` how far it
+// goes in that piece, up to `endframe`
+const ANIM = { sznameindex: 4, fps: 8, flags: 12, numframes: 16, nummovements: 20, movementindex: 24, sizeof: 100 };
+const MOVEMENT = { endframe: 0, motionflags: 4, position: 32, sizeof: 44 };
+// mstudioposeparamdesc_t
+const POSE = { sznameindex: 0, flags: 4, start: 8, end: 12, loop: 16, sizeof: 20 };
 // mstudioevent_t: the frame as a fraction of the animation (cycle), and the event's name or number in its text
 const EVENT = { cycle: 0, event: 4, type: 8, options: 12, szeventindex: 76, sizeof: 80 };
 // mstudiotexture_t
@@ -83,7 +91,10 @@ const tableOf = (bytes, count, index, sizeof, read, base = 0) =>
 /**
  * What a Source model is made of, from its .mdl alone: { version, name, flags, eyes, hull: [min, max],
  * view: [min, max], bones: [{ name, parent, pos, rot }], sequences: [{ name, activity, actweight, flags,
- * events: [{ cycle, event, options }], blends }], materials (each texture's name, as its VMT is named under one
+ * events: [{ cycle, event, options }], blends, grid: [width, height], animations (numbers in `animations`, the
+ * grid's row by row), params: [{ pose, start, end }] (one an axis of the grid: `poses`' number, the values the
+ * grid's first and last stand for), fadein, fadeout (seconds) }], animations: [{ name, fps, frames, movements:
+ * [{ endframe, flags, position }] }], poses: [{ name, start, end, loop }], materials (each texture's name, as its VMT is named under one
  * of cdmaterials), cdmaterials (the folders under materials/ they are looked for in), skins (each family's
  * texture numbers by reference), bodyparts: [{ name, base, models: [{ name, vertices, firstVertex (its first in the
  * .vvd), meshes: [{ material, vertices, firstVertex (among its model's) }] }] }],
@@ -108,6 +119,13 @@ export function readSourceMdl(bytes) {
     actweight: int32(bytes, at + SEQ.actweight),
     flags: int32(bytes, at + SEQ.flags),
     blends: int32(bytes, at + SEQ.numblends),
+    grid: [0, 1].map((axis) => int32(bytes, at + SEQ.groupsize + axis * 4)),
+    animations: Array.from({ length: int32(bytes, at + SEQ.numblends) }, (_, i) => bytes.readInt16LE(at + int32(bytes, at + SEQ.animindexindex) + i * 2)), // prettier-ignore
+    params: [0, 1]
+      .map((axis) => ({ pose: int32(bytes, at + SEQ.paramindex + axis * 4), start: bytes.readFloatLE(at + SEQ.paramstart + axis * 4), end: bytes.readFloatLE(at + SEQ.paramend + axis * 4) })) // prettier-ignore
+      .filter((param) => param.pose >= 0),
+    fadein: bytes.readFloatLE(at + SEQ.fadeintime),
+    fadeout: bytes.readFloatLE(at + SEQ.fadeouttime),
     events: Array.from({ length: int32(bytes, at + SEQ.numevents) }, (_, i) => {
       const event = at + int32(bytes, at + SEQ.eventindex) + i * EVENT.sizeof;
       return {
@@ -117,6 +135,21 @@ export function readSourceMdl(bytes) {
         name: int32(bytes, event + EVENT.szeventindex) ? nameOf(event, EVENT.szeventindex) : "",
       };
     }),
+  }));
+  const animations = tableOf(bytes, HDR.numlocalanim, HDR.localanimindex, ANIM.sizeof, (at) => ({
+    name: nameOf(at, ANIM.sznameindex),
+    fps: bytes.readFloatLE(at + ANIM.fps),
+    frames: int32(bytes, at + ANIM.numframes),
+    movements: Array.from({ length: int32(bytes, at + ANIM.nummovements) }, (_, i) => {
+      const piece = at + int32(bytes, at + ANIM.movementindex) + i * MOVEMENT.sizeof;
+      return { endframe: int32(bytes, piece + MOVEMENT.endframe), flags: int32(bytes, piece + MOVEMENT.motionflags), position: vec3At(bytes, piece + MOVEMENT.position) }; // prettier-ignore
+    }),
+  }));
+  const poses = tableOf(bytes, HDR.numlocalposeparameters, HDR.localposeparamindex, POSE.sizeof, (at) => ({
+    name: nameOf(at, POSE.sznameindex),
+    start: bytes.readFloatLE(at + POSE.start),
+    end: bytes.readFloatLE(at + POSE.end),
+    loop: bytes.readFloatLE(at + POSE.loop),
   }));
   const materials = tableOf(bytes, HDR.numtextures, HDR.textureindex, TEXTURE.sizeof, (at) => nameOf(at, TEXTURE.sznameindex));
   const cdmaterials = tableOf(bytes, HDR.numcdtextures, HDR.cdtextureindex, 4, (at) => textAt(bytes, int32(bytes, at)));
@@ -171,6 +204,8 @@ export function readSourceMdl(bytes) {
     view: [vec3At(bytes, HDR.view_bbmin), vec3At(bytes, HDR.view_bbmax)],
     bones,
     sequences,
+    animations,
+    poses,
     materials,
     cdmaterials,
     skins,

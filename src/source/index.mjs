@@ -16,6 +16,7 @@
 //   surfaceprops.mjs  readSurfaceProps densityOf massOf SURFACEPROP_OF_BASE   what it is made of, and its weight
 export * from "./gmod.mjs";
 export * from "./port.mjs";
+export * from "./biped.mjs";
 export * from "./compile.mjs";
 export * from "./check.mjs";
 export * from "./mdl.mjs";

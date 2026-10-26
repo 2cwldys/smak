@@ -114,10 +114,13 @@ node bin/smak.mjs map-compile <file.map> -o out.bsp --wad a.wad [--wadinclude] [
 node bin/smak.mjs map-compile <file.map> ... [--timeout 600 | --timeout hlvis=600,hlrad=1200] [--progress]   a stage seen and stopped
 node bin/smak.mjs map-decompile <bsp> -o out.map [--game <folder> ...]   a compiled map back into brush source, its own .wad beside it (docs/MAPS.md, "Decompiling")
 node bin/smak.mjs gmod-port <mdl> -o <folder> [--name n] [--folder smak] [--collision auto|hull|box|ragdoll|none] [--surfaceprop wood] [--mass kg]
-                              [--studiomdl <exe>] [--no-compile]
+                              [--kind thing|view|held|player] [--upper] [--hand-roll degrees] [--studiomdl <exe>] [--no-compile]
                                                    a GoldSrc model ported to Garry's Mod: the compiler's files (src/), the addon (addon/),
-                                                   compiled by GMod's studiomdl, held to the original corner by corner, drawn (sheet.png)
-                                                   (docs/SOURCE.md); exit code 1 when the compiled model lost anything
+                                                   compiled by GMod's studiomdl, held to the original corner by corner, its travel,
+                                                   blends and fades, drawn (sheet.png) (docs/SOURCE.md); exit code 1 when the compiled
+                                                   model lost anything. --kind: a v_ model is a view model, a p_ one held, one under
+                                                   models/player/ a player (Valve's bone names and hands); --upper: a player's
+                                                   animations copied from the spine up. The sounds its events play go into the addon
 node bin/smak.mjs source-info <mdl | models/...mdl> [--json] [--gmod <folder>] [--addon <folder>]
                                                    what a Source model holds; a path under the game is read from GMod's folders and packs
 node bin/smak.mjs source-sheet <mdl | models/...mdl> -o s.png   /   source-render ... -o r.png [--yaw] [--pitch] [--body] [--skin]

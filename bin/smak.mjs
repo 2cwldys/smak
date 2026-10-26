@@ -3582,6 +3582,9 @@ function gmodPort({ command, file, flags }) {
     fail(`${command}: --collision ${smak.source.COLLISIONS.join(", ")}, not ${flags.collision}`);
   const mass = numberOf(flags, "mass");
   if (mass !== undefined && !(mass > 0)) fail(`${command}: --mass is kilograms, more than 0, not ${flags.mass}`);
+  if (flags.kind !== undefined && !smak.source.PORT_KINDS.includes(flags.kind))
+    fail(`${command}: --kind ${smak.source.PORT_KINDS.join(", ")}, not ${flags.kind}`);
+  const handRoll = numberOf(flags, "hand-roll");
   const result = smak.source.portToGmod(
     file,
     defined({
@@ -3591,6 +3594,9 @@ function gmodPort({ command, file, flags }) {
       collision: flags.collision,
       surfaceprop: flags.surfaceprop,
       mass,
+      kind: flags.kind,
+      handRoll,
+      upper: flags.upper === true ? true : undefined,
       studiomdl: flags.studiomdl,
       gmod: flags.gmod,
       compile: flags.compile !== false,
@@ -3612,7 +3618,7 @@ function gmodPort({ command, file, flags }) {
       flags.compile === false
         ? `written, not compiled (--no-compile): ${result.qc}`
         : result.passed
-          ? `compiled and whole: ${where}; ${result.said.find((line) => /^collides as/.test(line))}${warnings.length ? `; ${warnings.length} warnings` : ""}`
+          ? `compiled and whole: ${where}; ${result.said.find((line) => /^collides as/.test(line))}${warnings.length ? `; ${warnings.length} ${warnings.length === 1 ? "warning" : "warnings"}` : ""}`
           : `${faults.length} things lost on the way to Source`,
     shown: [...faults, ...warnings],
     look,
@@ -4540,7 +4546,7 @@ const COMMANDS = {
     run: gmodPort,
     own: true,
     help: `  gmod-port <mdl> -o <folder> [--name n] [--folder smak] [--collision auto|hull|box|ragdoll|none] [--surfaceprop wood] [--mass kg]
-                              [--studiomdl <exe>] [--gmod <folder>] [--no-compile]
+                              [--kind thing|view|held|player] [--upper] [--hand-roll degrees] [--studiomdl <exe>] [--gmod <folder>] [--no-compile]
                                             a GoldSrc model ported to Garry's Mod: its bones, animations (those in <name>01.mdl
                                             too), bodygroups, skins, attachments and hit boxes as Source's compiler's files
                                             (<folder>/src: the QC and SMDs) and its textures as VTF and VMT (<folder>/addon), then
@@ -4552,7 +4558,12 @@ const COMMANDS = {
                                             ragdoll for a figure with hit boxes (pieces fitted to the body, joints that bend as its
                                             animations bend them), box, none. --surfaceprop:
                                             what it is made of (taken from a kit-built model's record, else default; flesh for a
-                                            ragdoll); --mass: kg (else its hull's volume at its surfaceprop's density; 90 a ragdoll)`,
+                                            ragdoll); --mass: kg (else its hull's volume at its surfaceprop's density; 90 a ragdoll).
+                                            --kind: view (a v_ model: no fades, activities by name, a muzzle), held (a p_ model)
+                                            and player (one under models/player/): Valve's bone names and hands, so GMod finds the
+                                            hand; a player also stands on its feet and has GMod's hand attachments. --upper: a
+                                            player's animations each copied from the spine up (<name>_upper). The sounds its events
+                                            play are copied under addon/sound/<folder>/.`,
   },
   "source-info": {
     run: sourceInfo,

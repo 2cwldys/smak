@@ -27,6 +27,41 @@ A model made for Source (PLAN.md, 6d): a spec's `"engine": "source"`, or `smak b
 - A port keeps a bone no vertex is on (`$bonemerge`): Source's compiler dropped it and then could not find it
   for a hit box (a body built on Half-Life's grunt left its toes empty).
 
+A port's blends and travel (`docs/SOURCE.md`):
+- An animation's blends ported on a pose parameter named by GoldSrc's motion (`blend_xr` for Half-Life's
+  aiming), over GoldSrc's range; four of two axes a grid two by two. `blendingOf(seq)`.
+- The compiled port held to it: each loop's travel taken out in one straight piece, as far as GoldSrc's; each
+  animation's blends and pose parameters; a view model's fades. Half-Life's 210 models pass.
+- `readSourceMdl` reads the animations and their travel, the pose parameters, a sequence's blends and fades.
+- `sequences` reads each blend's motion and range; `writeMdl` and `buildMdl` write blends (`blendFrames`).
+
+From stevenlafl's port of The Specialists to GMod, measured there:
+- A port's travel comes out as GoldSrc's: `$motionrollback 0`, so a walk's travel is extracted in one straight
+  line (Half-Life's grunt walks 112.19 and runs 172.27, as in GoldSrc), and a one-shot stays in place, as
+  GoldSrc played it (Source extracts a one-shot's travel along a curve).
+- A view model (a name that begins `v_`, or `view`) starts its animations outright (`fadein 0 fadeout 0`), and
+  collides as nothing. Its animations with no activity are given Source's by their names (`VIEW_ACTIVITIES`:
+  shoot `ACT_VM_PRIMARYATTACK`, deploy `ACT_VM_DRAW`...), as a GMod weapon's script plays them; its first
+  attachment is its `muzzle`, turned along the gun's forward.
+- The sounds a port's events play (1004, 1008, 5004) moved under `sound/<folder>/` and copied into the addon
+  from the mod's `sound/` or `valve/`'s (`soundFoldersOf`); one the game has not is said. A view model's (5004)
+  are played by client Lua written beside it (`viewSoundsLua`) and left out of the model: GMod never plays a
+  view model's own (stevenlafl's finding in their port of The Specialists). A sound at a rate Source does not
+  play (it plays 11025, 22050 and 44100 Hz only), or not 8 or 16-bit PCM, is rewritten as 16-bit at 44100
+  (`sourceWav`, their finding too).
+- A player (`--kind player`; one under `models/player/`) and a weapon held in its hand (`--kind held`, a `p_`
+  model) made a biped GMod knows (`valveBiped`): Valve's bone names, the hands turned as Valve's (measured by
+  the thumb: Half-Life's are 180 degrees from male_07's), nothing moved in any frame. A player also gets GMod's
+  `anim_attachment_RH` and `LH`, stands on its feet (its animations lifted 36) and is lit from its middle
+  (`$illumposition`); `--upper` copies each animation from the spine up (`<name>_upper`). A held one collides as
+  nothing. GMod's own player animations are not made to work on it.
+- Chrome drawn as GoldSrc draws it: where each corner is in the picture worked out by how it faces the eye
+  (R_StudioChrome), once, in the first animation's first frame, from the view's eye for a view model; no room's
+  reflection over it, which drew a view model's gloves as mirrors in GMod. A view or held model is known by its
+  file's name (`v_`, `p_`) whatever `--name` it is ported as.
+- The compiled model's `.dx80.vtx` and `.sw.vtx` left out: GMod reads only the `.dx90.vtx`, and gmad refuses a
+  `.sw.vtx`.
+
 ## 0.29.0 (2026-10-25)
 
 The Source engine, first step (PLAN.md, phase 6): a GoldSrc model ported to Garry's Mod (`docs/SOURCE.md`).

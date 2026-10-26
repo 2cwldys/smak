@@ -297,6 +297,19 @@ calibrated on Half-Life 2's own models, read from GMod's VPKs.
 - A spec's `budget` and `texture` still bind: a low-poly look stays the spec's choice.
 - Left: weapons, normal maps, more than one bone a vertex, pose parameters; and seen in GMod.
 
+**From stevenlafl's port of The Specialists to GMod (2026-10-25)**, their findings brought into the port, each
+measured on Half-Life's models:
+- travel as GoldSrc's (`$motionrollback 0`, one-shots in place), held by the check: walk1 112.19, run 172.27;
+- blends on pose parameters (`blend_xr`), held by the check;
+- view models: no fades, activities by their names, a `muzzle`, no physics; only the `.dx90.vtx`;
+- the sounds events play, copied under `sound/smak/`;
+- players and held `p_` models as Valve's biped: names, hands turned (180 degrees, by the thumb), GMod's hand
+  attachments, a player lifted onto its feet, `--upper` copies. All ten of Half-Life's players compile.
+
+Left from their work, bigger, after these: maps (GoldSrc BSP 30 rewritten as Source's BSP 20), probes in the
+game (Lua over rcon on a dedicated GMod server: PASS or FAIL from inside), the TS profile's entity keys. And of
+our own: a port's skeleton rebuilt as Valve's, so that GMod's own player animations (`m_anm.mdl`) play on it.
+
 **6e. What a port leaves behind.** Ragdolls (`$collisionjoints`), blended animations as pose parameters, bone
 controllers as pose parameters, NPC activities as Source names them, eyes and flexes.
 

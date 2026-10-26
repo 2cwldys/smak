@@ -33,7 +33,9 @@ import { into, out, box, uniq } from "./vec.mjs";
  *   sequences  [{ name, fps, loops, frames: [for each frame, for each bone, [x, y, z, about x, about y,
  *              about z]] }]; one, "idle", holding the bones at rest, unless told. Each may also say
  *              activity, actweight, movement [x, y, z] (how far the model travels in one play of it, the
- *              frames staying in place), events, and bbmin and bbmax (measured unless told): see writeMdl
+ *              frames staying in place), events, blendFrames (a blend's frames after the first, aimed down
+ *              then up) with blendtype, blendstart and blendend, and bbmin and bbmax (measured unless told):
+ *              see writeMdl
  *   smooth     faces meeting at less than this many degrees share a normal (40)
  *   ownNormals true: a corner that carries `n` (a normal of its own, in the model's space like `p`) keeps
  *              it, in place of the one worked out from the faces: see `meshOf` (false: `n` is not read)

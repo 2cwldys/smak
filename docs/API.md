@@ -23,7 +23,7 @@ Words used below: `which` is a texture's or an animation's number or its name. `
 | `bodyOf(b, body)` | For a body number, the submodel shown of each bodypart: `[index]`. The body number of submodel `k` of a bodypart is `k * base`; add one from each bodypart. |
 | `skinFamilies(b)` | `[[texture number for each skinref]]`, one list a family. A model shown with skin `n` wears family `n`. |
 | `textureOf(b, which)` | `{ name, flags, width, height, pixels, palette }`, copied out. |
-| `sequences(b)` | `[{ name, fps, frames, loops, flags, activity, actweight, movement, motiontype, speed, bbmin, bbmax, blends, group }]`. `activity`: what a monster's code asks for it as (`ACTIVITY[n]` is its name, for those known), `actweight` how often it is picked among its activity's. `movement` `[x, y, z]`: how far the model travels in one play of it (the frames stay in place); `speed`: that in units a second, `distance * fps / (frames - 1)`; `motiontype`: the `MOTION` bits (`LX` 64, `LY` 128, `LZ` 256 for the axes of the travel). `bbmin`, `bbmax`: the box about the model through the animation, which the engine culls by. `group` is not 0 for an animation kept in another file. (`move` and `motion` are `movement` and `motiontype` under their older names.) |
+| `sequences(b)` | `[{ name, fps, frames, loops, flags, activity, actweight, movement, motiontype, speed, bbmin, bbmax, blends, blendtype, blendstart, blendend, group }]`. `blends`: how many animations it blends between; `blendtype`, `blendstart`, `blendend`: for each of two axes, the `MOTION` bit the game's value turns (`XR` on Half-Life's aiming) and the values its first and last blend stand for. `activity`: what a monster's code asks for it as (`ACTIVITY[n]` is its name, for those known), `actweight` how often it is picked among its activity's. `movement` `[x, y, z]`: how far the model travels in one play of it (the frames stay in place); `speed`: that in units a second, `distance * fps / (frames - 1)`; `motiontype`: the `MOTION` bits (`LX` 64, `LY` 128, `LZ` 256 for the axes of the travel). `bbmin`, `bbmax`: the box about the model through the animation, which the engine culls by. `group` is not 0 for an animation kept in another file. (`move` and `motion` are `movement` and `motiontype` under their older names.) |
 | `sequenceAt(b, which)` | The animation's number, or -1. |
 | `readSequence(b, which, blend = 0, groups)` | What `sequences` tells, plus `index` and `frames[frame][bone] = [x, y, z, rx, ry, rz]`. |
 | `frameValues(b, seq, frame, blend = 0, groups)` | One frame of that. Throws, naming the bone, when the file's values for a bone end before that frame (a broken file). An animation kept in another file (`group` not 0) is read from `groups[group]`, that file's bytes (`sequenceFilesOf`); without it, it throws "an animation kept in another file". |
@@ -41,6 +41,7 @@ Words used below: `which` is a texture's or an animation's number or its name. `
 | Function | Gives |
 | --- | --- |
 | `restPose(b)` | Every bone's matrix with the bones at rest. |
+| `poseOfValues(values, parents)` | Every bone's matrix for a frame of six numbers a bone, each bone's parent given: `poseOf` for a skeleton that is not the file's (bones added). |
 | `poseAt(b, seq, frame, blend = 0, groups)` | The same at one frame of an animation (`seq` is a number). Throws as `frameValues` does when a bone's values end before that frame, or the animation is in a file not given. |
 | `poseBetween(b, seq, at, loop = true, groups)` | At a moment between two frames (`at` may be fractional). An animation kept in another file is read from `groups`, as `poseAt` reads it. |
 | `poseOf(b, values)` | For a frame given as numbers (`[bone][6]`), not yet in the file. |
@@ -255,7 +256,9 @@ buildMdl({
 - `eyes: [x, y, z]`: where it sees from (the header's `eyeposition`). `min`, `max` (the box it moves with) and
   `bbmin`, `bbmax` (the box it is clipped by): the header's four; each is the model's own box through its
   animations unless told (studiomdl leaves them at zero unless the QC says: pass zeros for that).
-- Without those: no hit boxes, attachments or bone controllers. One blend an animation.
+- Without those: no hit boxes, attachments or bone controllers. One blend an animation, unless it gives
+  `blendFrames` (each further blend's frames, as many as `frames`) with `blendtype`, `blendstart` and
+  `blendend`, as `sequences` reads them.
 
 ## From an .obj file (`src/obj.mjs`)
 
@@ -744,7 +747,7 @@ map's monsters come: `spawnsOf`, `spawnsTable`; its character in numbers: `chara
 
 `import { source } from "smak"`. What a port keeps, changes and leaves, and why: `docs/SOURCE.md`.
 
-- `portToGmod(file, { out, name, folder, collision, surfaceprop, mass, studiomdl, gmod, compile, picture })` →
+- `portToGmod(file, { out, name, folder, collision, surfaceprop, mass, kind, handRoll, upper, sounds, studiomdl, gmod, compile, picture })` →
   `{ passed, faults, warnings, said, qc, files, modelname, picture, physics }`: the whole port of a GoldSrc model.
   - It reads the model (its `t.mdl` and `01.mdl` files beside it), writes the files, compiles them, holds the
     compiled model to the original and draws it (`picture`, a sheet).
@@ -754,9 +757,10 @@ map's monsters come: `spawnsOf`, `spawnsTable`; its character in numbers: `chara
 - `builtToGmod(mdl, { pictures, record, out, name, ... })`: the same for a model the kit built for Source
   (`buildModelSpec` of a spec with `engine: "source"`, which returns `pictures`, its textures in full colour by name).
   `record` (`summaryOf`'s) gives its surfaceprop (`surfacepropOfRecord`).
-- `portToSource(src, { name, folder = "smak", groups, collision = "auto", surfaceprop, mass, density, densities, pictures })` → `{ name,
-  modelname, qc, files: [{ path, data }], warnings, facts }`: the compiler's files of a model, with no disk and no
-  compiler. `collision`: one of `COLLISIONS` (`auto`, `hull`, `box`, `ragdoll`, `none`); `density` (kg a cubic
+- `portToSource(src, { name, folder = "smak", groups, collision = "auto", surfaceprop, mass, density, densities, pictures, bind, kind, handRoll, upper })` → `{ name,
+  modelname, qc, files: [{ path, data }], sounds, viewSounds, warnings, facts }`: the compiler's files of a model,
+  with no disk and no compiler. `viewSounds`: a view model's sound events, `[{ sequence, name, frames, loops,
+  events: [{ frame, sound }] }]`, written as `viewSoundsLua(modelname, viewSounds)` (client Lua that plays them). `collision`: one of `COLLISIONS` (`auto`, `hull`, `box`, `ragdoll`, `none`); `density` (kg a cubic
   metre), or `densities(surfaceprop)`, weighs a hull or a box when no `mass` is given; a ragdoll weighs 90 kg.
 - `convexHull(points)` → `{ points, faces }` or null; `readPhy(bytes)` → `{ solids, mass, surfaceprops, joints,
   text }`; `readSurfaceProps(text)`, `densityOf(name, props)`, `massOf(volume, density)`, `SURFACEPROP_OF_BASE`.
@@ -770,8 +774,21 @@ map's monsters come: `spawnsOf`, `spawnsTable`; its character in numbers: `chara
   compiler's `ERROR` lines, on a failure.
 - `comparePort(facts, compiled, triangles)` → `{ passed, faults, said }`: the compiled model (`readSourceMdl`)
   and, with `triangles`, its corners held to the port's facts.
-- `readSourceMdl(bytes)` → `{ version, name, bones, sequences, materials, cdmaterials, skins, bodyparts,
-  attachments, hitboxes, eyes, hull, view }`: Source's `.mdl`, versions 44 to 49.
+- `readSourceMdl(bytes)` → `{ version, name, bones, sequences, animations, poses, materials, cdmaterials, skins,
+  bodyparts, attachments, hitboxes, eyes, hull, view }`: Source's `.mdl`, versions 44 to 49. A sequence's
+  `animations` are numbers in `animations` (its blends, row by row of its `grid`), its `params` `[{ pose,
+  start, end }]` the pose parameters it blends on, with `fadein` and `fadeout`; an animation's `movements`
+  `[{ endframe, flags, position }]` the travel taken out of its frames, piece by piece.
+- `SOUND_EVENTS` (1004, 1008, 5004): the events whose sound a port moves under its folder (`port.sounds`
+  `[{ from, to }]`); `portToGmod` copies them from `sounds` (`soundFoldersOf(file)`: the mod's `sound/`,
+  then `valve/`'s, unless told).
+- `valveBiped(skeleton, { player, handRoll })` → `{ skeleton, frame(values), point(bone, p), box(bone, min, max),
+  attachments, named, kept, rolls, warnings }`: a GoldSrc biped made Valve's (`src/source/biped.mjs`);
+  `valveBipedName(name)`; `VALVE_THUMB`, `GOLDSRC_HAND_ROLL`, `HAND_ATTACHMENTS`. `PORT_KINDS` (`kind` of
+  portToSource and portToGmod: thing, view, held, player), `PLAYER_LIFT` (36).
+- `VIEW_ACTIVITIES`, `viewActivityOf(name)`: a view model's animation's activity by its name, or null.
+- `blendingOf(seq)` → `{ count, axes: [{ pose, start, end }], left }`: a GoldSrc animation's blends as a port
+  writes them (`left`: what is not ported, as a sentence).
 - `readVvd(bytes)`, `readVtx(bytes)`, `sourceTriangles(mdl, vvd, vtx)` → `[{ bodypart, model, mesh, material,
   corners: [{ p, n, uv, bones }] }]`: its triangles at rest, in model space (LOD 0).
 - `sourceFiles({ folders, vpks })` and `gmodFiles(gmod, { more })` → `{ has, read }`: a game's files, the folders

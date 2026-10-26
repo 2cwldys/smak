@@ -167,6 +167,267 @@ test("port: a walk's travel put back into its frames and LX said; the masked tex
   sure(source.vmtOf("x", 4).startsWith('"UnlitGeneric"') && /\$additive/.test(source.vmtOf("x", 32)), "fullbright unlit, additive additive");
 });
 
+test("port: a one-shot's travel left out (in place, as GoldSrc played it), no rollback; a view model's animations start outright", () => {
+  sure(/^\$motionrollback 0$/m.test(qcText), `no rollback, so a walk's travel comes out in one straight line:\n${qcText}`);
+  sure(!/fadein/.test(qcText), "a model that is not a view model keeps Source's fades");
+  const gun = smak.buildMdl({
+    name: "v_thing.mdl",
+    bones: portBones,
+    bodyparts: [{ name: "body", models: [{ name: "gun", meshes: [{ tris: [tri(0)], texture: plain("gun.bmp") }] }] }],
+    sequences: [
+      // the gun turned a quarter about z in its first animation: its forward is the bone's -y
+      { name: "idle", fps: 10, loops: true, frames: [[[0, 0, 0, 0, 0, Math.PI / 2], [2, 0, 0, 0, 0, 0]]] },
+      { name: "lunge", fps: 10, frames: [still, still, still], movement: [30, 0, 0] },
+      { name: "shoot", fps: 10, frames: [still] },
+      { name: "shoot_empty", fps: 10, frames: [still] },
+      { name: "deploy", fps: 10, frames: [still] },
+      { name: "attack1miss", fps: 10, frames: [still] },
+      { name: "reload", fps: 10, frames: [still], activity: 3 },
+    ],
+    attachments: [{ name: "", bone: "arm", pos: [0, -5, 0] }, { name: "", bone: "arm", pos: [0, 1, 0] }],
+  });
+  const view = source.portToSource(gun, { name: "v_thing" });
+  const viewQc = view.files.find((f) => f.path === view.qc).data;
+  sure(/\$sequence "lunge" "anims\/lunge\.smd" fps 10 fadein 0 fadeout 0\n/.test(viewQc), `the one-shot with no LX, and no fades:\n${viewQc}`);
+  const lunge = view.files.find((f) => f.path === "src/anims/lunge.smd").data.split("\n");
+  sure(lunge[lunge.indexOf("time 2") + 1] === "0 0 0 0 0 0 0", `the one-shot's root in place: ${lunge[lunge.indexOf("time 2") + 1]}`);
+  sure(!/\$collision/.test(viewQc), `a view model collides as nothing: it never touches the world:\n${viewQc}`);
+  for (const [name, activity] of [["idle", "ACT_VM_IDLE"], ["shoot", "ACT_VM_PRIMARYATTACK"], ["shoot_empty", "ACT_VM_DRYFIRE"], ["deploy", "ACT_VM_DRAW"], ["attack1miss", "ACT_VM_MISSCENTER"]]) // prettier-ignore
+    sure(new RegExp(`\\$sequence "${name}" [^\\n]*activity ${activity} 1`).test(viewQc), `${name} given ${activity} by its name:\n${viewQc}`); // prettier-ignore
+  sure(/\$sequence "reload" [^\n]*activity ACT_WALK 1/.test(viewQc) && !/"lunge" [^\n]*activity/.test(viewQc), "its own activity kept; a name that fits none given none");
+  sure(view.warnings.some((w) => /activities by their names.*idle ACT_VM_IDLE, shoot ACT_VM_PRIMARYATTACK/.test(w)), `said: ${view.warnings}`); // prettier-ignore
+  sure(/\$attachment "muzzle" "arm_2" 0 -5 0 rotate 0 -90(\.\d+)? 0/.test(viewQc) && /\$attachment "attachment1" "arm_2" 0 1 0 rotate 0 0 0/.test(viewQc), `the first attachment the muzzle, along the gun's forward:\n${viewQc}`); // prettier-ignore
+  const told = source.portToSource(gun, { name: "v_thing", kind: "thing" });
+  const toldQc = told.files.find((f) => f.path === told.qc).data;
+  sure(!/fadein|muzzle|ACT_VM/.test(toldQc), "kind thing keeps the fades, names no muzzle and no activity");
+});
+
+test("port: an animation's blends on a pose parameter named by its motion, over GoldSrc's range; four of two axes a grid", () => {
+  const down = portBones.map((b) => [...b.pos, 0, -0.5, 0]);
+  const up = portBones.map((b) => [...b.pos, 0, 0.5, 0]);
+  const aiming = smak.buildMdl({
+    name: "aimer.mdl",
+    bones: portBones,
+    bodyparts: [{ name: "body", models: [{ name: "body", meshes: [{ tris: [tri(0)], texture: plain("skin.bmp") }] }] }],
+    sequences: [
+      { name: "idle", fps: 10, loops: true, frames: [still] },
+      { name: "aim", fps: 10, frames: [down, down], blendFrames: [[up, up]], blendtype: [smak.MOTION.XR, 0], blendstart: [-45, 0], blendend: [60, 0] }, // prettier-ignore
+      { name: "shoot", fps: 10, frames: [down], blendFrames: [[up]], blendtype: [smak.MOTION.XR, 0], blendstart: [-50, 0], blendend: [35, 0] }, // prettier-ignore
+      { name: "look", fps: 10, frames: [still], blendFrames: [[down], [up], [still]], blendtype: [smak.MOTION.XR, smak.MOTION.YR], blendstart: [-10, -20], blendend: [10, 20] }, // prettier-ignore
+    ],
+  });
+  const read = smak.sequences(aiming)[1];
+  sure(read.blends === 2 && read.blendtype[0] === smak.MOTION.XR && read.blendstart[0] === -45 && read.blendend[0] === 60, `the blends written and read: ${JSON.stringify(read)}`); // prettier-ignore
+  sure(Math.abs(smak.frameValues(aiming, 1, 0, 1)[0][4] - 0.5) < 0.01, "the second blend's frames, the gun up");
+  const port = source.portToSource(aiming, { name: "aimer" });
+  const qc = port.files.find((f) => f.path === port.qc).data;
+  sure(/^\$poseparameter "blend_xr" -50 60$/m.test(qc) && /^\$poseparameter "blend_yr" -20 20$/m.test(qc), `one pose parameter an axis, over every range on it:\n${qc}`); // prettier-ignore
+  sure(qc.indexOf("$poseparameter") < qc.indexOf("$sequence"), "declared before the animations");
+  sure(/\$sequence "aim" "anims\/aim\.smd" "anims\/aim_blend1\.smd" blend "blend_xr" -45 60 fps 10/.test(qc), `the aim on it:\n${qc}`); // prettier-ignore
+  sure(/\$sequence "look" "anims\/look\.smd" "anims\/look_blend1\.smd" "anims\/look_blend2\.smd" "anims\/look_blend3\.smd" blend "blend_xr" -10 10 blend "blend_yr" -20 20 blendwidth 2 fps 10/.test(qc), `two axes, two by two:\n${qc}`); // prettier-ignore
+  const up1 = port.files.find((f) => f.path === "src/anims/aim_blend1.smd").data;
+  sure(up1.includes("0 0 0 0 0 0.5 0"), `the second blend's frames written: ${up1}`);
+  sure(!port.warnings.some((w) => /blend/.test(w)), `no blend left: ${port.warnings}`);
+  sure(port.facts.blends.length === 3 && port.facts.poses.join() === "blend_xr,blend_yr", `held to the compiled model: ${JSON.stringify(port.facts.blends)}`); // prettier-ignore
+  const three = source.blendingOf({ name: "x", blends: 3, blendtype: [smak.MOTION.XR, 0], blendstart: [-1, 0], blendend: [1, 0] });
+  sure(three.count === 2 && /first 2 blends of 3/.test(three.left), `three blends: the first two, said: ${JSON.stringify(three)}`);
+  const flat = source.blendingOf({ name: "x", blends: 2, blendtype: [0, 0], blendstart: [0, 0], blendend: [0, 0] });
+  sure(flat.count === 1 && /one value/.test(flat.left) && source.blendingOf({ blends: 2, blendtype: [0, 0], blendstart: [0, 0], blendend: [1, 0] }).axes[0].pose === "blend", "a range of nothing left, a blend of no motion named blend"); // prettier-ignore
+});
+
+test("comparePort: a loop's travel in pieces, or not as far, a blend lost, a view model that fades", () => {
+  const facts = { bones: [], sequences: [], materials: [], bodygroups: [], skins: 1, attachments: [], hitboxes: 0, travels: [{ name: "walk", movement: [30, 0, 0] }], blends: [{ name: "aim", count: 2, poses: ["blend_xr"] }], poses: ["blend_xr"], view: true }; // prettier-ignore
+  const seq = (name, animations, more = {}) => ({ name, animations, blends: animations.length, params: [], fadein: 0, fadeout: 0, ...more });
+  const compiled = (walk, aim, poses, fade = 0) => ({
+    version: 48, bones: [], materials: [], bodyparts: [], skins: [[]], attachments: [], hitboxes: [], cdmaterials: [], poses, // prettier-ignore
+    sequences: [seq("walk", [0], { fadein: fade }), aim],
+    animations: [{ name: "@walk", movements: walk }, { name: "@aim", movements: [] }, { name: "@aim", movements: [] }],
+  });
+  const whole = compiled([{ position: [30, 0, 0] }], seq("aim", [1, 2], { params: [{ pose: 0, start: -45, end: 45 }] }), [{ name: "blend_xr" }]); // prettier-ignore
+  sure(source.comparePort(facts, whole).passed, `whole: ${source.comparePort(facts, whole).faults}`);
+  const bent = source.comparePort(facts, compiled([{ position: [20, 0, 0] }, { position: [10, 0, 0] }], whole.sequences[1], whole.poses)); // prettier-ignore
+  sure(/animation walk travels 30\.00 0\.00 0\.00 in 2 pieces, where GoldSrc took out 30\.00 0\.00 0\.00 in one straight line/.test(bent.faults.join("\n")), bent.faults.join("\n")); // prettier-ignore
+  const short = source.comparePort(facts, compiled([{ position: [25, 0, 0] }], whole.sequences[1], whole.poses));
+  sure(/travels 25\.00/.test(short.faults.join("\n")), short.faults.join("\n"));
+  const flat = source.comparePort(facts, compiled([{ position: [30, 0, 0] }], seq("aim", [1]), []));
+  sure(/a pose parameter lost: blend_xr/.test(flat.faults.join("\n")) && /animation aim blends 1 on nothing, where it had 2 on blend_xr/.test(flat.faults.join("\n")), flat.faults.join("\n")); // prettier-ignore
+  const fading = source.comparePort(facts, compiled([{ position: [30, 0, 0] }], whole.sequences[1], whole.poses, 0.2));
+  sure(/a view model's animations fade in or out: walk/.test(fading.faults.join("\n")), fading.faults.join("\n"));
+});
+
+test("port: the sounds events play moved under the port's folder, copied from the mod's sound/ or valve's, one not there said", () => {
+  const game = join(folder, "game");
+  const stepper = smak.buildMdl({
+    name: "stepper.mdl",
+    bones: portBones,
+    bodyparts: [{ name: "body", models: [{ name: "body", meshes: [{ tris: [tri(0)], texture: plain("skin.bmp") }] }] }],
+    sequences: [
+      { name: "walk", fps: 10, loops: true, frames: [still, still], events: [
+        { frame: 0, event: 1004, options: "common\\Step1.wav" },
+        { frame: 1, event: 5004, options: "*mod/hum.wav" },
+        { frame: 1, event: 1008, options: "!HG_ALERT" },
+        { frame: 1, event: 1004, options: "gone/away.wav" },
+        { frame: 1, event: 2001, options: "not/a/sound.wav" },
+      ] }, // prettier-ignore
+    ],
+  });
+  const port = source.portToSource(stepper, { name: "stepper", folder: "mine" });
+  const qc = port.files.find((f) => f.path === port.qc).data;
+  sure(/event 1004 0 "mine\/common\/step1\.wav"/.test(qc) && /event 5004 1 "\*mine\/mod\/hum\.wav"/.test(qc), `the sounds under mine/:\n${qc}`); // prettier-ignore
+  sure(/event 1008 1 "!HG_ALERT"/.test(qc) && /event 2001 1 "not\/a\/sound\.wav"/.test(qc), "a sentence and an event that plays no sound kept as they were");
+  sure(port.sounds.length === 3 && port.sounds[0].from === "common/Step1.wav", `the sounds listed: ${JSON.stringify(port.sounds)}`);
+  mkdirSync(join(game, "mymod", "models"), { recursive: true });
+  mkdirSync(join(game, "mymod", "sound", "mod"), { recursive: true });
+  mkdirSync(join(game, "valve", "sound", "common"), { recursive: true });
+  // valve's step as Half-Life's are, 8-bit at 22050, which Source plays as it is; the mod's hum at 48000, which it
+  // plays silently
+  const tone = (n, rate) => Float32Array.from({ length: n }, (_, i) => 0.5 * Math.sin((2 * Math.PI * 440 * i) / rate));
+  const step = smak.audio.writeWav(tone(2205, 22050), { rate: 22050, bits: 8 });
+  // (writeWav writes no rate the engines refuse: one written at 44100, its header said 48000)
+  const humming = smak.audio.writeWav(tone(4800, 48000), { rate: 44100 });
+  humming.writeUInt32LE(48000, 24);
+  humming.writeUInt32LE(48000 * 2, 28);
+  writeFileSync(join(game, "mymod", "sound", "mod", "hum.wav"), humming);
+  writeFileSync(join(game, "valve", "sound", "common", "Step1.wav"), step);
+  const file = join(game, "mymod", "models", "stepper.mdl");
+  writeFileSync(file, stepper);
+  sure(source.soundFoldersOf(file).length === 2, `the mod's sounds, then valve's: ${source.soundFoldersOf(file)}`);
+  const out = join(folder, "stepper");
+  const result = source.portToGmod(file, { out, folder: "mine", compile: false });
+  sure(readFileSync(join(out, "addon", "sound", "mine", "common", "step1.wav")).equals(step), "valve's step copied as it was, its name in lower case");
+  const hum = smak.audio.readWav(readFileSync(join(out, "addon", "sound", "mine", "mod", "hum.wav")));
+  sure(hum.rate === 44100 && hum.bits === 16 && Math.abs(hum.samples - 4410) <= 1, `the mod's own at 48000 rewritten at 44100, as long: ${hum.rate} Hz, ${hum.samples}`); // prettier-ignore
+  sure(result.warnings.some((w) => /Source would not play as it was .*: mod\/hum\.wav \(48000 Hz 16-bit\)/.test(w)), `the rewritten one said: ${result.warnings.join("\n")}`); // prettier-ignore
+  sure(source.sourceWav(Buffer.from("RIFF junk")).unread && !source.sourceWav(step).bytes, "one not a WAVE file left as it is; one Source plays, too");
+  sure(result.sounds.length === 2 && result.warnings.some((w) => /a sound its events play not found in .*: gone\/away\.wav/.test(w)), `the one not there said: ${result.warnings.join("\n")}`); // prettier-ignore
+});
+
+// ── a biped as Half-Life's players are: its hand turned half round from Valve's, by where its thumb stands ──
+const bipedBones = [
+  { name: "Bip01", parent: -1, pos: [0, 0, 3], rot: [0, 0, 0] },
+  { name: "Bip01 Spine", parent: 0, pos: [0, 0, 4], rot: [0, 0, 0] },
+  { name: "Bip01 R Arm1", parent: 1, pos: [0, -6, 20], rot: [0, 0, -1.2] },
+  { name: "Bip01 R Hand", parent: 2, pos: [10, 0, 0], rot: [0.4, 0.1, 0.2] },
+  { name: "Bip01 R Finger0", parent: 3, pos: [1.53, 0.11, 1.66], rot: [0.3, 0, 0.5] },
+  { name: "Bip01 L Leg1", parent: 0, pos: [0, 4, -20], rot: [0, 0, 0] },
+  { name: "Dummy01", parent: 1, pos: [0, 0, 10], rot: [0, 0, 0] },
+];
+
+test("valveBiped: Half-Life's biped names made Valve's, a hand turned by its thumb and nothing moved", () => {
+  const names = [["Bip01", "ValveBiped.Bip01"], ["Bip01 Pelvis", "ValveBiped.Bip01_Pelvis"], ["Bip01 L Arm", "ValveBiped.Bip01_L_Clavicle"], ["Bip01 R Arm1", "ValveBiped.Bip01_R_UpperArm"], ["Bip01 R Arm2", "ValveBiped.Bip01_R_Forearm"], ["Bip01 L Leg", "ValveBiped.Bip01_L_Thigh"], ["Bip01 L Leg1", "ValveBiped.Bip01_L_Calf"], ["Bip01 Spine3", "ValveBiped.Bip01_Spine4"], ["Bip01 Neck", "ValveBiped.Bip01_Neck1"], ["Bip01 Head", "ValveBiped.Bip01_Head1"], ["Bip01 R Finger01", "ValveBiped.Bip01_R_Finger01"], ["Bip01 L UpperArm", "ValveBiped.Bip01_L_UpperArm"]]; // prettier-ignore
+  for (const [goldsrc, valve] of names) sure(source.valveBipedName(goldsrc) === valve, `${goldsrc}: ${source.valveBipedName(goldsrc)}`);
+  sure(source.valveBipedName("Dummy01") === null && source.valveBipedName("Bip01 R") === null, "a bone of no biped's: none");
+  const rig = source.valveBiped(bipedBones, { player: true });
+  sure(rig.rolls.length === 1 && rig.rolls[0].degrees === 180 && rig.rolls[0].measured, `the hand turned half round, measured: ${JSON.stringify(rig.rolls)}`); // prettier-ignore
+  sure(rig.kept.join() === "Dummy01" && rig.named.length === 6, `renamed: ${rig.named}; kept: ${rig.kept}`);
+  const thumb = rig.skeleton[4];
+  near((Math.atan2(thumb.pos[2], thumb.pos[1]) * 180) / Math.PI, -93.8, 0.1, "the thumb where Valve's stands, near -105");
+  sure(rig.skeleton.at(-1).name === "ValveBiped.Anim_Attachment_RH" && rig.skeleton.at(-1).parent === 3 && rig.attachments[0].name === "anim_attachment_RH", "the hand's attachment bone and attachment"); // prettier-ignore
+  // every bone where it was, every frame: only the hand's own axes turned, about its x
+  const values = bipedBones.map((b) => [...b.pos, ...b.rot]);
+  const was = smak.poseOfValues(values, bipedBones.map((b) => b.parent));
+  const now = smak.poseOfValues(rig.frame(values), rig.skeleton.map((b) => b.parent));
+  for (let bone = 0; bone < bipedBones.length; bone++)
+    for (let row = 0; row < 3; row++)
+      for (let column = 0; column < 4; column++)
+        if (bone !== 3 || column === 0 || column === 3) near(now[bone][row][column], was[bone][row][column], 1e-9, `bone ${bone} [${row}][${column}]`); // prettier-ignore
+  near(now[3][0][1], -was[3][0][1], 1e-9, "the hand's y turned half round");
+  const p = rig.point(3, [1, 2, 3]);
+  near(p[1], -2, 1e-9, "a place in the hand's space turned with it");
+  near(p[2], -3, 1e-9, "and its z");
+  sure(rig.point(2, [1, 2, 3])[1] === 2, "a place in another bone's space as it was");
+  const box = rig.box(3, [0, -1, 0], [2, 1, 3]);
+  near(box.min[2], -3, 1e-9, "a box on the hand, its z turned");
+  near(box.max[2], 0, 1e-9, "and its top");
+  const held = source.valveBiped(bipedBones.filter((b) => b.name !== "Bip01 R Finger0" && b.name !== "Dummy01"));
+  sure(held.rolls[0].degrees === 180 && !held.rolls[0].measured && /no thumb/.test(held.warnings[0]) && !held.attachments.length, `a held model: Half-Life's turn, said, no attachments: ${held.warnings}`); // prettier-ignore
+  sure(source.valveBiped(bipedBones, { handRoll: 0 }).rolls.length === 0, "handRoll 0: the hands left as they are");
+});
+
+test("port: a player made Valve's biped, standing on its feet, lit from its middle, with copies from the spine up; a held one collides as nothing", () => {
+  const values = bipedBones.map((b) => [...b.pos, ...b.rot]);
+  const playerMdl = smak.buildMdl({
+    name: "hero.mdl",
+    bones: bipedBones,
+    bodyparts: [{ name: "body", models: [{ name: "body", meshes: [{ tris: [tri(0, "Bip01"), tri(2, "Bip01 R Hand"), tri(4, "Bip01 Spine")], texture: plain("suit.bmp") }] }] }], // prettier-ignore
+    sequences: [
+      { name: "idle", fps: 10, loops: true, frames: [values, values], activity: 1 },
+      { name: "walk", fps: 10, loops: true, frames: [values, values], activity: 3, movement: [20, 0, 0] },
+    ],
+    hitboxes: [{ bone: "Bip01 R Hand", group: 0, min: [0, -1, 0], max: [2, 1, 3] }],
+    attachments: [{ name: "", bone: "Bip01 R Hand", pos: [1, 2, 3] }],
+    eyes: [0, 0, 28],
+  });
+  const port = source.portToSource(playerMdl, { name: "hero", kind: "player", upper: true });
+  const qc = port.files.find((f) => f.path === port.qc).data;
+  sure(/\$hbox 0 "ValveBiped\.Bip01_R_Hand" 0 -1 -3 2 1 0/.test(qc), `the hand's hit box turned with it:\n${qc}`);
+  sure(/\$attachment "attachment0" "ValveBiped\.Bip01_R_Hand" 1 -2 -3 rotate 0 0 0/.test(qc) && /\$attachment "anim_attachment_RH" "ValveBiped\.Anim_Attachment_RH" 0 0 0/.test(qc), "its attachment turned, GMod's added"); // prettier-ignore
+  sure(/^\$illumposition 0 0 36$/m.test(qc) && /^\$eyeposition 0 0 64$/m.test(qc), `lit from its middle, its eyes lifted:\n${qc}`);
+  const walk = port.files.find((f) => f.path === "src/anims/walk.smd").data.split("\n");
+  sure(walk[walk.indexOf("time 0") + 1] === "0 0 0 39 0 0 0", `its root lifted 36 onto its feet: ${walk[walk.indexOf("time 0") + 1]}`);
+  const reference = port.files.find((f) => f.path === "src/body.smd").data.split("\n");
+  sure(reference[reference.indexOf("time 0") + 1] === "0 0 0 3 0 0 0", "the reference not lifted: the triangles stay where the original has them");
+  sure(/\$weightlist "upper" \{\n\t"ValveBiped\.Bip01" 0\n\t"ValveBiped\.Bip01_Spine" 1\n\t"ValveBiped\.Bip01_R_UpperArm" 1/.test(qc) && /"ValveBiped\.Bip01_L_Calf" 0/.test(qc) && /"ValveBiped\.Anim_Attachment_RH" 1/.test(qc), `the weights from the spine up:\n${qc}`); // prettier-ignore
+  sure(/\$sequence "walk_upper" "anims\/walk\.smd" fps 10 loop weightlist "upper"\n/.test(qc) && qc.indexOf('"walk_upper"') > qc.indexOf('$sequence "walk"'), `the copy after the animations, with no activity or travel:\n${qc}`); // prettier-ignore
+  sure(port.facts.sequences.includes("idle_upper") && port.facts.kind === "player", "held to the compiled model");
+  const heldPort = source.portToSource(playerMdl, { name: "p_gun" });
+  const heldQc = heldPort.files.find((f) => f.path === heldPort.qc).data;
+  sure(/ValveBiped\.Bip01_R_Hand/.test(heldQc) && !/\$collision|illumposition|anim_attachment_RH|_upper/.test(heldQc), `a held one: Valve's names, nothing to collide, no lift:\n${heldQc}`); // prettier-ignore
+  sure(/^\$eyeposition 0 0 28$/m.test(heldQc), "and its eyes as they were");
+});
+
+test("port: a view model's sound events played by Lua beside it, not left in the model, which GMod never plays them from", () => {
+  const clip = (name, loops) => ({ name, fps: 10, loops, frames: [still, still, still], events: [{ frame: 1, event: 5004, options: "*items\\ClipIn.wav" }, { frame: 2, event: 5001, options: "20" }] }); // prettier-ignore
+  const gun = smak.buildMdl({
+    name: "v_gun.mdl",
+    bones: portBones,
+    bodyparts: [{ name: "body", models: [{ name: "body", meshes: [{ tris: [tri(0)], texture: plain("skin.bmp") }] }] }],
+    sequences: [{ name: "idle", fps: 10, loops: true, frames: [still] }, clip("reload", false), clip("spin", true)],
+  });
+  const port = source.portToSource(gun, { name: "v_gun" });
+  const qc = port.files.find((f) => f.path === port.qc).data;
+  sure(!/event 5004/.test(qc) && /event 5001 2 "20"/.test(qc), `the clip's sound left out of the model, the muzzle's kept:\n${qc}`);
+  const lua = port.files.find((f) => f.path === "addon/lua/autorun/client/smak_sounds_smak_v_gun.lua")?.data ?? "";
+  sure(lua.includes('SMAK_VIEW_SOUNDS["models/smak/v_gun.mdl"]'), `the Lua, by the model's name as GetModel says it:\n${lua}`);
+  sure(lua.includes('[1] = { frames = 3, loops = false, { 1, "smak/items/clipin.wav" } }, -- reload') && lua.includes("[2] = { frames = 3, loops = true,"), `each by its compiled number, frames and loop, its sound under the port's folder:\n${lua}`); // prettier-ignore
+  sure(/hook\.Add\("Think", "smak_view_sounds"/.test(lua) && /if SMAK_VIEW_SOUNDS_HOOKED then return end/.test(lua), "one hook for every model's");
+  sure(port.sounds.length === 1 && port.sounds[0].to === "smak/items/clipin.wav" && port.viewSounds.length === 2, `the sound still copied: ${JSON.stringify(port.sounds)}`); // prettier-ignore
+  sure(port.warnings.some((w) => /reload 1, spin 1\) played by Lua/.test(w)), port.warnings.join("\n"));
+  const thing = source.portToSource(gun, { name: "gun" });
+  sure(/event 5004 1 "\*smak\/items\/clipin\.wav"/.test(thing.files.find((f) => f.path === thing.qc).data) && !thing.viewSounds.length, "a model not a view model keeps its own"); // prettier-ignore
+});
+
+test("port: chrome where GoldSrc draws it, by how each corner faces the eye (R_StudioChrome), with no room's reflection", () => {
+  const shiny = { name: "shiny.bmp", width: 64, height: 64, pixels: new Uint8Array(64 * 64).fill(1), palette: new Uint8Array(768).fill(90), flags: 2 }; // prettier-ignore
+  // a face to the eye, one up, one aslant, on a bone ahead of the eye
+  const faces = [
+    [{ p: [10, 0, 0], uv: [0, 0] }, { p: [10, 1, 0], uv: [1, 0] }, { p: [10, 0, 1], uv: [0, 1] }],
+    [{ p: [12, 0, 0], uv: [0, 0] }, { p: [13, 0, 0], uv: [1, 0] }, { p: [12, 1, 0], uv: [0, 1] }],
+    [{ p: [14, 0, 0], uv: [0, 0] }, { p: [15, 1, 0], uv: [1, 0] }, { p: [14, 0.5, 1], uv: [0, 1] }],
+  ].map((t) => t.map((c) => ({ ...c, bone: "Gun" })));
+  const shinyMdl = (name) =>
+    smak.buildMdl({
+      name,
+      bones: [{ name: "Gun", parent: -1, pos: [10, 0, 0] }],
+      bodyparts: [{ name: "body", models: [{ name: "body", meshes: [{ tris: faces, texture: shiny }] }] }],
+      sequences: [{ name: "idle", fps: 10, loops: true, frames: [[[10, 0, 0, 0, 0, 0]]] }],
+    });
+  // each corner's u v against its normal: the eye's up is -z seen from it, its right +y for a view model (looking
+  // along x from the origin) and -y for anything else (seen from in front, looking back)
+  for (const [name, side] of [["v_shiny", 1], ["shiny", -1]]) {
+    const port = source.portToSource(shinyMdl(`${name}.mdl`), { name });
+    const corners = port.files.find((f) => f.path === "src/body.smd").data.split("\n").map((l) => l.trim().split(/\s+/).map(Number)).filter((l) => l.length === 9); // prettier-ignore
+    sure(corners.length === 9, `${name}: nine corners: ${corners.length}`);
+    for (const [, , , , , ny, nz, u, v] of corners) {
+      near(u, (1 + side * ny) / 2, 1e-6, `${name}: u by the normal across the eye`);
+      near(v, (1 + nz) / 2, 1e-6, `${name}: v by the normal up`);
+    }
+    sure(corners.slice(0, 3).every(([, , , , , , , u, v]) => Math.abs(u - 0.5) < 1e-6 && Math.abs(v - 0.5) < 1e-6), `${name}: the face to the eye in the picture's middle`); // prettier-ignore
+    const vmt = port.files.find((f) => f.path.endsWith("shiny.vmt")).data;
+    sure(!/envmap/.test(vmt), `${name}: no room's reflection:\n${vmt}`);
+  }
+});
+
 test("port: a box when asked, weighed by Source unless a density or a mass is given", () => {
   sure(!/\$collision/.test(qcText), "a skeleton of one hit box: too few for a ragdoll, none");
   sure(/too few bones with hit boxes for a ragdoll/.test(ported.warnings.join("\n")), "and said");

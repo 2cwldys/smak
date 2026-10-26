@@ -19,9 +19,31 @@
 // - each skin family as a row of the $texturegroup, so a skin number means what it meant;
 // - the attachments, the hit boxes and their groups, the eyes and the boxes;
 // - an animation's fps, looping, activity and weight, and its events by their numbers;
-// - an animation's travel. GoldSrc's compiler took it out of the frames of a sequence marked LX (LY, LZ) and kept
-//   it as its linearmovement: it is put back into the root bones' frames, and Source's compiler, told LX in
-//   its turn, takes it out again.
+// - a looping animation's travel. GoldSrc's compiler took it out of the frames of a sequence marked LX (LY, LZ)
+//   and kept it as its linearmovement: it is put back into the root bones' frames, and Source's compiler, told LX
+//   in its turn and with no rollback ($motionrollback 0), takes it out again in the same straight line. A one-shot
+//   stays in place, as GoldSrc played it: Source takes a one-shot's travel out along a curve (a jump straight
+//   ahead lurched back), stevenlafl's finding in The Specialists' port;
+// - an animation's blends (Half-Life's aiming up and down), each axis on a pose parameter named by the motion it
+//   was (blend_xr, a pitch; blend where it names none), over the values GoldSrc gave its first and last blend;
+// - the sound an event plays (1004, 1008, 5004: a step, a voice, a gun's clip) moved under the port's folder,
+//   sound/<folder>/<its path>, clear of GMod's own sounds of that name (Half-Life 2's weapons/ and common/);
+//   `sounds` lists them, for portToGmod to copy from the game. A view model's (5004, its clip) are not left
+//   in the model: GMod never plays a view model's own sound events (stevenlafl's finding, porting The
+//   Specialists, whose reloads were silent). They are written as Lua beside it instead
+//   (addon/lua/autorun/client/, viewSoundsLua), which plays each as the view model's animation passes its
+//   frame, for the holder alone, as GoldSrc's client did;
+// - a view model's animations start outright (fadein 0 fadeout 0), as GoldSrc's did: Source fades a new one in
+//   over 0.2 s, which swallows a gun's short kick. Those with no activity are given Source's by their names
+//   (VIEW_ACTIVITIES: idle ACT_VM_IDLE, shoot ACT_VM_PRIMARYATTACK...), which a GMod weapon's script plays them by;
+//   its first attachment, unnamed, is its `muzzle`, turned along the gun's forward in its first animation (a
+//   Source attachment points along its x, where GMod's muzzle flash goes; GoldSrc's have no turn);
+// - a player, and a weapon held in a player's hand (a p_ model), made a biped GMod knows (biped.mjs): Valve's bone
+//   names, the hands turned as Valve's are. A player also gets the bones and attachments GMod looks for on its
+//   hands, and stands on its feet: GoldSrc's player stands about its middle, 36 above its feet (PLAYER_LIFT), and
+//   Source's on its feet, so its animations are lifted and it is lit from its middle ($illumposition). With
+//   `upper`, each animation has a copy that moves the body from the spine up (<name>_upper), for laying over a
+//   walk.
 //
 // WHAT CHANGES, AND WHY:
 // - the meshes are written in the model's space (GoldSrc keeps them in their bone's), the corners of each
@@ -31,12 +53,15 @@
 //   when it compiled the original. What is written here is the original as it was compiled, already turned;
 // - a texture is a picture of a power of two each way (resampled up: GoldSrc's may be 96 by 83), mip-mapped;
 // - a texture's flags become its material's: masked (64) alpha-tested with its last colour a hole, additive
-//   (32) additive, fullbright (4) UnlitGeneric; chrome (2) has no like in Source, and is a picture with the
-//   room's reflection over it ($envmap), warned of.
+//   (32) additive, fullbright (4) UnlitGeneric. Chrome (2) has no like in Source: GoldSrc never draws a chrome
+//   texture by the file's s and t, but by how each corner's surface faces the eye, worked out again each frame
+//   (R_StudioChrome). It is worked out once, in the first animation's first frame, from where the eye is: for a
+//   view model where it always is (the model's origin, looking along x), for anything else in front of it.
 //
 // WHAT IS LEFT BEHIND, each said in a warning: bone controllers (Source turns a head by pose parameters), an
 // animation's blends after its first (Source blends by pose parameters), an activity whose name this kit does not
-// know, an animation kept in a file that is not given.
+// know, an animation kept in a file that is not given, the blends of an animation of more than two that are not
+// two axes of two.
 
 import {
   readMdl,
@@ -46,6 +71,7 @@ import {
   poseAt,
   frameValues,
   apply34,
+  poseOfValues,
   sequences as sequencesOf,
   readSequence,
   events as eventsOf,
@@ -59,8 +85,9 @@ import {
   MOTION,
 } from "../mdl.mjs";
 import { rgbaOf } from "../image.mjs";
-import { cross, sub as sub3 } from "../vec.mjs";
+import { cross, dot, unit, sub as sub3 } from "../vec.mjs";
 import { smdOf } from "./smd.mjs";
+import { valveBiped } from "./biped.mjs";
 import { convexHull } from "./hull.mjs";
 import { massOf } from "./surfaceprops.mjs";
 import { writeVtf } from "./vtf.mjs";
@@ -75,6 +102,9 @@ const TRAVEL = [
   ["LY", MOTION.LY],
   ["LZ", MOTION.LZ],
 ];
+/** Where the eye is when GoldSrc draws chrome, and its right: a view model's at its origin looking along x (the
+ * view's own), anything else's far in front of it, looking back. */
+const CHROME_EYE = { view: { eye: [0, 0, 0], right: [0, -1, 0] }, other: { eye: [1e5, 0, 0], right: [0, 1, 0] } };
 /** A triangle whose sides' cross product is shorter than this (twice its area, in square units) has none. */
 const NO_AREA = 1e-6;
 /** The folder under models/ (and materials/models/) a port goes in, unless told. */
@@ -109,6 +139,20 @@ function uniqueNames(names) {
 
 /** A rotation only (a matrix's first three columns) applied to a direction. */
 const turn34 = (m, v) => m.map((row) => row[0] * v[0] + row[1] * v[1] + row[2] * v[2]);
+/**
+ * Where GoldSrc draws a corner of a chrome texture in its picture, in pixels as the file's s and t are
+ * (R_StudioChrome): a bone's up and right as the eye sees it from where the bone is, and the corner's normal along
+ * each, from -1 to 1, made 0 to 64.
+ */
+function chromeAt(pose, bone, n, { eye, right }) {
+  const m = pose[bone];
+  // from the eye to the bone, as the SDK has it (tmp): up is it across the eye's right, right it across up
+  const fromEye = unit(sub3([m[0][3], m[1][3], m[2][3]], eye));
+  const up = unit(cross(fromEye, right));
+  const side = unit(cross(fromEye, up));
+  const normal = turn34(m, n);
+  return [(dot(normal, side) + 1) * 32, (dot(normal, up) + 1) * 32];
+}
 /** A number as the QC writes it. */
 const num = (v) => {
   const text = (Math.abs(v) < 5e-7 ? 0 : v).toFixed(6).replace(/\.?0+$/, "");
@@ -127,7 +171,6 @@ export function vmtOf(path, flags = 0) {
   const keys = [["$basetexture", path]];
   if (flags & NF.masked) keys.push(["$alphatest", "1"], ["$alphatestreference", "0.5"]);
   if (flags & NF.additive) keys.push(["$additive", "1"]);
-  if (flags & NF.chrome) keys.push(["$envmap", "env_cubemap"], ["$envmaptint", "[0.5 0.5 0.5]"]);
   return `${quote(shader)}\n{\n${keys.map(([key, value]) => `\t${quote(key)} ${quote(value)}`).join("\n")}\n}\n`;
 }
 
@@ -144,25 +187,36 @@ export function vmtOf(path, flags = 0) {
  *                         that have none, joined by joints that bend as far as its animations bend them
  *                         (jointTurns): a figure that falls as a body ($collisionjoints)
  *              "none"     nothing
- *              "auto"     a hull for a model of one bone, a ragdoll for one with a skeleton and hit boxes, else none
+ *              "auto"     a hull for a model of one bone, a ragdoll for one with a skeleton and hit boxes, else none;
+ *                         none for a view model, which is drawn in front of the eyes and never touches the world
  *   surfaceprop: what it is made of to Source (its sounds, its weight a volume, how it breaks): "wood", "metal",
  *              "flesh"... ("flesh" for a ragdoll, "default" else, unless told)
  *   pictures:  Map(texture name -> { width, height, rgba }): the textures in full colour, for a model the kit built
  *              for Source (buildModelSpec's `pictures`); the file's own 256 colours otherwise
+ *   kind:      what the model is to GMod (PORT_KINDS): "view" a view model, whose animations start outright
+ *              (fadein 0 fadeout 0) and are given activities by their names; "held" a weapon in a player's hand
+ *              (a p_ model), "player" a player model, each made a biped GMod knows (valveBiped); "thing" else.
+ *              A name that begins v_ is a view model, p_ a held one, unless told
+ *   handRoll:  a biped's hands' turn about their x from Valve's, in degrees, when not to be measured by its thumbs
+ *   upper:     a player's animations each copied as <name>_upper, from its spine up
  *   bind:      { seq, frame }: bound in that frame's pose, not in the bones' rest (a body the kit built on a game's
  *              skeleton was made in its first animation's first frame; the game's own were modelled at rest)
  *   mass:      its mass in kilograms; unless told, its collision model's volume at `density` (kg a cubic metre), or
  *              at `densities(surfaceprop)` (densityOf with GMod's table), or without either Source's $automass,
  *              which weighs it as "default". A ragdoll weighs a person's RAGDOLL_MASS unless told
  * Returns { name, modelname, qc (its path in files), files: [{ path, data }] (paths under the out folder),
- * warnings: [sentence], facts: { bones, sequences, materials, bodygroups, skins, attachments, hitboxes, corners } }
+ * sounds: [{ from (the path the event named, under the game's sound/), to (under Source's sound/) }], warnings: [sentence], facts: { bones, sequences, materials, bodygroups, skins, attachments, hitboxes, corners } }
  * (what the compiled model must have again: comparePort).
  */
-export function portToSource(src, { name, folder = PORT_FOLDER, groups, collision = "auto", surfaceprop, mass, density, densities, pictures, bind } = {}) {
+export function portToSource(src, { name, folder = PORT_FOLDER, groups, collision = "auto", surfaceprop, mass, density, densities, pictures, bind, kind, handRoll, upper = false } = {}) {
   if (!COLLISIONS.includes(collision)) throw new Error(`portToSource: collision is ${COLLISIONS.join(", ")}, not ${collision}`);
   if (mass !== undefined && !(mass > 0)) throw new Error(`portToSource: mass is kilograms more than 0, not ${mass}`);
   if (!name) throw new Error("portToSource: the model's name in Source (name)");
   const model = sourceName(name);
+  const madeAs = kind ?? (/^v_/.test(model) ? "view" : /^p_/.test(model) ? "held" : "thing");
+  if (!PORT_KINDS.includes(madeAs)) throw new Error(`portToSource: kind is ${PORT_KINDS.join(", ")}, not ${kind}`);
+  const viewModel = madeAs === "view";
+  const player = madeAs === "player";
   const where = sourceName(folder);
   const info = readMdl(src);
   const warnings = [];
@@ -176,12 +230,32 @@ export function portToSource(src, { name, folder = PORT_FOLDER, groups, collisio
   if (unnamed.length)
     warnings.push(`${unnamed.length === 1 ? "a bone" : `${unnamed.length} bones`} with no name, named ${unnamed.length === 1 ? boneNames[unnamed[0]] : `${boneNames[unnamed[0]]} to ${boneNames[unnamed.at(-1)]}`} (Source's compiler cannot read a bone with no name)`); // prettier-ignore
   if (twice.length) warnings.push(`bones of a name another has (in any case, as Source tells them) renamed: ${twice.join(", ")}`);
-  const skeleton = original.map((bone, i) => ({ ...bone, name: boneNames[i] }));
+  const named = original.map((bone, i) => ({ ...bone, name: boneNames[i] }));
+  // a player, or a weapon in its hand, made Valve's biped: its names, its hands turned, a player's hands' bones
+  const rig = player || madeAs === "held" ? valveBiped(named, { player, handRoll }) : null;
+  if (rig) {
+    warnings.push(...rig.warnings);
+    if (rig.named.length)
+      warnings.push(`${rig.named.length} bones given GMod's names (${named.find((b) => b.name === rig.named[0]).name} as ${rig.skeleton[named.findIndex((b) => b.name === rig.named[0])].name}...), as GMod finds a biped's${rig.kept.length ? `; ${rig.kept.length} kept theirs (${rig.kept.slice(0, 4).join(", ")}${rig.kept.length > 4 ? "..." : ""})` : ""}`); // prettier-ignore
+    else warnings.push("no bone of a biped's (Bip01, Bip01 Pelvis...): its bones keep their names, and GMod finds no hand on it");
+    for (const roll of rig.rolls.filter((r) => r.measured || handRoll !== undefined))
+      warnings.push(`the ${roll.side === "R" ? "right" : "left"} hand turned ${roll.degrees} degrees about its x, as Valve's hands are${roll.measured ? " (by where its thumb stands)" : ""}: a gun GMod merges onto it sits as on a Half-Life 2 figure`); // prettier-ignore
+    if (player && rig.attachments.length) warnings.push(`${rig.attachments.map((a) => a.name).join(" and ")} added on the hands, where GMod puts a held thing and the flashlight`); // prettier-ignore
+  }
+  const skeleton = rig ? rig.skeleton : named;
+  // a frame's six numbers a bone, as Source is to have them
+  const reframe = rig ? rig.frame : (values) => values;
+  // a player stands on its feet in Source, about its middle in GoldSrc: its animations are lifted
+  const lift = player ? PLAYER_LIFT : 0;
   // the pose it is bound in, which Source draws it in at rest and a ragdoll falls from: the bones' own rest, or
   // (`bind`) a frame of an animation, the stance a body the kit built was made in
   const rest = bind ? poseAt(src, bind.seq, bind.frame) : restPose(src);
   const smdBones = skeleton.map(({ name: bone, parent }) => ({ name: bone, parent }));
-  const restFrame = bind ? frameValues(src, bind.seq, bind.frame) : skeleton.map(({ pos, rot }) => [...pos, ...rot]);
+  const restFrame = reframe(bind ? frameValues(src, bind.seq, bind.frame) : named.map(({ pos, rot }) => [...pos, ...rot]));
+  // the bones' matrices in that pose as Source is to have them (a biped's hands turned): what the ragdoll is
+  // fitted and jointed on. The triangles are placed by `rest`, the file's own, in the model's space, where the turn
+  // moves nothing
+  const bound = rig ? poseOfValues(restFrame, skeleton.map((bone) => bone.parent)) : rest;
 
   // ── materials: one for each texture, named as Source wants its files ──
   const materialNames = uniqueNames(info.textures.map((t) => sourceName(t.name)));
@@ -197,7 +271,10 @@ export function portToSource(src, { name, folder = PORT_FOLDER, groups, collisio
   });
   const chrome = info.textures.filter((t) => t.flags & NF.chrome).map((t) => t.name);
   if (chrome.length)
-    warnings.push(`${chrome.join(", ")}: chrome in GoldSrc (the picture turned with the view), which Source has no like of: written as the picture with the room's reflection over it ($envmap env_cubemap)`); // prettier-ignore
+    warnings.push(`${chrome.join(", ")}: chrome in GoldSrc (where the picture is drawn worked out by the eye each frame), which Source has no like of: worked out once, in the first animation's first frame, ${viewModel ? "from the view's eye, where a view model's always is" : "seen from in front"}`); // prettier-ignore
+  // the pose chrome is worked out in: the first animation's first frame, which a view model idles in
+  const seen = chrome.length ? (sequencesOf(src).length ? poseAt(src, 0, 0) : rest) : null;
+  const chromeEye = viewModel ? CHROME_EYE.view : CHROME_EYE.other;
 
   // ── the submodels: each one SMD, in the model's space, its triangles counter-clockwise ──
   const families = skinFamilies(src);
@@ -228,7 +305,9 @@ export function portToSource(src, { name, folder = PORT_FOLDER, groups, collisio
             continue;
           }
           bodyTriangles.push(tri.map(({ bone }, k) => ({ bone, p: at[k] })));
-          const corners = tri.map(({ p, n, bone, s, t }) => {
+          const chromed = info.textures[texture].flags & NF.chrome;
+          const corners = tri.map(({ p, n, bone, s: fileS, t: fileT }) => {
+            const [s, t] = chromed ? chromeAt(seen, bone, n, chromeEye) : [fileS, fileT];
             const at = apply34(rest[bone], p);
             at.forEach((v, axis) => {
               bodyBox[0][axis] = Math.min(bodyBox[0][axis], v);
@@ -268,29 +347,70 @@ export function portToSource(src, { name, folder = PORT_FOLDER, groups, collisio
   const roots = skeleton.map((bone, i) => (bone.parent < 0 ? i : -1)).filter((i) => i >= 0);
   const sequenceLines = [];
   const portedSequences = [];
+  // a view model's animations given an activity by their names, said once
+  const activitiesNamed = [];
+  // the sounds the events play, by the path they named
+  const sounds = new Map();
+  const soundOf = (options) => {
+    const named = options.trim().replace(/\\/g, "/").match(SOUND_FILE);
+    if (!named) return options;
+    const to = `${where}/${named[2].toLowerCase()}`;
+    if (!sounds.has(named[2])) sounds.set(named[2], to);
+    return `${named[1]}${to}`;
+  };
+  // a view model's sound events, by the compiled animation's number: played by the Lua written beside it
+  const viewSounds = [];
+  // what the compiled model must have again of its animations: each loop's travel, each one's blends
+  const travels = [];
+  const blendFacts = [];
+  // each pose parameter's range: the values of every animation that blends on it
+  const poseRanges = new Map();
   // every frame of every animation, as read: how far a ragdoll's joints bend is measured on them
   const allFrames = [];
+  // a player's copies from its spine up, after its own animations (game code plays those by number)
+  const spine = skeleton.findIndex((bone) => bone.name === "ValveBiped.Bip01_Spine");
+  const upperBody = upper && player && spine >= 0;
+  if (upper && !upperBody) warnings.push("upper: only a player with Valve's spine (ValveBiped.Bip01_Spine) has copies from the spine up; none made"); // prettier-ignore
+  const upperLines = [];
   list.forEach((seq, i) => {
-    let read;
+    const blending = blendingOf(seq);
+    if (blending.left) warnings.push(`animation ${seq.name}: ${blending.left}`);
+    let reads;
     try {
-      read = readSequence(src, i, 0, groups);
+      reads = Array.from({ length: blending.count }, (_, blend) => readSequence(src, i, blend, groups));
     } catch (error) {
       warnings.push(`animation ${seq.name}: not ported (${error.message}; give the files of animations beside the model)`); // prettier-ignore
       return;
     }
-    allFrames.push(...read.frames);
-    const axes = TRAVEL.filter(([, bit]) => seq.motiontype & bit);
+    for (const blend of reads) blend.frames = blend.frames.map(reframe);
+    const read = reads[0];
+    for (const blend of reads) allFrames.push(...blend.frames);
+    // a loop's travel only: Source takes a one-shot's out along a curve, not GoldSrc's straight line
+    const axes = seq.loops ? TRAVEL.filter(([, bit]) => seq.motiontype & bit) : [];
     const travelled = axes.length && read.frames.length > 1;
-    const frames = read.frames.map((frame, f) =>
-      frame.map((six, bone) => {
-        if (!travelled || !roots.includes(bone)) return six;
-        const share = f / (read.frames.length - 1);
-        return six.map((v, axis) => (axis < 3 && axes.some(([, bit]) => bit === TRAVEL[axis][1]) ? v + seq.movement[axis] * share : v));
-      }),
-    );
-    files.push({ path: `src/anims/${animationFiles[i]}.smd`, data: smdOf({ bones: smdBones, frames }) });
-    if (seq.blends > 1)
-      warnings.push(`animation ${seq.name}: its first blend of ${seq.blends} ported, the rest left (Source blends by pose parameters, which a port does not make yet)`); // prettier-ignore
+    // GoldSrc took one travel out of every blend: it is put back into each
+    const smds = reads.map((blend, b) => {
+      const frames = blend.frames.map((frame, f) =>
+        frame.map((six, bone) => {
+          if (!roots.includes(bone)) return six;
+          const lifted = lift ? [six[0], six[1], six[2] + lift, ...six.slice(3)] : six;
+          if (!travelled) return lifted;
+          const share = f / (blend.frames.length - 1);
+          return lifted.map((v, axis) => (axis < 3 && axes.some(([, bit]) => bit === TRAVEL[axis][1]) ? v + seq.movement[axis] * share : v)); // prettier-ignore
+        }),
+      );
+      const path = `anims/${animationFiles[i]}${b ? `_blend${b}` : ""}.smd`;
+      files.push({ path: `src/${path}`, data: smdOf({ bones: smdBones, frames }) });
+      return path;
+    });
+    if (travelled) travels.push({ name: sequenceNames[i], movement: [0, 1, 2].map((axis) => (axes.some(([, bit]) => bit === TRAVEL[axis][1]) ? seq.movement[axis] : 0)) }); // prettier-ignore
+    if (blending.count > 1) {
+      blendFacts.push({ name: sequenceNames[i], count: blending.count, poses: blending.axes.map((a) => a.pose) });
+      for (const { pose, start, end } of blending.axes) {
+        const [low, high] = poseRanges.get(pose) ?? [Infinity, -Infinity];
+        poseRanges.set(pose, [Math.min(low, start, end), Math.max(high, start, end)]);
+      }
+    }
     // Source's compiler refuses an fps of 0 (shotgunshell.mdl's): one frame is still at any, more are played at 1
     const fps = seq.fps > 0 ? seq.fps : read.frames.length > 1 ? 1 : 30;
     if (!(seq.fps > 0) && read.frames.length > 1)
@@ -305,39 +425,83 @@ export function portToSource(src, { name, folder = PORT_FOLDER, groups, collisio
       else warnings.push(`animation ${seq.name}: activity ${seq.activity}, a mod's own (activity.h names 1 to 76), left off: the game's code that asks for it by number is not in Source`); // prettier-ignore
       if (activity && seq.actweight < 1)
         warnings.push(`animation ${seq.name}: weight ${seq.actweight} for ${activity}, which Source's compiler refuses: written 1`);
+    } else if (viewModel) {
+      const activity = viewActivityOf(seq.name);
+      if (activity) {
+        options.push(`activity ${activity} 1`);
+        activitiesNamed.push(`${sequenceNames[i]} ${activity}`);
+      }
     }
     if (travelled) options.push(...axes.map(([word]) => word));
-    const events = eventsOf(src, i).map((e) => `\t{ event ${e.event} ${e.frame} ${quote(e.options)} }`);
-    sequenceLines.push(`$sequence ${quote(sequenceNames[i])} ${quote(`anims/${animationFiles[i]}.smd`)} ${options.join(" ")}${events.length ? ` {\n${events.join("\n")}\n}` : ""}`); // prettier-ignore
+    if (viewModel) options.push("fadein 0", "fadeout 0");
+    // a grid two wide when it blends on two axes: GoldSrc's four are the first axis's two at the second's start,
+    // then at its end, as Source's grid is laid row by row
+    if (blending.axes.length === 2) options.unshift("blendwidth 2");
+    options.unshift(...blending.axes.map(({ pose, start, end }) => `blend ${quote(pose)} ${num(start)} ${num(end)}`));
+    const all = eventsOf(src, i);
+    const played = viewModel ? all.filter((e) => e.event === VIEW_SOUND_EVENT && SOUND_FILE.test(e.options.trim().replace(/\\/g, "/"))) : []; // prettier-ignore
+    if (played.length)
+      viewSounds.push({ sequence: sequenceLines.length, name: sequenceNames[i], frames: read.frames.length, loops: Boolean(seq.loops), events: played.map((e) => ({ frame: e.frame, sound: soundOf(e.options).replace(/^[*]+/, "") })) }); // prettier-ignore
+    const events = all.filter((e) => !played.includes(e)).map((e) => `\t{ event ${e.event} ${e.frame} ${quote(SOUND_EVENTS.includes(e.event) ? soundOf(e.options) : e.options)} }`); // prettier-ignore
+    sequenceLines.push(`$sequence ${quote(sequenceNames[i])} ${smds.map(quote).join(" ")} ${options.join(" ")}${events.length ? ` {\n${events.join("\n")}\n}` : ""}`); // prettier-ignore
     portedSequences.push(sequenceNames[i]);
+    // its copy from the spine up, to lay over a walk: no activity (a layer is asked for by name), no events (they
+    // would play twice), no travel (its root is not in it)
+    if (upperBody) {
+      const layered = options.filter((option) => !/^(activity |L[XYZ]$)/.test(option));
+      upperLines.push(`$sequence ${quote(`${sequenceNames[i]}_upper`)} ${smds.map(quote).join(" ")} ${layered.join(" ")} weightlist "upper"`); // prettier-ignore
+      portedSequences.push(`${sequenceNames[i]}_upper`);
+    }
   });
 
+  if (activitiesNamed.length)
+    warnings.push(`a view model's animations given Source's activities by their names, which a GMod weapon's script plays them by (SendWeaponAnim): ${activitiesNamed.join(", ")}`); // prettier-ignore
+
   // ── what a monster has ──
-  const attachments = attachmentsOf(src);
-  const attachmentNames = uniqueNames(attachments.map((a, i) => (a.name ? a.name : `attachment${i}`)));
-  const hitboxes = hitboxesOf(src);
+  const attachments = [
+    ...attachmentsOf(src).map((a) => (rig ? { ...a, pos: rig.point(a.bone, a.pos) } : a)),
+    ...(rig?.attachments ?? []),
+  ];
+  // a view model's first, unnamed, is where its shots come from: GMod looks for it as "muzzle"
+  const muzzle = viewModel && attachments.length && !attachments[0].name && !attachments.some((a) => a.name.toLowerCase() === "muzzle"); // prettier-ignore
+  const attachmentNames = uniqueNames(attachments.map((a, i) => (a.name ? a.name : muzzle && i === 0 ? "muzzle" : `attachment${i}`))); // prettier-ignore
+  // the muzzle turned so that its x is the model's forward in its first animation's first frame (the bone's turn
+  // then): the gun's own forward, as GoldSrc drew it before the view
+  let muzzleTurn = "0 0 0";
+  if (muzzle) {
+    let pose;
+    try {
+      pose = poseAt(src, 0, 0, 0, groups);
+    } catch {
+      pose = rest;
+    }
+    const along = pose[attachments[0].bone][0].slice(0, 3); // the model's x in the bone's space: the first row
+    muzzleTurn = `${num((-Math.asin(Math.max(-1, Math.min(1, along[2]))) * 180) / Math.PI)} ${num((Math.atan2(along[1], along[0]) * 180) / Math.PI)} 0`; // prettier-ignore
+    warnings.push(`a view model's first attachment named muzzle, where GMod puts its muzzle flash, and turned along the gun's forward (rotate ${muzzleTurn})`); // prettier-ignore
+  }
+  const hitboxes = hitboxesOf(src).map((h) => (rig ? { ...h, ...rig.box(h.bone, h.min, h.max) } : h));
   const controllers = boneControllers(src);
   if (controllers.length)
     warnings.push(`${controllers.length === 1 ? "a bone controller" : `${controllers.length} bone controllers`} (${controllers.map((c) => skeleton[c.bone]?.name).join(", ")}) left: Source turns such bones by pose parameters, which a port does not make yet`); // prettier-ignore
   const boxes = modelBoxes(src);
 
   // ── what it collides as ──
-  const kind =
-    collision !== "auto" ? collision : skeleton.length === 1 ? "hull" : hitboxes.length ? "ragdoll" : "none";
+  const collides =
+    collision !== "auto" ? collision : viewModel || madeAs === "held" ? "none" : skeleton.length === 1 ? "hull" : hitboxes.length ? "ragdoll" : "none"; // prettier-ignore
   const massLine = () => (mass === undefined ? "\t$automass" : `\t$mass ${num(mass)}`);
   let collisionLines = [];
   const physicsFile = `${model}_physics.smd`;
   const physics = (triangles) => files.push({ path: `src/${physicsFile}`, data: smdOf({ bones: smdBones, frames: [restFrame], triangles }) }); // prettier-ignore
-  if ((kind === "hull" || kind === "box") && Number.isFinite(bodyBox[0][0])) {
-    const hull = kind === "hull" ? convexHull(allCorners.map((c) => c.p)) : null;
-    if (kind === "hull" && !hull) warnings.push("its triangles lie in a plane, which has no hull: a box about them in its place");
+  if ((collides === "hull" || collides === "box") && Number.isFinite(bodyBox[0][0])) {
+    const hull = collides === "hull" ? convexHull(allCorners.map((c) => c.p)) : null;
+    if (collides === "hull" && !hull) warnings.push("its triangles lie in a plane, which has no hull: a box about them in its place");
     physics(hull ? hullTriangles(hull, 0) : boxTriangles(bodyBox, 0));
     const volume = hull ? hullVolume(hull) : bodyBox[1].reduce((product, v, i) => product * (v - bodyBox[0][i]), 1);
     const weight = density ?? densities?.(surfaceprop ?? "default");
     const weighed = mass === undefined && weight > 0 ? Math.round(massOf(volume, weight) * 10) / 10 : undefined;
     collisionLines = [`$collisionmodel ${quote(physicsFile)}\n{\n${weighed === undefined ? massLine() : `\t$mass ${num(weighed)}`}\n}`]; // prettier-ignore
-  } else if (kind === "ragdoll") {
-    const pieces = ragdollPieces(skeleton, hitboxes, rest, bodyTriangles);
+  } else if (collides === "ragdoll") {
+    const pieces = ragdollPieces(skeleton, hitboxes, bound, bodyTriangles);
     if (pieces.dropped.length)
       warnings.push(`a ragdoll has ${RAGDOLL_MOST} pieces at most: ${pieces.dropped.length} of the smallest left to their parents (${pieces.dropped.join(", ")})`); // prettier-ignore
     if (pieces.merged.length)
@@ -348,7 +512,7 @@ export function portToSource(src, { name, folder = PORT_FOLDER, groups, collisio
     else {
       physics(pieces.list.flatMap((piece) => piece.triangles));
       const root = pieces.list[0].bone;
-      const turns = jointTurns(skeleton, rest, pieces.list.map((piece) => piece.bone), allFrames);
+      const turns = jointTurns(skeleton, bound, pieces.list.map((piece) => piece.bone), allFrames);
       const joined = pieces.list.filter((piece) => piece.bone !== root);
       const unmeasured = joined.filter((piece) => !turns?.get(piece.bone)).map((piece) => skeleton[piece.bone].name);
       if (unmeasured.length)
@@ -368,7 +532,7 @@ export function portToSource(src, { name, folder = PORT_FOLDER, groups, collisio
       sequenceLines.push(`$sequence "ragdoll" "anims/ragdoll.smd" fps 30 activity ACT_DIERAGDOLL 1`);
     }
   }
-  const material = surfaceprop ?? (kind === "ragdoll" && collisionLines.length ? "flesh" : "default");
+  const material = surfaceprop ?? (collides === "ragdoll" && collisionLines.length ? "flesh" : "default");
   if (!surfaceprop && material === "flesh") warnings.push(`a ragdoll taken for flesh ($surfaceprop "flesh"): give surfaceprop for a robot, a statue`); // prettier-ignore
 
   // ── the QC ──
@@ -379,10 +543,17 @@ export function portToSource(src, { name, folder = PORT_FOLDER, groups, collisio
     // what is written is the original as GoldSrc's compiler left it, already turned: not turned again
     `$origin 0 0 0 -90`,
     `$surfaceprop ${quote(material)}`,
+    // GoldSrc took a walk's travel out in one straight line; Source's default rollback treats the last 0.3 s on
+    // its own, and the root drifts off that line
+    `$motionrollback 0`,
   ];
-  if (!isZero(boxes.eyes)) qc.push(`$eyeposition ${vec(boxes.eyes)}`);
-  if (!isZero(boxes.bbmin) || !isZero(boxes.bbmax)) qc.push(`$bbox ${vec(boxes.bbmin)} ${vec(boxes.bbmax)}`);
-  if (!isZero(boxes.min) || !isZero(boxes.max)) qc.push(`$cbox ${vec(boxes.min)} ${vec(boxes.max)}`);
+  // a player's boxes and eyes lifted with its animations; it is lit from its middle, where GMod's own are (male_07
+  // at 35): from its origin, at its feet, it would be lit from under the floor and drawn black
+  const up = (v) => [v[0], v[1], v[2] + lift];
+  if (!isZero(boxes.eyes)) qc.push(`$eyeposition ${vec(up(boxes.eyes))}`);
+  if (player) qc.push(`$illumposition 0 0 ${num(PLAYER_LIFT)}`);
+  if (!isZero(boxes.bbmin) || !isZero(boxes.bbmax)) qc.push(`$bbox ${vec(up(boxes.bbmin))} ${vec(up(boxes.bbmax))}`);
+  if (!isZero(boxes.min) || !isZero(boxes.max)) qc.push(`$cbox ${vec(up(boxes.min))} ${vec(up(boxes.max))}`);
   // Source's compiler drops a bone no vertex is on, and then cannot find it for a hit box or an animation's
   // frames (a body the kit built on Half-Life's grunt left its toes empty): such a bone is kept as one a weapon
   // is merged onto is
@@ -393,7 +564,7 @@ export function portToSource(src, { name, folder = PORT_FOLDER, groups, collisio
   if (skinRows.length)
     qc.push(`$texturegroup "skinfamilies"\n{\n${skinRows.map((row) => `\t{ ${row.map(quote).join(" ")} }`).join("\n")}\n}`); // prettier-ignore
   attachments.forEach((a, i) =>
-    qc.push(`$attachment ${quote(attachmentNames[i])} ${quote(skeleton[a.bone].name)} ${vec(a.pos)} rotate 0 0 0`),
+    qc.push(`$attachment ${quote(attachmentNames[i])} ${quote(skeleton[a.bone].name)} ${vec(a.pos)} rotate ${muzzle && i === 0 ? muzzleTurn : "0 0 0"}`),
   );
   for (const box of hitboxes) qc.push(`$hbox ${box.group} ${quote(skeleton[box.bone].name)} ${vec(box.min)} ${vec(box.max)}`);
   qc.push(...collisionLines);
@@ -402,18 +573,35 @@ export function portToSource(src, { name, folder = PORT_FOLDER, groups, collisio
     files.push({ path: "src/anims/idle.smd", data: smdOf({ bones: smdBones, frames: [restFrame] }) });
     sequenceLines.push(`$sequence "idle" "anims/idle.smd" fps 30`);
   }
-  qc.push(...sequenceLines);
+  for (const [pose, [low, high]] of poseRanges) qc.push(`$poseparameter ${quote(pose)} ${num(low)} ${num(high)}`);
+  if (upperBody) {
+    const from = new Set([spine]);
+    skeleton.forEach((bone, i) => from.has(bone.parent) && from.add(i));
+    qc.push(`$weightlist "upper" {\n${skeleton.map((bone, i) => `\t${quote(bone.name)} ${from.has(i) ? 1 : 0}`).join("\n")}\n}`);
+  }
+  qc.push(...sequenceLines, ...upperLines);
   files.push({ path: `src/${model}.qc`, data: `${qc.join("\n")}\n` });
+  if (viewSounds.length) {
+    files.push({ path: `addon/lua/autorun/client/smak_sounds_${where}_${model}.lua`, data: viewSoundsLua(`models/${where}/${model}.mdl`, viewSounds) }); // prettier-ignore
+    warnings.push(`its sound events (${viewSounds.map((s) => `${s.name} ${s.events.length}`).join(", ")}) played by Lua beside it (lua/autorun/client/), not by the model: GMod never plays a view model's own`); // prettier-ignore
+  }
 
   return {
     name: model,
     modelname: `${where}/${model}.mdl`,
     qc: `src/${model}.qc`,
     files,
+    sounds: [...sounds].map(([from, to]) => ({ from, to })),
+    viewSounds,
     warnings,
     facts: {
       bones: skeleton.map((b) => b.name),
       sequences: portedSequences,
+      travels,
+      blends: blendFacts,
+      poses: [...poseRanges.keys()],
+      view: viewModel,
+      kind: madeAs,
       materials: [...usedRefs].map((ref) => materialNames[families[0][ref]]),
       bodygroups: bodygroups.map((g) => ({ name: g.name, models: g.models.length })),
       skins: Math.max(1, skinRows.length),
@@ -423,6 +611,117 @@ export function portToSource(src, { name, folder = PORT_FOLDER, groups, collisio
     },
   };
 }
+
+/**
+ * The events that play a sound file named in their options: 1004 a monster's (a step: SCRIPT_EVENT_SOUND), 1008 its
+ * voice (SCRIPT_EVENT_SOUND_VOICE), 5004 one the client plays (a view model's clip: CL_EVENT_SOUND). Source keeps
+ * the numbers.
+ */
+export const SOUND_EVENTS = [1004, 1008, 5004];
+/** A view model's sound event (CL_EVENT_SOUND), which GMod does not play: viewSoundsLua plays it. */
+const VIEW_SOUND_EVENT = 5004;
+/** A sound file in an event's options: what goes before it (GoldSrc's * of a sound streamed), and its path. */
+const SOUND_FILE = /^([*]*)([^*!].*\.wav)$/i;
+
+/**
+ * The Lua that plays a view model's sound events, a client file of GMod's (lua/autorun/client/), as
+ * stevenlafl's weapon base plays The Specialists' (playEvents): each event once, as the view model's animation
+ * passes its frame; a loop's again each time round, and an animation begun again (a second reload) from its
+ * start. Every model's file adds its own to one table, and the first to load adds the one hook that plays them
+ * all. The sound is the holder's alone, as GoldSrc's client played it (ATTN_NORM: level 75).
+ *   modelname: "models/smak/smak_v_9mmar.mdl", as the view model's GetModel() says it
+ *   viewSounds: [{ sequence (the compiled number), name, frames, loops, events: [{ frame, sound }] }]
+ */
+export function viewSoundsLua(modelname, viewSounds) {
+  const rows = viewSounds.map((s) => `\t[${s.sequence}] = { frames = ${s.frames}, loops = ${s.loops}, ${s.events.map((e) => `{ ${e.frame}, ${JSON.stringify(e.sound)} }`).join(", ")} }, -- ${s.name}`); // prettier-ignore
+  return `-- Written by SMAK (gmod-port): the sound events of ${modelname}, played as its animation passes each one.
+-- GMod never plays a view model's own sound events (stevenlafl's finding, porting The Specialists to GMod), so
+-- they are here and not in the model. By the animation's number: its frames, whether it loops, { frame, sound }.
+SMAK_VIEW_SOUNDS = SMAK_VIEW_SOUNDS or {}
+SMAK_VIEW_SOUNDS[${JSON.stringify(modelname)}] = {
+${rows.join("\n")}
+}
+
+-- the one hook that plays every SMAK view model's, added by the first of their files to load
+if SMAK_VIEW_SOUNDS_HOOKED then return end
+SMAK_VIEW_SOUNDS_HOOKED = true
+local heard = { model = "", seq = -1, frame = -1 }
+hook.Add("Think", "smak_view_sounds", function()
+	local ply = LocalPlayer()
+	if not IsValid(ply) then return end
+	local vm = ply:GetViewModel()
+	if not IsValid(vm) then return end
+	local model, seq = vm:GetModel(), vm:GetSequence()
+	local list = SMAK_VIEW_SOUNDS[model] and SMAK_VIEW_SOUNDS[model][seq]
+	local frame = list and vm:GetCycle() * (list.frames - 1) or -1
+	-- another animation, or a one-shot begun again: from its start
+	if model ~= heard.model or seq ~= heard.seq or (list and not list.loops and frame < heard.frame) then
+		heard.model, heard.seq, heard.frame = model, seq, -1
+	end
+	if not list then return end
+	-- a loop past its end: the rest of it, then from its start
+	local wrapped = list.loops and frame < heard.frame
+	for _, e in ipairs(list) do
+		if (wrapped and (e[1] > heard.frame or e[1] <= frame)) or (not wrapped and e[1] > heard.frame and e[1] <= frame) then
+			ply:EmitSound(e[2], 75, 100, 1, CHAN_AUTO)
+		end
+	end
+	heard.frame = frame
+end)
+`;
+}
+
+/**
+ * A view model's animations' activities by their names, the first that fits: Half-Life's weapons' (v_9mmar's
+ * longidle, deploy, grenade, shoot; v_crowbar's attack1miss), as a GMod weapon's script asks for them.
+ */
+export const VIEW_ACTIVITIES = [
+  [/^shoot_?empty$|^dryfire$/i, "ACT_VM_DRYFIRE"],
+  [/^start_?reload$/i, "ACT_SHOTGUN_RELOAD_START"],
+  [/^pump$/i, "ACT_SHOTGUN_PUMP"],
+  [/^reload(_noshot|_empty)?\d*$/i, "ACT_VM_RELOAD"],
+  [/^attack\d*miss$/i, "ACT_VM_MISSCENTER"],
+  [/^attack\d*hit$/i, "ACT_VM_HITCENTER"],
+  [/^(grenade|shoot_?big|alt_?fire\w*|secondary\w*)$/i, "ACT_VM_SECONDARYATTACK"],
+  [/^(shoot|fire|attack)\d*$/i, "ACT_VM_PRIMARYATTACK"],
+  [/^(pin_?pull|pull_?pin)$/i, "ACT_VM_PULLPIN"],
+  [/^throw\d*$/i, "ACT_VM_THROW"],
+  [/^(draw|deploy|up)\d*$/i, "ACT_VM_DRAW"],
+  [/^(re)?holster\d*$|^down$/i, "ACT_VM_HOLSTER"],
+  [/fidget/i, "ACT_VM_FIDGET"],
+  [/^(sm_|long|deep)?idle\d*$/i, "ACT_VM_IDLE"],
+];
+/** The activity a view model's animation is given by its name (VIEW_ACTIVITIES), or null. */
+export const viewActivityOf = (name) => VIEW_ACTIVITIES.find(([pattern]) => pattern.test(name))?.[1] ?? null;
+
+/** The GoldSrc motions a blend may be along, as a pose parameter's name has them (blend_xr). */
+const BLEND_MOTIONS = ["X", "Y", "Z", "XR", "YR", "ZR"];
+
+/**
+ * A GoldSrc animation's blends as Source's: `count` animations, and the pose parameter of each axis with the
+ * values its first and last blend stand for ({ pose, start, end }). Two are one axis; four with a second axis's
+ * motion, two by two. Any other number is ported as its first two, or a range of nothing as its first alone,
+ * `left` saying so.
+ */
+export function blendingOf(seq) {
+  if (!(seq.blends > 1)) return { count: 1, axes: [] };
+  const axis = (k) => {
+    const motion = BLEND_MOTIONS.find((name) => MOTION[name] === seq.blendtype[k]);
+    return { pose: motion ? `blend_${motion.toLowerCase()}` : k ? "blend2" : "blend", start: seq.blendstart[k], end: seq.blendend[k] }; // prettier-ignore
+  };
+  const axes = seq.blends === 4 && seq.blendtype[1] ? [axis(0), axis(1)] : [axis(0)];
+  if (axes.length === 2 && axes[0].pose === axes[1].pose) axes[1].pose += "2";
+  const flat = axes.find((a) => a.start === a.end);
+  if (flat)
+    return { count: 1, axes: [], left: `its first blend of ${seq.blends} ported: its blends stand for one value (${num(flat.start)}), which no pose parameter can range over` }; // prettier-ignore
+  const count = axes.length === 2 ? 4 : 2;
+  return { count, axes, left: seq.blends > count ? `its first ${count} blends of ${seq.blends} ported: GoldSrc's renderer blends no more` : undefined }; // prettier-ignore
+}
+
+/** What a port may be made as (portToSource's `kind`). */
+export const PORT_KINDS = ["thing", "view", "held", "player"];
+/** How far a GoldSrc player stands above its feet, which Source's stands on: the middle of its standing hull. */
+export const PLAYER_LIFT = 36;
 
 /** What a port may collide as (portToSource's `collision`). */
 export const COLLISIONS = ["auto", "hull", "box", "ragdoll", "none"];

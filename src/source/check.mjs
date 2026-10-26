@@ -55,7 +55,8 @@ const listed = (names, most = 6) => (names.length > most ? `${names.slice(0, mos
 
 /**
  * What the compiled model lost: bones, animations, materials, bodygroups and their submodels, skin families,
- * attachments, hit boxes, and (with `triangles`) corners. `faults`: one sentence each thing lost; `said`: what it
+ * attachments, hit boxes, and (with `triangles`) corners; a loop's travel not taken out as GoldSrc took it (in
+ * one straight piece, as far); blends and their pose parameters; a view model's fades. `faults`: one sentence each thing lost; `said`: what it
  * holds, in one line each.
  */
 export function comparePort(facts, compiled, triangles) {
@@ -85,6 +86,32 @@ export function comparePort(facts, compiled, triangles) {
   // vertices: more is no loss. With $hbox lines it makes those and no others
   if (compiled.hitboxes.length < facts.hitboxes)
     faults.push(`${compiled.hitboxes.length} hit boxes, where it had ${facts.hitboxes}`);
+  const sequenceOf = (name) => compiled.sequences.find((s) => s.name.toLowerCase() === name.toLowerCase());
+  for (const { name, movement } of facts.travels ?? []) {
+    const seq = sequenceOf(name);
+    if (!seq) continue;
+    for (const number of seq.animations ?? []) {
+      const pieces = compiled.animations?.[number]?.movements ?? [];
+      const went = pieces.reduce((sum, piece) => sum.map((v, k) => v + piece.position[k]), [0, 0, 0]);
+      const off = Math.hypot(...went.map((v, k) => v - movement[k]));
+      if (pieces.length !== 1 || off > NEAR * 10)
+        faults.push(`animation ${name} travels ${went.map((v) => v.toFixed(2)).join(" ")} in ${pieces.length} ${pieces.length === 1 ? "piece" : "pieces"}, where GoldSrc took out ${movement.map((v) => v.toFixed(2)).join(" ")} in one straight line`); // prettier-ignore
+    }
+  }
+  const poses = compiled.poses ?? [];
+  const poseNames = poses.map((p) => p.name.toLowerCase());
+  lost("pose parameter", missing(facts.poses ?? [], poses.map((p) => p.name)));
+  for (const { name, count, poses: wanted } of facts.blends ?? []) {
+    const seq = sequenceOf(name);
+    if (!seq) continue;
+    const on = (seq.params ?? []).map((p) => poses[p.pose]?.name.toLowerCase());
+    if (seq.blends !== count || wanted.some((pose, k) => on[k] !== pose.toLowerCase() || !poseNames.includes(pose.toLowerCase())))
+      faults.push(`animation ${name} blends ${seq.blends} on ${on.join(", ") || "nothing"}, where it had ${count} on ${wanted.join(", ")}`); // prettier-ignore
+  }
+  if (facts.view) {
+    const fading = compiled.sequences.filter((s) => s.fadein || s.fadeout).map((s) => s.name);
+    if (fading.length) faults.push(`a view model's animations fade in or out: ${listed(fading)}`);
+  }
   const vertices = compiled.bodyparts.reduce((sum, part) => sum + part.models.reduce((s, m) => s + m.vertices, 0), 0);
   const said = [
     `Source model ${compiled.version}: ${compiled.bones.length} bones, ${compiled.sequences.length} animations, ${compiled.materials.length} materials, ${compiled.skins.length} skin families`,
