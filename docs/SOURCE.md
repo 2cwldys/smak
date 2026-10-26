@@ -295,12 +295,29 @@ found in the game, by them, and is kept with its reason in `src/source/map.mjs`:
   `SMAK_VPHYSICS` and `SMAK_VCOLLIDE` where they are not found. Without them the map is written without
   physics, and said: Lua's traces then miss and props fall through. Outside the game, GMod's 64-bit DLL hangs
   on vbsp's drag areas and crashes on its outer hull of several pieces, so both are left out. A brush entity
-  collides as its pieces, as exactly. Each piece is tagged, as vbsp tags it, with the index of its surfaceprop in
-  GMod's own table. Tagged with its own number, as in stevenlafl's helper, the world's pieces were antlion (87)
-  and the rest, and a map of more than 126 pieces killed vphysics (23 of Half-Life's 115 maps).
+  collides as its pieces, as exactly. Each of the world's triangles takes the surfaceprop of the brush side it
+  lies on, as vbsp sets it (`ConvertWorldBrushesToPhysCollide`): a 7-bit index into a `materialtable` written
+  after the static solid in the lump's text (at most 126 names; 0 is `default`). stevenlafl found and measured
+  it on their TS port. A brush entity takes its textures' surfaceprop with the most area; it keeps the
+  `default` density. A convex's game data is 0. vbsp puts its brush number there and reads it back itself;
+  the game never reads it, so the helper finds each triangle's brush by place instead. The convex's own number
+  there, past 126, crashed GMod's 64-bit vphysics.dll (23 of Half-Life's 115 maps). **Corrected in 0.30.1:**
+  0.30.0 said the game read a convex's game data as its surfaceprop. It does not: every hit on the world was
+  `default` to the physics. Measured on stalkyard, 21 crates dropped on its starts: with 0.30.0, 90 hits, all
+  `default`; with 0.30.1, concrete 56, wood 21, metalgrate 16, each crate's first hit its floor's own.
+  - GMod's 64-bit DLL has one slot more before `CreateQueryModel` than Valve's header (43, not 42), found by
+    calling each slot near it on a box. stevenlafl's 32-bit Linux library has the header's order.
+  - A triangle takes the side of its brush it lies on, not only the side facing its way: by facing alone, a
+    wood box standing on a concrete floor gave the floor under its edge its top's wood.
 - **What a surface is made of.** Each texture's type is read from the game's `sound/materials.txt` as the
   engine reads it, and becomes its material's `$surfaceprop`: concrete (GoldSrc's default), metal, dirt,
-  metalvent, metalgrate, tile, wood, computer, glass. A brush's physics takes the one most of its sides wear.
+  metalvent, metalgrate, tile, wood, computer, glass. A rebuilt brush's side takes the texture of the face lying on
+  it: the brushes are the tree's solid leaves, cut by the same tree as the faces, so the side's own face has its
+  middle in the brush. Traces (bullets, footsteps) and the physics read it there. Before 0.30.1 a side took the
+  first face on its plane, and on a map with that plane twice it took none (toolsnodraw's `default_silent`).
+  Then 11 to 25 in a hundred of the world's drawn area read as something else (boot_camp 25, stalkyard 17, c2a5
+  14, crossfire 11: dirt as concrete, concrete as wood or none). Now 0.0 to 2.2, measured face by face at its
+  middle. A water surface's face lies on the plane of the ground beside it, so it is taken last.
 - **Entities:**
   - a player start comes down 36 units, to its feet;
   - a missing `renderamt` is 0, as in GoldSrc;
@@ -348,10 +365,13 @@ must take RCON: a dedicated server does; the game itself only when started with 
   `check(ok, what)` for a PASS or FAIL line, `note(text)`, and `done()`, which it may call from a timer. An
   error is a FAIL, at the probe file's own line. No `done()` within `--wait` (30 s) is a FAIL too.
 - **The map probe** (built in, on a `gmod-map` port loaded): the world has its physics; each player start
-  has a floor within 64 under it and room for a standing player; the floors read surfaceprops of their own; a
-  crate dropped 96 over the start furthest from the players comes to rest on its floor. The models the game
-  lacks are noted, not failed. On stalkyard: 7 passed; floors concrete 12, wood 7, metalgrate 2; 8 of Half-Life:
-  Source's pickups lacking.
+  has a floor within 256 under it and room for a standing player; the floors read surfaceprops of their own; a
+  crate dropped 96 over the start furthest from the players comes to rest on its floor, and hits it, to the
+  physics, as the floor's own surfaceprop. A start more than 64 over its floor is noted: Half-Life's own maps
+  have them (bounce 204, datacore 112, snark_pit 76, as in GoldSrc). The models the game lacks are noted, not
+  failed. All eight maps below pass, 8 checks each (2026-10-26, the dedicated server). With a crate over every
+  start, 167 of 169 crates first hit their floor's own surfaceprop. The other two each hit one of the
+  triangles that lie on no brush side, which stay `default`.
 - **A dedicated server.** `gmod-server <folder> --map <name> --password <p>` starts one from a SteamCMD install
   (`steamcmd +force_install_dir <folder> +login anonymous +app_update 4020 +quit`; SteamCMD's first run only
   updates itself, so run it twice). It is off the server list, has cheats on, and uses port 27016, so the game's own
@@ -368,9 +388,10 @@ must take RCON: a dedicated server does; the game itself only when started with 
   compiled hull 1 is looser than its own geometry at slanted beams and corners, and Source blocks it rightly
   (stalkyard: 25 of 35 such spots). PASS when the rest disagree on no more than `--allow` (0.5) in a hundred.
   An empty dedicated server stops its timers and physics unless `sv_hibernate_think 1`, which `gmod-server` sets.
-  Measured 2026-10-25, 5000 spots, standing and ducked, in a hundred: stalkyard 0.10 and 0.12, crossfire 0.10 and
-  0.06, bounce 0.12 and 0.14, datacore 0.16 and 0.34, boot_camp 0.06 and 0.06, snark_pit 0.06 and 0.10, c1a0 0.02
-  and 0.10, c2a5 0.14 and 0.18: all PASS.
+  Measured 2026-10-26 (0.30.1), 5000 spots, standing and ducked, in a hundred: stalkyard 0.10 and 0.18, crossfire
+  0.10 and 0.06, bounce 0.12 and 0.14, datacore 0.16 and 0.48, boot_camp 0.06 and 0.08, snark_pit 0.06 and 0.10,
+  c1a0 0.02 and 0.16, c2a5 0.14 and 0.18: all PASS. Datacore ducked is close to the limit; it was 0.34 with the
+  clip filter at 2 (0.30.0), and is not yet looked into.
 - **Clip brushes, rebuilt from the hulls.** GoldSrc keeps no clip brushes, only the player's hulls with them
   grown in. Each solid region of hulls 1 and 3 has its sides moved back in by the box's reach, less where more
   solid lies beyond (stevenlafl's rule). Two things made datacore's clip come out 8 to 16 units too big (1.02 and
@@ -379,8 +400,10 @@ must take RCON: a dedicated server does; the game itself only when started with 
     samples: the wall's growth stayed whole and came back as clip. Each side is now sampled in a grid too;
   - a region that is only a wall's growth in one hull (a 2 unit plate 36 high under a ledge, from hull 1) was
     kept. A true clip brush is compiled into every hull, so grown by either player's box it lies inside that
-    player's hull; a rebuilt one that does not, at more than 2 of a hundred points across its grown faces, is
-    left out (`clipOutsideHull`). At none, one of c1a0's real clip brushes was lost too.
+    player's hull; a rebuilt one that does not, at more than 10 of a hundred points across its grown faces, is
+    left out (`clipOutsideHull`). At none, one of c1a0's real clip brushes was lost too; at 2 (0.30.0), real clip
+    brushes of TS's ts_bikini, on that map 32 spots blocked only in GoldSrc where no filter leaves 24. At 10 none
+    is lost on Half-Life's eight maps or bikini (measured offline with the same box test, 2026-10-26).
 
   The port of a map takes longer for the grid: 5 to 24 s where it took 1 to 6. The brushes carry vbsp's edge
   bevels too (`AddBrushBevels`), which changed nothing measured.

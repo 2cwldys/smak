@@ -3,7 +3,7 @@
 // 2013 src/utils/vbsp/ivp.cpp): for each model a dphysmodel_t, each solid's size and bytes, then the text that
 // says what the solids are; a model index of -1 ends the list. Ported from stevenlafl's tools/map/vcollide.mjs.
 //
-//   physCollideLump(models, { vphysics, helper })   the lump's bytes; throws, saying what is missing
+//   physCollideLump(models, { materials, surfaceprops })   the lump's bytes; throws, saying what is missing
 //   findVphysics({ file, gmod })                     GMod's bin/win64/vphysics.dll
 //   vcollideHelper({ file })                         the helper, built once with Visual Studio into ~/.smak/
 //
@@ -17,15 +17,14 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { findGmod } from "./compile.mjs";
-import { gmodFiles } from "./draw.mjs";
-import { readSurfaceProps } from "./surfaceprops.mjs";
 
 const SOURCE = join(dirname(fileURLToPath(import.meta.url)), "vcollide.cpp");
 const TIMEOUT = 5 * 60 * 1000;
 
 // bspflags.h MASK_SOLID: SOLID | MOVEABLE | WINDOW | MONSTER | GRATE
 const MASK_SOLID = 0x1 | 0x4000 | 0x2 | 0x2000000 | 0x8;
-// vbsp: a brush entity's mass is its volume at the "default" surface's density (2000 kg/m^3), at most 100 t
+// a brush entity's mass is its volume at the "default" surface's density (2000 kg/m^3), at most 100 t. vbsp takes
+// its surfaceprop's density; GoldSrc weighs nothing, and stevenlafl keeps every brush entity as heavy as this
 const DENSITY = 2000;
 const CUBIC_METERS_PER_CUBIC_INCH = 0.0254 ** 3;
 const MAX_MASS = 100000;
@@ -100,34 +99,18 @@ export function vcollideHelper({ file, env = process.env } = {}) {
   return built;
 }
 
-// The game's surfaceprops by name, as their index: the order GMod reads its scripts/surfaceproperties.txt in (its
-// one table, in garrysmod_dir.vpk), the first of a name kept. "default", 0, where GMod is not found.
-const surfaceTables = new Map();
-function surfaceTable(gmod) {
-  const game = gmod ?? findGmod();
-  if (surfaceTables.has(game)) return surfaceTables.get(game);
-  const table = new Map();
-  try {
-    const files = gmodFiles(game);
-    [...readSurfaceProps(files.read("scripts/surfaceproperties.txt").toString("latin1")).keys()].forEach((name, i) => table.set(name, i));
-  } catch {
-    // no GMod: every convex is "default"
-  }
-  surfaceTables.set(game, table);
-  return table;
-}
-
 /**
- * The PHYSCOLLIDE lump. `models`: for each model of the map, the convex brushes it collides with, each a list of
- * planes `{ normal, dist }` facing out of it (model 0 is the world), or `{ planes, surfaceprop }` naming what it is
- * made of (its index in GMod's table is the convex's game data, as vbsp gives it; "default" when not named).
- * `vphysics` and `helper`: as findVphysics and vcollideHelper find them, when not given.
+ * The PHYSCOLLIDE lump. `models`: for each model of the map, the convex brushes it collides with (model 0 is the
+ * world), each `{ planes, mins, maxs }` or only its planes, `{ normal, dist, material }` facing out of it. A world
+ * plane's `material` is its surfaceprop's number in `materials` plus 1 (the world's `materialtable`, at most 126,
+ * as vbsp's RemapWorldMaterial), 0 for `default`: each of the world's triangles takes the material of the side it
+ * lies on (stevenlafl's). `surfaceprops[model]`: a brush entity's one surfaceprop. `vphysics` and `helper`: as
+ * findVphysics and vcollideHelper find them, when not given.
  */
-export function physCollideLump(models, { vphysics, helper, gmod } = {}) {
+export function physCollideLump(models, { materials = [], surfaceprops = [], vphysics, helper, gmod } = {}) {
+  if (materials.length > 126) throw new Error(`physCollideLump: ${materials.length} world materials, 126 at most`);
   const library = findVphysics({ file: vphysics, gmod });
   const program = vcollideHelper({ file: helper });
-  const table = surfaceTable(gmod);
-  const surfaceIndex = (name) => (name && table.has(name.toLowerCase()) ? table.get(name.toLowerCase()) : 0);
   const work = mkdtempSync(join(tmpdir(), "smak-vcollide-"));
   try {
     const solids = models.map((convexes, index) => ({ index, convexes })).filter((m) => m.convexes.length);
@@ -144,13 +127,17 @@ export function physCollideLump(models, { vphysics, helper, gmod } = {}) {
       for (const convex of convexes) {
         const planes = Array.isArray(convex) ? convex : convex.planes;
         int(planes.length);
-        int(surfaceIndex(convex.surfaceprop));
-        const b = Buffer.alloc(planes.length * 16);
+        // no box: one too big for the helper's grid, so its triangles are looked for in it everywhere
+        const box = Buffer.alloc(24);
+        [...(convex.mins ?? [-1e6, -1e6, -1e6]), ...(convex.maxs ?? [1e6, 1e6, 1e6])].forEach((v, k) => box.writeFloatLE(v, k * 4));
+        parts.push(box);
+        const b = Buffer.alloc(planes.length * 20);
         planes.forEach((p, k) => {
-          b.writeFloatLE(p.normal[0], k * 16);
-          b.writeFloatLE(p.normal[1], k * 16 + 4);
-          b.writeFloatLE(p.normal[2], k * 16 + 8);
-          b.writeFloatLE(p.dist, k * 16 + 12);
+          b.writeFloatLE(p.normal[0], k * 20);
+          b.writeFloatLE(p.normal[1], k * 20 + 4);
+          b.writeFloatLE(p.normal[2], k * 20 + 8);
+          b.writeFloatLE(p.dist, k * 20 + 12);
+          b.writeInt32LE(index === 0 ? (p.material ?? 0) : 0, k * 20 + 16);
         });
         parts.push(b);
       }
@@ -174,10 +161,11 @@ export function physCollideLump(models, { vphysics, helper, gmod } = {}) {
       at += 8 + size;
       if (!size) continue;
       const mass = Math.min(MAX_MASS, Math.max(1, volume * DENSITY * CUBIC_METERS_PER_CUBIC_INCH));
+      const table = materials.length ? `materialtable {\n${materials.map((m, k) => `"${m}" "${k + 1}"\n`).join("")}}\n` : "";
       const text =
         index === 0
-          ? `staticsolid {\n"index" "0"\n"contents" "${MASK_SOLID}"\n}\n`
-          : `solid {\n"index" "0"\n"mass" "${mass.toFixed(6)}"\n"surfaceprop" "default"\n}\n`;
+          ? `staticsolid {\n"index" "0"\n"contents" "${MASK_SOLID}"\n}\n${table}`
+          : `solid {\n"index" "0"\n"mass" "${mass.toFixed(6)}"\n"surfaceprop" "${surfaceprops[index] ?? "default"}"\n}\n`;
       const keydata = Buffer.from(`${text}\0`, "latin1");
       const head = Buffer.alloc(16);
       head.writeInt32LE(index, 0);

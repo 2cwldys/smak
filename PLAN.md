@@ -364,8 +364,9 @@ spots of every map.
   crate lands.
 - Found on the way, beyond Steven's converter:
   - GMod's 64-bit vphysics on Windows hangs on drag areas and crashes on an outer hull;
-  - a convex's game data is its surfaceprop's index. Its own number gave antlion surfaces and killed vphysics
-    past 126 pieces;
+  - a convex's own number as its game data killed vphysics past 126 pieces. (That the game reads it as the
+    surfaceprop's index was wrong; corrected in 0.30.1 from stevenlafl's finding: each world triangle's
+    material, and a materialtable);
   - `$surfaceprop` comes from `materials.txt`;
   - a VTF needs its thumbnail: the engine colours a bullet's chips from it. Without one, stalkyard's concrete
     threw yellow "antlion blood" (seen by the person, measured in game: the bullets' traces were concrete).

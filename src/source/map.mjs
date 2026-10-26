@@ -91,7 +91,8 @@ const vmt = (shader, params) => Buffer.from(`"${shader}"\n{\n${params.join("\n")
  * A GoldSrc map as a Source map. `name`: the map's name in Source (the file's, unless given). `folder`: the
  * addon's own folder under materials/ (smak). `folders`: more game folders to look for wads, skies, sprites and
  * models in, after the map's own (a mod's folder). `valve`: Half-Life's valve folder, looked in last; its files
- * go inside the map. `physics(models)`: the PHYSCOLLIDE lump made from each model's convex brushes, or null.
+ * go inside the map. `physics(models, { materials, surfaceprops })`: the PHYSCOLLIDE lump made from each model's
+ * convex brushes (physCollideLump's), or null.
  */
 export function portMapToSource(file, { name, folder = "smak", folders = [], valve, physics } = {}) {
   const mapName = (name ?? basename(file).replace(/\.bsp$/i, "")).toLowerCase();
@@ -169,14 +170,9 @@ export function portMapToSource(file, { name, folder = "smak", folders = [], val
     const reflectivity = sum.map((c) => (c / n / 255) ** 2.2);
     return { texdata: addTexdata(path, size.width, size.height, reflectivity), scaleS: size.width / entry.width, scaleT: size.height / entry.height, kind, path, put, size, reflectivity, surfaceprop }; // prettier-ignore
   });
-  const mostWorn = (sides) => {
-    const count = new Map();
-    for (const side of sides) {
-      const ti = side.texinfo === NODRAW_INFO ? null : bsp.texinfo[side.texinfo];
-      const prop = ti && textures[ti.texture]?.surfaceprop;
-      if (prop) count.set(prop, (count.get(prop) ?? 0) + 1);
-    }
-    return [...count].sort((a, b) => b[1] - a[1])[0]?.[0] ?? DEFAULT_SURFACEPROP;
+  const sidesSurfaceprop = (side) => {
+    const ti = side.texinfo === NODRAW_INFO ? null : bsp.texinfo[side.texinfo];
+    return ti && textures[ti.texture]?.surfaceprop;
   };
 
   // the sky: GoldSrc's gfx/env/<skyname><side>.tga as Source's materials/skybox/<folder>_<skyname><side>
@@ -277,13 +273,37 @@ export function portMapToSource(file, { name, folder = "smak", folders = [], val
     for (let i = m.firstFace; i < m.firstFace + m.faceCount; i++) faceTexinfo[i] = unlitTexinfo(bsp.faces[i].texinfo);
   }
 
-  // a brush side's texinfo: that of the face lying on its plane, facing out of it, if any
-  const sideTexinfo = new Map();
-  bsp.faces.forEach((f) => {
+  // a brush side's texinfo: that of the face lying on it, facing out of it. The brushes are the tree's solid leaves
+  // and the faces are cut by the same tree, so the side's own face has its middle in the brush; of those the
+  // biggest, a water surface's last (it lies on the plane of the ground beside it), else any face on its plane. Taken from the first face on the plane, as before 0.30.1, 11 to 25 in a
+  // hundred of the world's drawn area had another face's surfaceprop (dirt as concrete, concrete as wood), or none
+  // where the map has the plane twice (Half-Life's boot_camp, stalkyard, crossfire, c2a5)
+  const facesOnPlane = new Map();
+  bsp.faces.forEach((f, i) => {
     const p = bsp.planes[f.plane];
-    const plane = f.side ? planeFor(p.normal.map((x) => -x), -p.dist) : f.plane;
-    if (!sideTexinfo.has(plane)) sideTexinfo.set(plane, f.texinfo);
+    const key = f.side ? planeKey(p.normal.map((x) => -x), -p.dist) : planeKey(p.normal, p.dist);
+    const poly = facePolygon(bsp, i);
+    const middle = [0, 1, 2].map((k) => poly.reduce((s, q) => s + q[k], 0) / poly.length);
+    let area = 0;
+    for (let k = 1; k + 1 < poly.length; k++) {
+      const u = [0, 1, 2].map((c) => poly[k][c] - poly[0][c]);
+      const v = [0, 1, 2].map((c) => poly[k + 1][c] - poly[0][c]);
+      area += Math.hypot(u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]);
+    }
+    if (!facesOnPlane.has(key)) facesOnPlane.set(key, []);
+    const water = /^[!*]/.test(bsp.textures[bsp.texinfo[f.texinfo]?.texture]?.name ?? "");
+    facesOnPlane.get(key).push({ texinfo: f.texinfo, middle, area, water });
   });
+  const sideTexinfo = (planes, side) => {
+    const on = facesOnPlane.get(planeKey(planes[side].normal, planes[side].dist));
+    if (!on) return NODRAW_INFO;
+    let best = null;
+    for (const face of on) {
+      const inside = planes.every((q) => q.normal[0] * face.middle[0] + q.normal[1] * face.middle[1] + q.normal[2] * face.middle[2] - q.dist <= 1); // prettier-ignore
+      if (inside && (!best || (best.water && !face.water) || (best.water === face.water && face.area > best.area))) best = face;
+    }
+    return (best ?? on[0]).texinfo;
+  };
 
   // ── leaves and brushes ──
   const leafContents = (leaf) => {
@@ -318,8 +338,10 @@ export function portMapToSource(file, { name, folder = "smak", folders = [], val
   const nodes = bsp.nodes.map((n) => ({ ...n, children: [...n.children] }));
   const brushes = [];
   const clampShort = (v) => Math.max(-32768, Math.min(32767, Math.round(v)));
-  // for each model, its solid brushes' planes for VPhysics (bevels left out, as vbsp does)
+  // for each model, its solid brushes for VPhysics (bevels left out, as vbsp does); a world side's material is its
+  // texture's surfaceprop, numbered in the world's materialtable (stevenlafl's)
   const physicsModels = bsp.models.map(() => []);
+  const physicsMaterials = [];
   // GoldSrc takes a brush entity's contents from its `skin` when that is under 0 (func_water's -3, the
   // func_ladder code's -16), whatever its brushes were compiled as: a sea that is a func_water compiled solid
   // came out a wall
@@ -344,12 +366,17 @@ export function portMapToSource(file, { name, folder = "smak", folders = [], val
         leaf = leaves.length - 1;
         nodes[b.node].children[b.side] = -1 - leaf;
       }
-      const sides = b.planes.map((p) => {
-        const plane = planeFor(p.normal, p.dist);
-        return { plane, texinfo: sideTexinfo.get(plane) ?? NODRAW_INFO, bevel: p.bevel ? 1 : 0 };
-      });
-      // what the physics takes it to be made of: the surfaceprop most of its drawn sides wear
-      if (b.contents === CONTENTS.SOLID) physicsModels[modelIndex].push({ planes: b.planes.filter((p) => !p.bevel), surfaceprop: mostWorn(sides) }); // prettier-ignore
+      const sides = b.planes.map((p, k) => ({ plane: planeFor(p.normal, p.dist), texinfo: sideTexinfo(b.planes, k), bevel: p.bevel ? 1 : 0 })); // prettier-ignore
+      if (b.contents === CONTENTS.SOLID) {
+        const planes = b.planes.flatMap((p, k) => {
+          if (p.bevel) return [];
+          if (modelIndex !== 0) return [p];
+          const surface = sidesSurfaceprop(sides[k]);
+          if (surface && !physicsMaterials.includes(surface) && physicsMaterials.length < 126) physicsMaterials.push(surface);
+          return [{ ...p, material: physicsMaterials.indexOf(surface) + 1 }];
+        });
+        physicsModels[modelIndex].push({ planes, mins: b.mins, maxs: b.maxs });
+      }
       brushes.push({ contents: b.contents, sides });
       leaves[leaf].brushes.push(brushes.length - 1);
       if (override) leaves[leaf].contents = b.contents;
@@ -382,8 +409,10 @@ export function portMapToSource(file, { name, folder = "smak", folders = [], val
     return false;
   })
     // a true clip brush grown by either player's box lies inside that player's hull; a piece of a wall's growth
-    // that one hull's rebuild kept does not (2% let by, for the trees' rounding: none lost a clip brush of c1a0's)
-    .filter((b) => clipOutsideHull(bsp, b, world.headNodes[1], PLAYER_HALF) <= 0.02 && clipOutsideHull(bsp, b, world.headNodes[3], DUCKED_HALF) <= 0.02); // prettier-ignore
+    // that one hull's rebuild kept does not. 10% let by, for the trees' rounding: at 2% clip of TS's bikini was
+    // lost (32 spots blocked only in GoldSrc where no filter leaves 24), at none one of c1a0's; at 10% none
+    // measured on Half-Life's eight maps or bikini
+    .filter((b) => clipOutsideHull(bsp, b, world.headNodes[1], PLAYER_HALF) <= 0.1 && clipOutsideHull(bsp, b, world.headNodes[3], DUCKED_HALF) <= 0.1); // prettier-ignore
   const CLIP = CONTENTS.PLAYERCLIP | CONTENTS.MONSTERCLIP;
   const worldBox = [0, 1, 2].flatMap((k) => [
     { normal: [0, 1, 2].map((c) => (c === k ? 1 : 0)), dist: world.maxs[k] + 64 },
@@ -636,7 +665,17 @@ export function portMapToSource(file, { name, folder = "smak", folders = [], val
   L[LUMP.AREAPORTALS] = new Packer().u16(0).u16(0).u16(0).u16(0).i32(0).done();
   L[LUMP.GAME_LUMP] = new Packer().i32(0).done();
   if (packed.length) L[LUMP.PAKFILE] = storedZip(packed);
-  const collide = physics ? physics(physicsModels) : null;
+  // a brush entity's surfaceprop: its textures' with the most area, as vbsp picks it
+  const physicsSurfaceprops = bsp.models.map((m, index) => {
+    if (!index) return undefined;
+    const area = new Map();
+    for (let i = m.firstFace; i < m.firstFace + m.faceCount; i++) {
+      const surface = textures[bsp.texinfo[bsp.faces[i].texinfo].texture]?.surfaceprop ?? "default";
+      area.set(surface, (area.get(surface) ?? 0) + faceArea(i));
+    }
+    return [...area].sort((a, b) => b[1] - a[1])[0]?.[0];
+  });
+  const collide = physics ? physics(physicsModels, { materials: physicsMaterials, surfaceprops: physicsSurfaceprops }) : null;
   if (collide) L[LUMP.PHYSCOLLIDE] = collide;
   else warnings.push("no physics collision (PHYSCOLLIDE): Lua's traces and props fall through the world. It needs GMod's vphysics (physCollideLump)"); // prettier-ignore
   {
@@ -678,6 +717,8 @@ export function portMapToSource(file, { name, folder = "smak", folders = [], val
     files,
     props,
     physics: physicsModels,
+    physicsMaterials,
+    physicsSurfaceprops,
     warnings,
     facts: {
       faces: bsp.faces.length,
@@ -978,9 +1019,9 @@ export function portMapToGmod(file, { out, name, folder = "smak", folders, valve
   const halfLife = valve === undefined ? findHalfLife() : null;
   const valveDir = valve === undefined ? (halfLife ? join(halfLife, "valve") : null) : valve;
   let failed = null;
-  const collide = (models) => {
+  const collide = (models, tables) => {
     try {
-      return physCollideLump(models, { vphysics, helper, gmod });
+      return physCollideLump(models, { ...tables, vphysics, helper, gmod });
     } catch (e) {
       failed = e.message;
       return null;

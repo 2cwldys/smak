@@ -193,13 +193,16 @@ const testPhysics = (name, run) => {
 
 testPhysics("map port: the world's and the brush entity's physics made by GMod's vphysics, a box's volume exact", () => {
   const box = (x, s) => [[1, 0, 0, x + s], [-1, 0, 0, -x], [0, 1, 0, s], [0, -1, 0, 0], [0, 0, 1, s], [0, 0, -1, 0]].map(([a, b, c, d]) => ({ normal: [a, b, c], dist: d })); // prettier-ignore
-  const lump = source.physCollideLump([[box(0, 64), box(100, 32)], [box(0, 16), box(32, 16)]]);
+  const metal = (planes) => planes.map((p) => ({ ...p, material: 2 }));
+  const lump = source.physCollideLump([[box(0, 64), metal(box(100, 32))], [box(0, 16), box(32, 16)]], { materials: ["concrete", "metal"], surfaceprops: [undefined, "wood"] }); // prettier-ignore
   sure(lump.readInt32LE(0) === 0, "model 0 first");
   const next = 16 + lump.readInt32LE(4) + lump.readInt32LE(8);
   sure(lump.readInt32LE(next) === 1, "then model 1");
   sure(lump.readInt32LE(lump.length - 16) === -1, "the list's end");
   const text = lump.toString("latin1");
   sure(/staticsolid \{\n"index" "0"/.test(text), "the world a static solid");
+  sure(/materialtable \{\n"concrete" "1"\n"metal" "2"\n\}/.test(text), "the world's materialtable after it");
+  sure(/"surfaceprop" "wood"/.test(text), "the brush entity's surfaceprop");
   // two 16 unit boxes: 8192 cubic inches at 2000 kg/m^3
   const mass = Number(text.match(/"mass" "([\d.]+)"/)?.[1]);
   near(mass, 8192 * 2000 * 0.0254 ** 3, 0.01, `the brush entity's mass: ${mass}`);
@@ -220,7 +223,8 @@ test("map port: a texture's type from the game's sound/materials.txt, read as th
   sure(source.surfacepropOfType("M") === "metal" && source.surfacepropOfType("V") === "metalvent" && source.surfacepropOfType("?") === "concrete", "the types as Source's"); // prettier-ignore
   const pak = lump("PAKFILE").toString("latin1");
   sure((pak.match(/"\$surfaceprop" "concrete"/g) ?? []).length === 3, "the two rooms' three textures, listed nowhere, are concrete");
-  sure(ported.physics[0].every((c) => c.surfaceprop === "concrete" && c.planes.length >= 4), "the world's convexes say what they are made of");
+  sure(ported.physicsMaterials.join() === "concrete", `the world's materialtable: ${ported.physicsMaterials}`);
+  sure(ported.physics[0].every((c) => c.planes.length >= 4 && c.planes.some((p) => p.material === 1) && c.planes.every((p) => p.material <= 1) && c.mins && c.maxs), "each drawn world side the material of its texture (one facing out of the map has no face, so default)'s surfaceprop"); // prettier-ignore
 });
 
 test("map port: a clip brush is held to the hulls, grown by the player's box: a wall's own fits hull 1, moved into a room it does not", () => {

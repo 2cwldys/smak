@@ -812,8 +812,12 @@ map's monsters come: `spawnsOf`, `spawnsTable`; its character in numbers: `chara
     `surfacepropOfType(letter)`; `materialName(name)`; `worldLightsLump(entities, clusterAt)`.
   - `regionOf(planes)`, `brushesOfTree(bsp, head, isBrush, mins, maxs)`, `brushesOfClipHull(bsp, head, half, mins,
     maxs)`, `clipContents(bsp, head, point)`: the collision brushes rebuilt from a GoldSrc map's trees.
-- `physCollideLump(models, { vphysics, helper, gmod })`: a map's physics made by GMod's vphysics; `models` for each
-  model its convexes, `[{ planes, surfaceprop }]`. `findVphysics()`, `vcollideHelper()` (built once into `~/.smak/`).
+- `physCollideLump(models, { materials, surfaceprops, vphysics, helper, gmod })`: a map's physics made by GMod's
+  vphysics; `models` for each model its convexes, `[{ planes, mins, maxs }]`, each plane `{ normal, dist, material }`.
+  A world plane's `material` is its surfaceprop's number in `materials` plus 1 (the world's `materialtable`, at
+  most 126), 0 for `default`; `surfaceprops[model]` a brush entity's. `portMapToSource` gives them as
+  `physics`, `physicsMaterials` and `physicsSurfaceprops`. `findVphysics()`, `vcollideHelper()` (built once into
+  `~/.smak/`).
 - `rcon(commands, { host, port = 27015, password, timeout, gap })` → what the game answered: console commands
   over Source's RCON, tried on 127.0.0.1 and each LAN address (`rconHosts()`); `SMAK_RCON_PASSWORD`.
 - `runProbe(lua, { name, game, client, wait, ...rcon })` → `{ passed, failed, notes, done, timedOut, text }`: a Lua

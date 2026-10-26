@@ -3,6 +3,28 @@
 The newest first. A version that changes what a model's file looks like, or that a model made before needs
 mending for, says so under **Mind**.
 
+## 0.30.1 (2026-10-26)
+
+What a GoldSrc map's port is made of, to the physics and to traces (`docs/SOURCE.md` "A GoldSrc map in GMod"):
+- **Corrected:** 0.30.0 said the game reads a physics convex's game data as its surfaceprop. It does not, as
+  stevenlafl found and measured: to the physics every hit on the world was `default`. Now each of the world's
+  triangles takes the surfaceprop of the brush side it lies on, and the lump's text carries the
+  `materialtable`, as vbsp does (stevenlafl's, ported). A brush entity's solid takes its textures'
+  surfaceprop with the most area. On stalkyard, 21 crates: 90 hits all `default` before; concrete, wood and
+  metalgrate now, each crate's first its floor's own. **Mind:** port a map again for it.
+- `source.physCollideLump(models, { materials, surfaceprops })`: convexes as `{ planes, mins, maxs }`, each plane
+  with its `material`; `portMapToSource` gives `physicsMaterials` and `physicsSurfaceprops`.
+- GMod's 64-bit vphysics.dll has one slot more before `CreateQueryModel` than Valve's header; the helper
+  calls it there.
+- A rebuilt brush's side takes the texture of the face lying on it, not the first face on its plane. 11 to 25
+  in a hundred of the world's drawn area read as another surfaceprop or none (boot_camp's floors as
+  toolsnodraw's `default_silent`); now 0.0 to 2.2. Bullets' impacts and footsteps read it too.
+- A rebuilt clip brush is left out at more than 10 in a hundred of its grown faces' points open, not 2: at 2,
+  real clip of TS's ts_bikini was lost. Half-Life's eight maps still agree on all but 0.02 to 0.48 in a hundred
+  spots (datacore ducked 0.48, was 0.34).
+- The `map` probe checks that a crate hits its floor, to the physics, as the floor's own surfaceprop. It looks
+  256 down for a start's floor and notes one over 64, as Half-Life's own maps have them.
+
 ## 0.30.0 (2026-10-26)
 
 GoldSrc maps in GMod (PLAN.md 6f, `docs/SOURCE.md` "A GoldSrc map in GMod"), ported from stevenlafl's converter:
@@ -18,7 +40,7 @@ GoldSrc maps in GMod (PLAN.md 6f, `docs/SOURCE.md` "A GoldSrc map in GMod"), por
   colour for a bullet's chips and dust, and they came out yellow. Port a model again for it.
 - Each texture's `$surfaceprop` from the game's `sound/materials.txt` (`source.textureTypes`,
   `surfacepropOfType`), and each physics convex tagged with its surfaceprop's index in GMod's table, as vbsp
-  does.
+  does (wrong: the game does not read it; corrected in 0.30.1).
 - Seen in GMod: Half-Life's stalkyard loads, drawn, lit, walked on, with physics. All 115 of Half-Life's maps
   port, with physics.
 
