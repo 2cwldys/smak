@@ -22,6 +22,13 @@ GoldSrc maps in GMod (PLAN.md 6f, `docs/SOURCE.md` "A GoldSrc map in GMod"), por
 - Seen in GMod: Half-Life's stalkyard loads, drawn, lit, walked on, with physics. All 115 of Half-Life's maps
   port, with physics.
 
+GMod driven while it runs (`docs/SOURCE.md` "GMod while it runs"), after stevenlafl's tools:
+- `smak gmod-rcon`, `source.rcon`: console commands over Source's RCON, found on the LAN address a listen
+  server answers on.
+- `smak gmod-probe`, `source.runProbe`: Lua run inside the game, PASS or FAIL from its `check()` lines. The
+  built-in `map` probe holds a `gmod-map` port: physics, starts, floors' surfaceprops, a crate that lands.
+- `smak gmod-shoot`, `source.shoot`: a screenshot from a spot, the HUD and view model hidden, no setting changed.
+
 A ported ragdoll fitted to the body, its joints measured on its animations (`docs/SOURCE.md`):
 - Each piece is the convex hull of its bone's corners, the triangles' sides between pieces shared out among
   them. A bone with hit boxes and no body of its own is left to the piece above. GoldSrc's hit boxes are the

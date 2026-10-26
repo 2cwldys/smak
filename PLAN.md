@@ -372,6 +372,12 @@ spots of every map.
 - Left of step 7: `rcon` and the probes in SMAK itself. Rcon answers on the LAN address. Several commands in a
   row trip GMod's guard, so the Lua goes in a file run by `lua_openscript`.
 
+**Step 7's first half done 2026-10-25:** `gmod-rcon`, `gmod-probe` (the built-in `map` probe), `gmod-shoot`
+(`src/source/game.mjs`). On stalkyard, in the person's game with `-usercon`: the map probe passed 7 of 7,
+a probe's error and a probe that never ends both FAIL, and a screenshot came clean. Found: a second RCON session
+straight after the first is dropped without a word; the client's Lua may not run `jpeg`; GMod blocks
+`fov_desired` from the server. Left: `check-collision` on a SteamCMD dedicated server, and the twin map.
+
 Their converter does not do, and nor will this at first: outputs (GoldSrc's targets as Source's I/O), water
 surfaces, animated textures, decals.
 

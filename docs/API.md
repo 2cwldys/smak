@@ -814,6 +814,12 @@ map's monsters come: `spawnsOf`, `spawnsTable`; its character in numbers: `chara
     maxs)`, `clipContents(bsp, head, point)`: the collision brushes rebuilt from a GoldSrc map's trees.
 - `physCollideLump(models, { vphysics, helper, gmod })`: a map's physics made by GMod's vphysics; `models` for each
   model its convexes, `[{ planes, surfaceprop }]`. `findVphysics()`, `vcollideHelper()` (built once into `~/.smak/`).
+- `rcon(commands, { host, port = 27015, password, timeout, gap })` → what the game answered: console commands
+  over Source's RCON, tried on 127.0.0.1 and each LAN address (`rconHosts()`); `SMAK_RCON_PASSWORD`.
+- `runProbe(lua, { name, game, client, wait, ...rcon })` → `{ passed, failed, notes, done, timedOut, text }`: a Lua
+  probe run in the game (`probeLua(name, body)` puts `check`, `note` and `done` before it; `probeAnswer(text)`
+  reads its lines). `builtInProbe(name)`, `builtInProbes()`: `map`.
+- `shoot([x, y, z], [pitch, yaw], { game, fov, wait, ...rcon })` → the new screenshot's file, from GMod's client.
 - `writeSourceBsp(lumps, { revision })`, `readSourceBsp(bytes)` → `{ version, revision, lumps: [{ version, bytes }] }`,
   `Packer`, `colorRgbExp`, `visibilityLump(pvs, pas)`, `storedZip(files)`, `SOURCE_LUMP`, `SURF`, `CONTENTS`.
 

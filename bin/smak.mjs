@@ -35,6 +35,9 @@ const BODIES_LISTED = 6;
 const BONES_LISTED = 4;
 // the flags that are followed by a value: one given with nothing after it is said, not guessed at
 const VALUE_FLAGS = [
+  "password",
+  "host",
+  "wait",
   "reference",
   "against",
   "landmark",
@@ -3663,6 +3666,49 @@ function gmodMap({ command, file, flags }) {
   });
 }
 
+/** The RCON options a command was given: --host, --port, --password (else SMAK_RCON_PASSWORD). */
+const rconOf = (flags) => defined({ host: flags.host, port: numberOf(flags, "port"), password: flags.password });
+
+/** gmod-rcon: console commands sent to a running GMod, its answer printed. */
+async function gmodRcon({ file, rest, flags }) {
+  process.stdout.write(await smak.source.rcon([file, ...rest], rconOf(flags)));
+}
+
+/**
+ * gmod-probe: a Lua probe run in the game (a file, or a built-in one by its name: map), its PASS, FAIL and
+ * NOTE lines said, and PASS or FAIL for the whole: FAIL on any failed line, or no DONE in time.
+ */
+async function gmodProbe({ command, file, flags }) {
+  const own = existsSync(file) && !statSync(file).isDirectory();
+  const lua = own ? readFileSync(file, "utf8") : smak.source.builtInProbe(file);
+  if (lua === null) fail(`${command}: no file ${file}, and no built-in probe of that name (${smak.source.builtInProbes().join(", ")})`);
+  const name = flags.name ?? basename(file).replace(/\.lua$/i, "").replace(/\W/g, "_");
+  const wait = numberOf(flags, "wait");
+  const answer = await smak.source.runProbe(lua, defined({ name, game: flags.game, client: flags.client === true, wait, ...rconOf(flags) }));
+  const lines = [
+    ...answer.passed.map((line) => `PASS  ${line}`),
+    ...answer.notes.map((line) => `NOTE  ${line}`),
+    ...answer.failed.map((line) => `FAIL  ${line}`),
+  ];
+  if (answer.timedOut) lines.push(`FAIL  no DONE from the probe in ${(wait ?? 30000) / 1000} s${answer.text ? "" : ": it never called done(), or the game did not run it (its console says)"}`); // prettier-ignore
+  const passed = !answer.failed.length && !answer.timedOut;
+  if (flags.o) save(flags.o, `${lines.join("\n")}\n`);
+  else for (const line of lines) console.log(line);
+  console.log(`${passed ? "PASS" : "FAIL"}: probe ${name}: ${answer.passed.length} passed, ${answer.failed.length + (answer.timedOut ? 1 : 0)} failed${flags.o ? ` (the lines: ${flags.o})` : ""}`); // prettier-ignore
+  process.exit(passed ? 0 : 1);
+}
+
+/** gmod-shoot: a screenshot from GMod's client with the eye at x y z, looking along pitch yaw. */
+async function gmodShoot({ command, file, rest, flags }) {
+  const [y, z, pitch = 0, yaw = 0] = rest;
+  if (z === undefined) fail(`${command}: <x> <y> <z> [pitch yaw]: the eye's place, and where it looks`);
+  const shot = await smak.source.shoot([file, y, z], [pitch, yaw], defined({ game: flags.game, fov: numberOf(flags, "fov"), ...rconOf(flags) })); // prettier-ignore
+  if (flags.o) {
+    save(flags.o, readFileSync(shot));
+    console.log(flags.o);
+  } else console.log(shot);
+}
+
 /**
  * A Source model named on the command line: a .mdl on the disk (its .vvd and .vtx beside it, its materials
  * looked for under the folder that holds its models/, --addon, and GMod's), or a path under the game
@@ -4617,6 +4663,38 @@ const COMMANDS = {
                                             hand; a player also stands on its feet and has GMod's hand attachments. --upper: a
                                             player's animations each copied from the spine up (<name>_upper). The sounds its events
                                             play are copied under addon/sound/<folder>/.`,
+  },
+  "gmod-rcon": {
+    run: gmodRcon,
+    own: true,
+    address: true,
+    help: `  gmod-rcon <command> [<command> ...] [--password p] [--host a] [--port 27015]
+                                            console commands sent to a running GMod over Source's RCON (a dedicated server, or
+                                            the game started with -usercon +rcon_password p), its answer printed. It is looked for
+                                            on 127.0.0.1 and each LAN address (a listen server answers on the LAN's);
+                                            SMAK_RCON_HOST, SMAK_RCON_PASSWORD. A command a line: several at once trip GMod's
+                                            guard against floods, so longer Lua goes by gmod-probe.`,
+  },
+  "gmod-probe": {
+    run: gmodProbe,
+    own: true,
+    address: true,
+    help: `  gmod-probe <file.lua | map> [--name n] [--client] [--wait ms] [--game <folder>] [-o lines.txt] [--password p] ...
+                                            a Lua probe run inside the game: written under garrysmod/lua/ (a new name each run),
+                                            run by lua_openscript over RCON (--client: lua_openscript_cl), its lines read from
+                                            garrysmod/data/. The probe calls check(ok, what), note(text) and done() (by a timer
+                                            too); an error is a FAIL. Ends in PASS or FAIL. Built in: map (a gmod-map port loaded:
+                                            the world's physics, each start's floor and room, the floors' surfaceprops, a crate
+                                            dropped that lands; the models the game lacks noted). --game: the folder holding
+                                            garrysmod/ (a dedicated server's install), else GMod's.`,
+  },
+  "gmod-shoot": {
+    run: gmodShoot,
+    own: true,
+    address: true,
+    help: `  gmod-shoot <x> <y> <z> [pitch yaw] [-o shot.jpg] [--fov 75] [--game <folder>] [--password p] ...
+                                            a screenshot from GMod's client (a listen server, -usercon): player 1 in noclip with
+                                            its eye at x y z looking along pitch yaw, the HUD and view model off for it.`,
   },
   "source-info": {
     run: sourceInfo,

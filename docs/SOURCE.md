@@ -325,6 +325,38 @@ without it mounted they show as ERROR.
 Not done, as in stevenlafl's: outputs (GoldSrc's targets as Source's I/O), water surfaces, animated textures,
 decals.
 
+## GMod while it runs: RCON, probes, screenshots
+
+```
+node bin/smak.mjs gmod-rcon status --password <p>
+node bin/smak.mjs gmod-probe map --password <p>            (or a probe of your own: gmod-probe mine.lua)
+node bin/smak.mjs gmod-shoot <x> <y> <z> [pitch yaw] -o shot.jpg --password <p>
+```
+
+As stevenlafl's TS port drives its test server (`tools/rcon.mjs`, `probe.mjs`, `map/shoot.mjs`). The game
+must take RCON: a dedicated server does; the game itself only when started with `-usercon +rcon_password <p>`
+(Steam's launch, for that session: `steam -applaunch 4000 -usercon +rcon_password <p> +map <name>`).
+`SMAK_RCON_PASSWORD` stands for `--password`.
+- **Where it answers.** A listen server takes RCON on the machine's LAN address, not on 127.0.0.1, so SMAK tries
+  127.0.0.1 and then each IPv4 address the machine has (`--host`, `SMAK_RCON_HOST` to name one).
+- **One line at a time.** Several commands sent in a row trip GMod's guard against floods, and a second RCON
+  session straight after the first is dropped without a word. Commands that belong together go on one line,
+  joined by `;`, and Lua longer than a line goes in a file.
+- **A probe** is Lua run inside the game. SMAK writes it under `garrysmod/lua/` with a name of its own each run
+  (the client keeps a script it has run by its name), runs it by `lua_openscript` (`--client`:
+  `lua_openscript_cl`), and reads its answer from `garrysmod/data/smak_probe_<name>.txt`. The probe has
+  `check(ok, what)` for a PASS or FAIL line, `note(text)`, and `done()`, which it may call from a timer. An
+  error is a FAIL, at the probe file's own line. No `done()` within `--wait` (30 s) is a FAIL too.
+- **The map probe** (built in, on a `gmod-map` port loaded): the world has its physics; each player start
+  has a floor within 64 under it and room for a standing player; the floors read surfaceprops of their own; a
+  crate dropped 96 over the start furthest from the players comes to rest on its floor. The models the game
+  lacks are noted, not failed. On stalkyard: 7 passed; floors concrete 12, wood 7, metalgrate 2; 8 of Half-Life:
+  Source's pickups lacking.
+- **A screenshot.** The server puts player 1 there in noclip, so that the server sends what the spot sees. The
+  client's view, its HUD and view model hidden, is set by hooks that are taken away after. No setting of the
+  person's is changed. GMod blocks `fov_desired` sent from the server, and it would be saved in their config;
+  the client's Lua may not run `jpeg`, so the server runs it.
+
 ## Not yet
 
 These are `PLAN.md`'s phases 6c to 6e:

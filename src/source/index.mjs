@@ -17,6 +17,7 @@
 //   map.mjs      portMapToSource portMapToGmod worldLightsLump materialName   a GoldSrc map as a Source map
 //   mapbrushes.mjs  regionOf brushesOfTree brushesOfClipHull clipContents  its collision brushes, rebuilt
 //   vcollide.mjs physCollideLump findVphysics vcollideHelper     its physics, made by GMod's vphysics
+//   game.mjs     rcon runProbe probeLua builtInProbe shoot     GMod driven while it runs: RCON, Lua probes, screenshots
 //   surfaceprops.mjs  readSurfaceProps densityOf massOf SURFACEPROP_OF_BASE   what it is made of, and its weight
 export * from "./gmod.mjs";
 export * from "./port.mjs";
@@ -36,3 +37,4 @@ export * from "./bsp.mjs";
 export * from "./map.mjs";
 export * from "./mapbrushes.mjs";
 export * from "./vcollide.mjs";
+export * from "./game.mjs";
