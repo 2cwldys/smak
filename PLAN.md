@@ -394,6 +394,29 @@ surfaces, animated textures, decals.
 **6e. What a port leaves behind.** Ragdolls (`$collisionjoints`), blended animations as pose parameters, bone
 controllers as pose parameters, NPC activities as Source names them, eyes and flexes.
 
+## Phase 7: s&box (Source 2), models first
+
+Started 2026-10-26, once GMod had a decent base. s&box was released 2026-04-28 and changes weekly (its managed
+engine and editor are open, Facepunch/sbox-public, often 100 commits a week): every fact here was measured on
+the engine of that day (26.10.13c) and may need measuring again. A low-definition style stays a valid choice
+there: a port is not pushed toward high-poly.
+
+**7a. Models: done 2026-10-26** (`smak sbox-port`, `docs/SBOX.md`). s&box reads no SMD, so the port writes DMX
+from Source's port's parts (`portToSource` hands them as data), a `.vmdl`, PNG and `.vmat`, and compiles with s&box's
+own resourcecompiler. Found by playing barney in the editor and reading his bones back (`sbox-cli`'s
+`run_csharp`): no turn (`forwardParity 1`), bones named with underscores, no bone culled, no hyphen in a mesh's
+node. Barney, houndeye (3 skins), can (6), w_crowbar, v_9mmhandgun, hgrunt, scientist and Counter-Strike's
+masked bigtree compile and read back whole; all 210 of Half-Life's models compile.
+
+**7b. sbox-check: done 2026-10-26.** The compiled model read back and posed in the editor through `sbox-cli`,
+every bone of each animation's sampled frames held to GoldSrc's `poseAt` within 0.1 units and 0.0005 of its chain
+(measured: 0.025 at most on barney, houndeye, scientist, hgrunt; 0.19 at the end of tentacle2's tentacle). The
+editor open on the project is used, else one is opened and closed. All 210 of Half-Life's models pass in 8 minutes.
+
+**7c. Next, in order.** Collision (a hull, a ragdoll as s&box's physics
+shapes and joints); blends as an animation graph; sounds as `.sound` assets; then the kit's own models built
+for s&box, then maps (a runtime GoldSrc map mount, as s&box's Quake mount, or a conversion to `.vmap`).
+
 ## Which model does the work (measured 2026-10-25)
 
 Three of 1a's usual tasks, each given to Haiku, Sonnet and Opus as subagents with the same prompt and only

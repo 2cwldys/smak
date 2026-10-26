@@ -4,14 +4,14 @@ A toolkit an AI coding agent (Claude Code, or any agent that runs commands and l
 content for **GoldSrc games**, Half-Life and its mods: models, animations, textures and maps. The agent writes
 short scripts with it, draws what it made to check its own work, and plays the result in the game. Since 0.29 it
 also takes them to **Source**: a GoldSrc model ported to Garry's Mod, with physics and a ragdoll, and since 0.30 a
-GoldSrc map, held to the original in the running game.
+GoldSrc map, held to the original in the running game. Since 0.31 a GoldSrc model goes to **s&box** (Source 2) too.
 
-![version](https://img.shields.io/badge/version-0.30.1-blue)
-![tests](https://img.shields.io/badge/tests-891%20passing-brightgreen)
+![version](https://img.shields.io/badge/version-0.31.0-blue)
+![tests](https://img.shields.io/badge/tests-919%20passing-brightgreen)
 ![node](https://img.shields.io/badge/node-18%2B-339933)
 ![dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)
 ![licence](https://img.shields.io/badge/licence-MIT-lightgrey)
-![engines](https://img.shields.io/badge/engines-GoldSrc%20%C2%B7%20Xash3D%20%C2%B7%20Source%20%28GMod%29-orange)
+![engines](https://img.shields.io/badge/engines-GoldSrc%20%C2%B7%20Xash3D%20%C2%B7%20Source%20%28GMod%29%20%C2%B7%20s%26box-orange)
 
 [![SMAK's showcase: Moria in Master Sword Classic, made and filmed with the kit](docs/media/demo.gif)](https://github.com/Deoroot/smak/releases/download/v0.26.0/smak-demo.mp4)
 
@@ -20,8 +20,8 @@ model, map and shot in it was made by an agent with SMAK.
 
 ## What it can do (measured)
 
-![commands](https://img.shields.io/badge/commands-84-555)
-![functions](https://img.shields.io/badge/public%20functions-736-555)
+![commands](https://img.shields.io/badge/commands-86-555)
+![functions](https://img.shields.io/badge/public%20functions-759-555)
 ![docs](https://img.shields.io/badge/guides-22-555)
 ![profiles](https://img.shields.io/badge/game%20profiles-Master%20Sword%20%C2%B7%20The%20Specialists%20%C2%B7%20Half--Life-555)
 
@@ -64,6 +64,13 @@ model, map and shot in it was made by an agent with SMAK.
   a probe that answers PASS or FAIL, and holds each map's collision to the original's: eight of them agree on all
   but 0.02 to 0.34 in a hundred spots. `smak gmod-map map.bsp -o out`, `gmod-probe map`, `gmod-collision`.
 
+### In s&box
+
+- **Half-Life's models, ported to s&box** (Source 2): meshes and animations as DMX, bodygroups, skins, hit boxes,
+  attachments, root motion and events in a `.vmdl`, compiled by s&box's own resourcecompiler. All 210 compile,
+  and all 210 read back in its editor pose as GoldSrc's, bone by bone (`smak sbox-check`). `smak sbox-port
+  model.mdl -o MyProject/Assets` ([docs/SBOX.md](docs/SBOX.md)).
+
 ## How it works
 
 1. You say what you want: "a darker, more worn katana", "a walled town with an orchard", "a new monster".
@@ -105,6 +112,7 @@ node bin/smak.mjs help                              every command
 | [docs/IMPORT.md](docs/IMPORT.md), [docs/ITEMS.md](docs/ITEMS.md) | Bought models, and new weapons in a game's own files. |
 | [docs/ENGINES.md](docs/ENGINES.md) | GoldSrc against Xash3D. |
 | [docs/SOURCE.md](docs/SOURCE.md) | A GoldSrc model or map ported to Garry's Mod (Source), checked corner by corner and in the running game; Source models read and drawn. |
+| [docs/SBOX.md](docs/SBOX.md) | A GoldSrc model ported to s&box (Source 2), and read back in its editor. |
 | [CHANGELOG.md](CHANGELOG.md) | What changed, version by version. |
 
 ## Limits

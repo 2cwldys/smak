@@ -251,6 +251,12 @@ export function portToSource(src, { name, folder = PORT_FOLDER, groups, collisio
   // (`bind`) a frame of an animation, the stance a body the kit built was made in
   const rest = bind ? poseAt(src, bind.seq, bind.frame) : restPose(src);
   const smdBones = skeleton.map(({ name: bone, parent }) => ({ name: bone, parent }));
+  // each SMD as data too, by its path under src/: what an engine that reads no SMD (s&box) is written from
+  const smdData = new Map();
+  const smd = (path, input) => {
+    smdData.set(path, input);
+    files.push({ path: `src/${path}`, data: smdOf(input) });
+  };
   const restFrame = reframe(bind ? frameValues(src, bind.seq, bind.frame) : named.map(({ pos, rot }) => [...pos, ...rot]));
   // the bones' matrices in that pose as Source is to have them (a biped's hands turned): what the ragdoll is
   // fitted and jointed on. The triangles are placed by `rest`, the file's own, in the model's space, where the turn
@@ -260,12 +266,16 @@ export function portToSource(src, { name, folder = PORT_FOLDER, groups, collisio
   // ── materials: one for each texture, named as Source wants its files ──
   const materialNames = uniqueNames(info.textures.map((t) => sourceName(t.name)));
   const materialsPath = `models/${where}/${model}`;
+  // each texture's picture as data: { name, width, height, rgba, flags }
+  const textures = [];
   info.textures.forEach((texture, i) => {
     const masked = Boolean(texture.flags & NF.masked);
     // a model the kit built for Source has its pictures in full colour beside the file's 256 colours
     const full = pictures?.get(texture.name);
     const picture = full ?? textureOf(src, i);
-    const vtf = writeVtf({ width: picture.width, height: picture.height, rgba: full ? full.rgba : rgbaOf(picture, masked) }, { alpha: masked });
+    const rgba = full ? full.rgba : rgbaOf(picture, masked);
+    textures.push({ name: materialNames[i], width: picture.width, height: picture.height, rgba, flags: texture.flags });
+    const vtf = writeVtf({ width: picture.width, height: picture.height, rgba }, { alpha: masked });
     files.push({ path: `addon/materials/${materialsPath}/${materialNames[i]}.vtf`, data: vtf });
     files.push({ path: `addon/materials/${materialsPath}/${materialNames[i]}.vmt`, data: vmtOf(`${materialsPath}/${materialNames[i]}`, texture.flags) }); // prettier-ignore
   });
@@ -320,7 +330,7 @@ export function portToSource(src, { name, folder = PORT_FOLDER, groups, collisio
         }
       }
       if (!triangles.length) return null;
-      files.push({ path: `src/${file}.smd`, data: smdOf({ bones: smdBones, frames: [restFrame], triangles }) });
+      smd(`${file}.smd`, { bones: smdBones, frames: [restFrame], triangles });
       return `${file}.smd`;
     }),
   }));
@@ -347,6 +357,8 @@ export function portToSource(src, { name, folder = PORT_FOLDER, groups, collisio
   const roots = skeleton.map((bone, i) => (bone.parent < 0 ? i : -1)).filter((i) => i >= 0);
   const sequenceLines = [];
   const portedSequences = [];
+  // each $sequence as data: { index (in the original), name, files, fps, loops, activity, weight, travel, blends, events }
+  const sequenceData = [];
   // a view model's animations given an activity by their names, said once
   const activitiesNamed = [];
   // the sounds the events play, by the path they named
@@ -400,7 +412,7 @@ export function portToSource(src, { name, folder = PORT_FOLDER, groups, collisio
         }),
       );
       const path = `anims/${animationFiles[i]}${b ? `_blend${b}` : ""}.smd`;
-      files.push({ path: `src/${path}`, data: smdOf({ bones: smdBones, frames }) });
+      smd(path, { bones: smdBones, frames });
       return path;
     });
     if (travelled) travels.push({ name: sequenceNames[i], movement: [0, 1, 2].map((axis) => (axes.some(([, bit]) => bit === TRAVEL[axis][1]) ? seq.movement[axis] : 0)) }); // prettier-ignore
@@ -444,6 +456,18 @@ export function portToSource(src, { name, folder = PORT_FOLDER, groups, collisio
       viewSounds.push({ sequence: sequenceLines.length, name: sequenceNames[i], frames: read.frames.length, loops: Boolean(seq.loops), events: played.map((e) => ({ frame: e.frame, sound: soundOf(e.options).replace(/^[*]+/, "") })) }); // prettier-ignore
     const events = all.filter((e) => !played.includes(e)).map((e) => `\t{ event ${e.event} ${e.frame} ${quote(SOUND_EVENTS.includes(e.event) ? soundOf(e.options) : e.options)} }`); // prettier-ignore
     sequenceLines.push(`$sequence ${quote(sequenceNames[i])} ${smds.map(quote).join(" ")} ${options.join(" ")}${events.length ? ` {\n${events.join("\n")}\n}` : ""}`); // prettier-ignore
+    sequenceData.push({
+      index: i,
+      name: sequenceNames[i],
+      files: smds,
+      fps,
+      loops: Boolean(seq.loops),
+      activity: (seq.activity && ACTIVITY[seq.activity]) || null,
+      weight: Math.max(1, seq.actweight),
+      travel: travelled ? axes.map(([word]) => word) : [],
+      blends: blending.axes,
+      events: all.map((e) => ({ event: e.event, frame: e.frame, options: SOUND_EVENTS.includes(e.event) ? soundOf(e.options) : e.options })), // prettier-ignore
+    });
     portedSequences.push(sequenceNames[i]);
     // its copy from the spine up, to lay over a walk: no activity (a layer is asked for by name), no events (they
     // would play twice), no travel (its root is not in it)
@@ -491,7 +515,7 @@ export function portToSource(src, { name, folder = PORT_FOLDER, groups, collisio
   const massLine = () => (mass === undefined ? "\t$automass" : `\t$mass ${num(mass)}`);
   let collisionLines = [];
   const physicsFile = `${model}_physics.smd`;
-  const physics = (triangles) => files.push({ path: `src/${physicsFile}`, data: smdOf({ bones: smdBones, frames: [restFrame], triangles }) }); // prettier-ignore
+  const physics = (triangles) => smd(physicsFile, { bones: smdBones, frames: [restFrame], triangles });
   if ((collides === "hull" || collides === "box") && Number.isFinite(bodyBox[0][0])) {
     const hull = collides === "hull" ? convexHull(allCorners.map((c) => c.p)) : null;
     if (collides === "hull" && !hull) warnings.push("its triangles lie in a plane, which has no hull: a box about them in its place");
@@ -528,7 +552,7 @@ export function portToSource(src, { name, folder = PORT_FOLDER, groups, collisio
       const weighed = mass ?? RAGDOLL_MASS;
       collisionLines = [`$collisionjoints ${quote(physicsFile)}\n{\n\t$mass ${num(weighed)}\n\t$inertia 10\n\t$damping 0.01\n\t$rotdamping 1.5\n\t$rootbone ${quote(skeleton[root].name)}\n${joints.join("\n")}\n}`]; // prettier-ignore
       // the pose a ragdoll is built in and falls from: the bones at rest
-      files.push({ path: "src/anims/ragdoll.smd", data: smdOf({ bones: smdBones, frames: [restFrame] }) });
+      smd("anims/ragdoll.smd", { bones: smdBones, frames: [restFrame] });
       sequenceLines.push(`$sequence "ragdoll" "anims/ragdoll.smd" fps 30 activity ACT_DIERAGDOLL 1`);
     }
   }
@@ -570,7 +594,7 @@ export function portToSource(src, { name, folder = PORT_FOLDER, groups, collisio
   qc.push(...collisionLines);
   if (!sequenceLines.length) {
     // Source's compiler wants one animation at least: the rest pose
-    files.push({ path: "src/anims/idle.smd", data: smdOf({ bones: smdBones, frames: [restFrame] }) });
+    smd("anims/idle.smd", { bones: smdBones, frames: [restFrame] });
     sequenceLines.push(`$sequence "idle" "anims/idle.smd" fps 30`);
   }
   for (const [pose, [low, high]] of poseRanges) qc.push(`$poseparameter ${quote(pose)} ${num(low)} ${num(high)}`);
@@ -594,6 +618,18 @@ export function portToSource(src, { name, folder = PORT_FOLDER, groups, collisio
     sounds: [...sounds].map(([from, to]) => ({ from, to })),
     viewSounds,
     warnings,
+    // what the QC and SMDs say, as data, for an engine that reads neither (s&box: sbox/port.mjs)
+    parts: {
+      bones: smdBones,
+      smd: smdData,
+      bodygroups,
+      skins: skinRows,
+      textures,
+      sequences: sequenceData,
+      attachments: attachments.map((a, i) => ({ name: attachmentNames[i], bone: skeleton[a.bone].name, pos: a.pos })),
+      hitboxes: hitboxes.map((h) => ({ group: h.group, bone: skeleton[h.bone].name, min: h.min, max: h.max })),
+      eyes: isZero(boxes.eyes) ? null : up(boxes.eyes),
+    },
     facts: {
       bones: skeleton.map((b) => b.name),
       sequences: portedSequences,

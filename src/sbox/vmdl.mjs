@@ -1,0 +1,252 @@
+// What s&box's model compiler reads besides the meshes and animations: the model's document (.vmdl, ModelDoc's
+// KV3 text) and each texture's material (.vmat).
+//
+//   kv3(value)                        a value as KV3 text (KV3_FLOAT and KV3_INT mark a number's kind)
+//   vmdlOf(model)                     the text of a .vmdl: { meshes, materials, skins, bones, bodygroups,
+//                                     sequences, attachments, hitboxes } (sbox/port.mjs makes it)
+//   vmatOf({ color, mask, flags })    the text of a .vmat for a GoldSrc texture
+//
+// THE DOCUMENT is a RootNode whose children are lists, each of its nodes as ModelDoc writes them (s&box's own
+// citizen*.vmdl and its prefabs; the classes and their fields in modeldoc_utils.dll):
+//   MaterialGroupList   DefaultMaterialGroup (each material's name in a mesh to its .vmat), a MaterialGroup a skin
+//   BoneMarkupList      bone_cull_type "None": the compiler otherwise drops a bone no vertex is on (barney's root
+//                       Bip01, and with it the turn it rests in and a walk's travel)
+//   RenderMeshList      a RenderMeshFile a mesh (.dmx). Its name has no hyphen: "barney-x" fails as "Node ...
+//                       resolve failure", with nothing else said
+//   BodyGroupList       a BodyGroup a GoldSrc bodypart, a BodyGroupChoice a submodel (none of its meshes: blank)
+//   AnimationList       an AnimFile an animation (.dmx), its events (AnimEvent) and its travel (ExtractMotion)
+//   AttachmentList      an Attachment on its bone
+//   HitboxSetList       one HitboxSet of Hitbox boxes on their bones, GoldSrc's hit group as a tag
+//
+// THE MATERIAL is complex.shader's (the shader every s&box model's material names): the picture as its colour, no
+// shine (GoldSrc lit a model by its normals alone), and a texture's flags as its features: masked (64) alpha-tested
+// on a mask of its holes, additive (32) added to what is behind it, fullbright (4) lit by itself.
+
+/** A number written as a float (1.0) or as an int (1): KV3 keeps the kind. */
+export const KV3_FLOAT = (v) => ({ kv3: "float", v });
+export const KV3_INT = (v) => ({ kv3: "int", v });
+const float = (v) => {
+  const text = (Math.abs(v) < 5e-7 ? 0 : v).toFixed(6).replace(/0+$/, "").replace(/\.$/, ".0");
+  return text === "-0.0" ? "0.0" : text;
+};
+const string = (s) => `"${String(s).replace(/\\/g, "/").replace(/"/g, "'")}"`;
+
+/** A value as KV3 text: strings, booleans, numbers (floats unless marked), lists, and objects of keys. */
+export function kv3(value, tab = "") {
+  if (value === null || value === undefined) return "null";
+  if (typeof value === "string") return string(value);
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (typeof value === "number") return float(value);
+  if (value.kv3 === "float") return float(value.v);
+  if (value.kv3 === "int") return String(Math.round(value.v));
+  if (Array.isArray(value)) {
+    if (!value.length) return "[  ]";
+    // a short list of numbers on one line, as ModelDoc writes a vector
+    if (value.length <= 4 && value.every((v) => typeof v === "number"))
+      return `[ ${value.map(float).join(", ")} ]`;
+    return `[\n${value.map((v) => `${tab}\t${kv3(v, `${tab}\t`)},`).join("\n")}\n${tab}]`;
+  }
+  const lines = Object.entries(value)
+    .filter(([, v]) => v !== undefined)
+    .map(([key, v]) => `${tab}\t${key} = ${kv3(v, `${tab}\t`)}`);
+  return `{\n${lines.join("\n")}\n${tab}}`;
+}
+
+const HEADER =
+  "<!-- kv3 encoding:text:version{e21c7f3c-8a33-41c5-9977-a76d3a32aa0d} format:modeldoc29:version{3cec427c-1b0e-4d48-a90a-0436f33a6041} -->";
+
+/** A list node of ModelDoc's: its class and children, and its own fields after. */
+const list = (_class, children, more = {}) => ({ _class, children, ...more });
+
+/**
+ * The text of a .vmdl.
+ *   meshes:      [{ name, file }]                     each mesh's node name (no hyphen) and its .dmx, under Assets/
+ *   materials:   [{ name, path }]                      each material's name in the meshes and its .vmat
+ *   skins:       [[{ from, to }]]                      each skin after the first: the .vmat each material becomes
+ *   bones:       [name]                                kept whether or not a vertex is on them
+ *   bodygroups:  [{ name, choices: [{ name, meshes }] }]
+ *   sequences:   [{ name, file, fps, loops, activity, weight, fade, travel: ["LX"...], root, events: [{ frame, event, options }] }]
+ *   attachments: [{ name, bone, pos }]
+ *   hitboxes:    [{ name, bone, group, min, max }]
+ */
+export function vmdlOf({
+  meshes = [],
+  materials = [],
+  skins = [],
+  bodygroups = [],
+  sequences = [],
+  attachments = [],
+  hitboxes = [],
+}) {
+  const children = [];
+  children.push(
+    list("MaterialGroupList", [
+      {
+        _class: "DefaultMaterialGroup",
+        remaps: materials.map((m) => ({ from: `${m.name}.vmat`, to: m.path })),
+        use_global_default: false,
+        global_default_material: "materials/default.vmat",
+      },
+      ...skins.map((remaps, k) => ({ _class: "MaterialGroup", name: `skin${k + 1}`, remaps })),
+    ]),
+  );
+  children.push(list("BoneMarkupList", [], { bone_cull_type: "None" }));
+  children.push(
+    list(
+      "RenderMeshList",
+      meshes.map((m) => ({
+        _class: "RenderMeshFile",
+        name: m.name,
+        filename: m.file,
+        import_translation: [0, 0, 0],
+        import_rotation: [0, 0, 0],
+        import_scale: 1,
+        align_origin_x_type: "None",
+        align_origin_y_type: "None",
+        align_origin_z_type: "None",
+        parent_bone: "",
+        import_filter: { exclude_by_default: false, exception_list: [] },
+      })),
+    ),
+  );
+  if (bodygroups.length)
+    children.push(
+      list(
+        "BodyGroupList",
+        bodygroups.map((g) => ({
+          _class: "BodyGroup",
+          name: g.name,
+          children: g.choices.map((c) => ({ _class: "BodyGroupChoice", name: c.name, meshes: c.meshes })),
+          hidden_in_tools: false,
+        })),
+      ),
+    );
+  if (sequences.length)
+    children.push(
+      list(
+        "AnimationList",
+        sequences.map((s) => {
+          const inside = [];
+          if (s.travel?.length)
+            inside.push({
+              _class: "ExtractMotion",
+              extract_tx: s.travel.includes("LX"),
+              extract_ty: s.travel.includes("LY"),
+              extract_tz: s.travel.includes("LZ"),
+              extract_rz: false,
+              linear: true,
+              quadratic: false,
+              root_bone_name: s.root ?? "",
+              motion_type: "Single",
+            });
+          for (const e of s.events ?? [])
+            inside.push({
+              _class: "AnimEvent",
+              event_class: "AE_GENERIC_EVENT",
+              event_frame: KV3_INT(e.frame),
+              event_keys: { TypeName: "goldsrc", Int: KV3_INT(e.event), StringData: e.options ?? "" },
+            });
+          return {
+            _class: "AnimFile",
+            name: s.name,
+            children: inside.length ? inside : undefined,
+            activity_name: s.activity ?? "",
+            activity_weight: KV3_INT(s.weight ?? 1),
+            weight_list_name: "",
+            fade_in_time: s.fade ?? 0.2,
+            fade_out_time: s.fade ?? 0.2,
+            looping: Boolean(s.loops),
+            delta: false,
+            worldSpace: false,
+            hidden: false,
+            anim_markup_ordered: false,
+            disable_compression: false,
+            disable_interpolation: false,
+            enable_scale: false,
+            source_filename: s.file,
+            start_frame: KV3_INT(-1),
+            end_frame: KV3_INT(-1),
+            framerate: s.fps,
+            take: KV3_INT(0),
+            reverse: false,
+          };
+        }),
+        { default_root_bone_name: "" },
+      ),
+    );
+  if (attachments.length)
+    children.push(
+      list(
+        "AttachmentList",
+        attachments.map((a) => ({
+          _class: "Attachment",
+          name: a.name,
+          parent_bone: a.bone,
+          relative_origin: a.pos,
+          relative_angles: a.angles ?? [0, 0, 0],
+          weight: 1,
+          ignore_rotation: false,
+        })),
+      ),
+    );
+  if (hitboxes.length)
+    children.push(
+      list("HitboxSetList", [
+        {
+          _class: "HitboxSet",
+          name: "default",
+          children: hitboxes.map((h) => ({
+            _class: "Hitbox",
+            name: h.name,
+            parent_bone: h.bone,
+            surface_property: "flesh",
+            translation_only: false,
+            tags: `hitgroup_${h.group}`,
+            hitbox_mins: h.min,
+            hitbox_maxs: h.max,
+          })),
+        },
+      ]),
+    );
+  const root = {
+    rootNode: {
+      _class: "RootNode",
+      children,
+      model_archetype: "",
+      primary_associated_entity: "",
+      anim_graph_name: "",
+    },
+  };
+  return `${HEADER}\n${kv3(root)}\n`;
+}
+
+/** GoldSrc's texture flags (STUDIO_NF_ of studio.h). */
+const NF = { fullbright: 4, additive: 32, masked: 64 };
+
+/**
+ * The text of a .vmat for a GoldSrc texture: `color` its picture, `mask` (a masked texture's) the picture of its
+ * holes, black where the last colour of its palette was.
+ */
+export function vmatOf({ color, mask, flags = 0 }) {
+  const lines = [
+    "// Made by SMAK (sbox-port) from a GoldSrc texture.",
+    "",
+    "Layer0",
+    "{",
+    '\tshader "shaders/complex.shader"',
+  ];
+  if (flags & NF.masked && mask) lines.push("\tF_ALPHA_TEST 1");
+  if (flags & NF.additive) lines.push("\tF_TRANSLUCENT 1", "\tF_ADDITIVE_BLEND 1");
+  if (flags & NF.fullbright) lines.push("\tF_SELF_ILLUM 1");
+  lines.push(
+    `\tTextureColor ${string(color)}`,
+    '\tTextureRoughness "[1.000000 1.000000 1.000000 0.000000]"',
+    '\tg_flMetalness "0.000"',
+  );
+  if (flags & NF.masked && mask)
+    lines.push(`\tTextureTranslucency ${string(mask)}`, '\tg_flAlphaTestReference "0.500"');
+  if (flags & NF.fullbright)
+    lines.push('\tTextureSelfIllumMask "[1.000000 1.000000 1.000000 0.000000]"', '\tg_flSelfIllumAlbedoFactor "1.000"', '\tg_flSelfIllumBrightness "0.000"', '\tg_flSelfIllumScale "1.000"'); // prettier-ignore
+  lines.push("}", "");
+  return lines.join("\n");
+}

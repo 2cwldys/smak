@@ -119,6 +119,7 @@ const areas = [
   "109-source", // the Source engine: VTF, SMD, a GoldSrc model ported to GMod and why it changes, VPK, VMT, compiled where GMod's studiomdl is
   "110-source-map", // Source's maps: the BSP written lump by lump and read back, its light, visibility and PAKFILE
   "111-source-game", // GMod while it runs: RCON against a server speaking it, a probe run end to end
+  "112-sbox", // s&box: DMX of a mesh and an animation, ModelDoc's document, a material, a port compiled where s&box is
   "107-broken-cases", // every checker failing an input broken in one way, by the sentence it must give, and passing its twin whole
 ];
 

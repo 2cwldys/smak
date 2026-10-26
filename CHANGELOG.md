@@ -3,6 +3,29 @@
 The newest first. A version that changes what a model's file looks like, or that a model made before needs
 mending for, says so under **Mind**.
 
+## 0.31.0 (2026-10-26)
+
+s&box (Source 2), models first (`docs/SBOX.md`):
+- `smak sbox-port <mdl> -o <Assets>`: a GoldSrc model ported to s&box and compiled by s&box's own
+  resourcecompiler. Its meshes and animations as DMX (s&box reads no SMD), its bodygroups, skins (material
+  groups), attachments, hit boxes, animations' activities and events in a `.vmdl`, its textures as PNG and
+  `.vmat` (masked alpha-tested, additive, fullbright). A loop's travel is taken out as root motion; an event is
+  kept as s&box's generic one, its number and options.
+- `smak sbox-check <mdl> --project <folder>`: the port read back in s&box's own editor (through sbox-cli, which comes
+  with s&box: the editor open on the project, or one opened and closed) and held to the original: its bones under
+  their parents, animations of their lengths, parts, skins, attachments, hit boxes, and each animation stopped at
+  its first and middle frames with every bone where GoldSrc's frame puts it, within 0.1 units and 0.0005 of the
+  bone's chain (s&box compresses rotations). All 210 of Half-Life's models pass, in 8 minutes; the farthest bone
+  is 0.19 units off, the end of tentacle2's tentacle.
+- `sbox.portToSboxFile`, `portToSbox`, `writeSboxPort`, `dmxOf`, `vmdlOf`, `vmatOf`, `kv3`, `findSbox`, `compileVmdl`,
+  `checkSboxPort`, `compareSbox`, `expectedOf`, `probeCode`, `editorFor`, `sboxCall`, `runCsharp`.
+- `source.portToSource` also returns `parts`, what its QC and SMDs say as data. The GMod port is unchanged.
+- Measured in s&box's editor: no turn (`forwardParity 1`); bones named as s&box keeps them (`Bip01_Pelvis`,
+  `Stealth_`), or an animation moves nothing; no bone culled, or barney loses his root's turn; no hyphen in a
+  mesh's node name, which fails the compile unsaid why; no bodygroup name ending in a number after a letter, which
+  ModelDoc renumbers (loader.mdl's `leg2` is `leg_2`). A `p_` model keeps its own bones' names.
+- All 210 of Half-Life's models port and compile, in 3.5 minutes together.
+
 ## 0.30.1 (2026-10-26)
 
 What a GoldSrc map's port is made of, to the physics and to traces (`docs/SOURCE.md` "A GoldSrc map in GMod"):

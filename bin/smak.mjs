@@ -3635,6 +3635,66 @@ function gmodPort({ command, file, flags }) {
   process.exit(result.passed ? 0 : 1);
 }
 
+// ── s&box (Source 2) ───────────────────────────────────────────────────────
+/**
+ * sbox-port: a GoldSrc model ported to s&box (src/sbox/port.mjs): DMX, a .vmdl, PNG and .vmat under -o (a project's
+ * Assets folder), compiled by s&box's own resourcecompiler.
+ */
+function sboxPort({ command, file, flags }) {
+  const out = need(command, flags.o, "-o <folder>: an s&box project's Assets folder (models/ and materials/ under it)");
+  if (flags.kind !== undefined && !smak.source.PORT_KINDS.includes(flags.kind))
+    fail(`${command}: --kind ${smak.source.PORT_KINDS.join(", ")}, not ${flags.kind}`);
+  const result = smak.sbox.portToSboxFile(
+    existing(file),
+    defined({ out, name: flags.name, folder: flags.folder, kind: flags.kind, sbox: flags.sbox, compile: flags.compile !== false }),
+  );
+  const f = result.facts;
+  const warnings = result.warnings.map((warning) => `WARN  ${warning}`);
+  const notes = (result.compiled?.notes ?? []).map((note) => `NOTE  ${note}`);
+  const made = `${f.bones.length} bones, ${f.meshes.length} meshes, ${f.sequences.length} animations, ${f.skins} ${f.skins === 1 ? "skin" : "skins"}, ${f.bodygroups.length} bodygroups, ${f.attachments.length} attachments, ${f.hitboxes} hit boxes`; // prettier-ignore
+  answered(command, file, flags, {
+    detail: [`      ${made}`, `      the model: ${result.written}`, ...notes, ...warnings],
+    passed: true,
+    said:
+      flags.compile === false
+        ? `written, not compiled (--no-compile): ${result.written}`
+        : `compiled in ${(result.compiled.took / 1000).toFixed(1)} s: ${result.vmdl} (${made})${warnings.length ? `; ${warnings.length} ${warnings.length === 1 ? "warning" : "warnings"}` : ""}`,
+    shown: [...notes, ...warnings],
+  });
+}
+
+/**
+ * sbox-check: a model's port read back in s&box's editor and held to the original (src/sbox/check.mjs): its
+ * bones, animations, parts, skins, attachments and hit boxes, and each animation's poses bone by bone.
+ */
+async function sboxCheck({ command, file, flags }) {
+  const project = need(command, flags.project, "--project <folder>: the s&box project the port is in (its .sbproj's folder)");
+  if (flags.kind !== undefined && !smak.source.PORT_KINDS.includes(flags.kind))
+    fail(`${command}: --kind ${smak.source.PORT_KINDS.join(", ")}, not ${flags.kind}`);
+  const result = await smak.sbox.checkSboxPort(
+    existing(file),
+    defined({
+      project,
+      name: flags.name,
+      folder: flags.folder,
+      kind: flags.kind,
+      sbox: flags.sbox,
+      perSequence: numberOf(flags, "frames"),
+      tolerance: numberOf(flags, "tolerance"),
+      shot: flags.o,
+    }),
+  );
+  const faults = result.faults.map((fault) => `ERROR ${fault}`);
+  answered(command, file, flags, {
+    detail: [...result.said.map((line) => `      ${line}`), `      the editor: ${result.opened ? "opened for the check, and closed" : "the one open on the project"}`, ...faults], // prettier-ignore
+    passed: result.passed,
+    said: result.passed ? `whole in s&box: ${result.said.join("; ")}` : `${faults.length} things not as the original has them`,
+    shown: faults,
+    look: result.shot ? `look at ${result.shot}: the model in s&box's editor, in its first animation` : undefined,
+  });
+  process.exit(result.passed ? 0 : 1);
+}
+
 /**
  * gmod-map: a GoldSrc map rewritten as a Source map for Garry's Mod (src/source/map.mjs), its geometry, light and
  * visibility kept, its collision rebuilt, its physics made by GMod's own vphysics: an addon folder under -o.
@@ -4725,6 +4785,31 @@ const COMMANDS = {
                                             hand; a player also stands on its feet and has GMod's hand attachments. --upper: a
                                             player's animations each copied from the spine up (<name>_upper). The sounds its events
                                             play are copied under addon/sound/<folder>/.`,
+  },
+  "sbox-port": {
+    run: sboxPort,
+    own: true,
+    help: `  sbox-port <mdl> -o <Assets folder> [--name n] [--folder smak] [--kind thing|view|held|player] [--sbox <folder>] [--no-compile]
+                                            a GoldSrc model ported to s&box: its meshes and animations (those in <name>01.mdl
+                                            too) as DMX, its bodygroups, skins, attachments, hit boxes, animations' activities,
+                                            events and travel in a .vmdl (models/<folder>/<name>.vmdl), its textures as PNG and
+                                            .vmat (materials/models/<folder>/<name>/), under -o, an s&box project's Assets folder;
+                                            then compiled by s&box's own resourcecompiler (an outside program that comes with
+                                            s&box; --sbox, SMAK_SBOX). A loop's travel is taken out as root motion; an event is
+                                            kept as s&box's generic one (its number, its options). What s&box has no place for
+                                            yet is warned of: blends after the first, collision, the sounds events name.`,
+  },
+  "sbox-check": {
+    run: sboxCheck,
+    own: true,
+    help: `  sbox-check <mdl> --project <folder> [-o shot.png] [--name n] [--folder smak] [--kind ...] [--frames 2] [--tolerance 0.1] [--sbox <folder>]
+                                            a model's port (sbox-port's, in the project's Assets) read back in s&box's own editor
+                                            and held to the original: every bone under its parent, every animation of its length,
+                                            the bodygroups, skins, attachments and hit boxes, and each animation stopped at
+                                            --frames of its frames (its first and middle by default) with every bone where
+                                            GoldSrc's frame puts it, within --tolerance units. Uses the editor open on the
+                                            project, else opens one (sbox-cli, which comes with s&box) and closes it after.
+                                            -o: the editor's picture of it. Ends in PASS or FAIL.`,
   },
   "gmod-rcon": {
     run: gmodRcon,

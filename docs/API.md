@@ -833,6 +833,36 @@ map's monsters come: `spawnsOf`, `spawnsTable`; its character in numbers: `chara
 - `writeSourceBsp(lumps, { revision })`, `readSourceBsp(bytes)` → `{ version, revision, lumps: [{ version, bytes }] }`,
   `Packer`, `colorRgbExp`, `visibilityLump(pvs, pas)`, `storedZip(files)`, `SOURCE_LUMP`, `SURF`, `CONTENTS`.
 
+## s&box (`src/sbox/`, exported as `sbox`)
+
+`import { sbox } from "smak"`. What a port keeps, changes and leaves, and why: `docs/SBOX.md`.
+
+- `portToSboxFile(file, { out, name, folder, kind, compile = true, sbox })` → the port and `{ written, compiled }`: a
+  GoldSrc model read (its `t.mdl` and `01.mdl` files beside it), written under `out` (an s&box project's `Assets`)
+  and compiled (`compiled`: `compileVmdl`'s, or null).
+- `portToSbox(src, { name, folder = "smak", groups, kind })` → `{ name, vmdl, files: [{ path, data }], warnings, facts }`:
+  the files from the model's bytes. `facts`: `bones`, `meshes`, `sequences`, `materials`, `skins`, `bodygroups`,
+  `attachments`, `hitboxes`. `writeSboxPort(port, out)` writes them and returns the `.vmdl`'s path.
+- `dmxOf({ bones, frames, triangles }, { fps, name })` → the text of a mesh's DMX (with triangles) or an
+  animation's: `smdOf`'s input. `boneNameOf(name)` (spaces as underscores, as s&box keeps them),
+  `quaternionOf([rx, ry, rz])`.
+- `vmdlOf({ meshes, materials, skins, bodygroups, sequences, attachments, hitboxes })` → a `.vmdl`'s text;
+  `vmatOf({ color, mask, flags })` → a `.vmat`'s; `kv3(value)` with `KV3_FLOAT(v)`, `KV3_INT(v)`.
+- `findSbox({ folder, env })` → s&box's folder (`SMAK_SBOX`, `FACEPUNCH_ENGINE`, a Steam library);
+  `compileVmdl(assets, vmdl, { sbox, timeout })` → `{ compiled, said, notes, took }`, throwing what the compiler said.
+- `portToSource(...)` also returns `parts`: its SMDs as data by path (`smd`), its `bones`, `bodygroups`, `skins`,
+  `textures` (pixels and flags), `sequences` (each with its `index` in the original), `attachments`, `hitboxes` and
+  `eyes`, which the s&box port writes from; `portToSbox` hands them on as its `parts`.
+- `checkSboxPort(file, { project, name, folder, kind, sbox, perSequence = 2, tolerance = 0.1, shot })` →
+  `{ passed, faults, said, worst, shot, opened }` (async): the port read back and posed in the project's editor and
+  held to the original. Its parts: `expectedOf(src, port, { groups, perSequence })` (the bones, animations' lengths,
+  parts, skins, attachments, hit boxes, and GoldSrc's poses at the sampled frames), `probeCode(vmdl, samples)` (the C#
+  that reads and poses it), `removeProbeCode()`, `compareSbox(expected, read, { tolerance })` → `{ passed, faults,
+  said, worst }`, `POSE_TOLERANCE` (0.1 units) and `REACH_TOLERANCE` (0.0005 of a bone's chain).
+- The editor, through sbox-cli: `editorFor(project, { sbox, wait })` → `{ opened, close() }` (async: the one open, or
+  one opened that close() closes), `sboxCall(project, tool, args)`, `runCsharp(project, code)`, `projectFolder(project)`,
+  `sboxCli(sbox)`.
+
 ## Playing a map in the game (`src/play.mjs`, exported as `play`)
 
 `import { play } from "smak"` (or `"smak/play"`). What it needs and the steps' format: `docs/MAPS-MAKING.md`,

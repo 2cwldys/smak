@@ -85,6 +85,14 @@ export const CHECKERS = [
     none: "they run GMod's studiomdl, which the self-test may not have; where it is found, 109-source.mjs compiles a port and holds a moved corner against it, and comparePort, which portToGmod answers by, has its cases here",
   },
   { name: "smak gmod-port", at: "bin/smak.mjs gmodPort", none: "it prints portToGmod's faults (comparePort's, with cases here) and exits 1 on them; 109-source.mjs runs it where studiomdl is" },
+  // ── s&box ──
+  { name: "compareSbox", at: "src/sbox/check.mjs compareSbox" },
+  {
+    name: "compileVmdl, checkSboxPort",
+    at: "src/sbox/compile.mjs compileVmdl, src/sbox/check.mjs checkSboxPort",
+    none: "they run s&box's resourcecompiler and its editor, which the self-test may not have; 112-sbox.mjs compiles a port, and one with a mesh's node broken, where s&box is found, and checkSboxPort answers by compareSbox, which has its cases here",
+  },
+  { name: "smak sbox-check", at: "bin/smak.mjs sboxCheck", none: "it prints checkSboxPort's faults (compareSbox's, with cases here) and exits 1 on them; it needs s&box's editor" },
   // ── play ──
   { name: "play", at: "src/play.mjs play (its expectations and passed)" },
   // ── the command lines that fail by their exit code ──

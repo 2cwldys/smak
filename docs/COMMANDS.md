@@ -131,6 +131,12 @@ node bin/smak.mjs gmod-shoot <x> <y> <z> [pitch yaw] -o shot.jpg   a screenshot 
 node bin/smak.mjs gmod-server <folder> --map <name> [--port 27016] [--password p]   a dedicated server from SteamCMD
 node bin/smak.mjs gmod-collision <GoldSrc bsp> [--count 5000] [--ducked] [--noclip] [--game <folder>] [--port p]
                                                    where a player is blocked in the GoldSrc map and in its port, spot by spot
+node bin/smak.mjs sbox-port <mdl> -o <Assets folder> [--name n] [--folder smak] [--kind thing|view|held|player] [--sbox <folder>] [--no-compile]
+                                                   a GoldSrc model ported to s&box: DMX meshes and animations, a .vmdl, PNG and .vmat
+                                                   under an s&box project's Assets, compiled by s&box's resourcecompiler (docs/SBOX.md)
+node bin/smak.mjs sbox-check <mdl> --project <folder> [-o shot.png] [--frames 2] [--tolerance 0.1]
+                                                   the port read back in s&box's editor and held to the original: bones, animations,
+                                                   parts, skins, attachments, hit boxes, and every bone of each animation's poses
 node bin/smak.mjs source-info <mdl | models/...mdl> [--json] [--gmod <folder>] [--addon <folder>]
                                                    what a Source model holds; a path under the game is read from GMod's folders and packs
 node bin/smak.mjs source-sheet <mdl | models/...mdl> -o s.png   /   source-render ... -o r.png [--yaw] [--pitch] [--body] [--skin]
