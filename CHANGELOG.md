@@ -5,6 +5,23 @@ mending for, says so under **Mind**.
 
 ## Unreleased
 
+GoldSrc maps in GMod (PLAN.md 6f, `docs/SOURCE.md` "A GoldSrc map in GMod"), ported from stevenlafl's converter:
+- `smak gmod-map`, `source.portMapToSource` and `portMapToGmod`. The BSP 30 is rewritten as BSP 20 lump by lump:
+  its geometry, light and visibility kept, its collision brushes and clip rebuilt, its entities as Source reads
+  them, its textures, sky and sprites as VTF and VMT.
+- `source.writeSourceBsp` and `readSourceBsp`, and the lumps' pieces (`Packer`, `colorRgbExp`, `visibilityLump`,
+  `storedZip`).
+- `source.physCollideLump`: the map's physics, made by GMod's own vphysics through `src/source/vcollide.cpp`,
+  built once with Visual Studio.
+- `writeVtf` takes `frames`, `alpha: "smooth"` and `keepHoles`; `bleedHoles`.
+- **Mind:** every VTF now has a thumbnail (up to 16 a side, BGR888), models' too. Without one, the engine had no
+  colour for a bullet's chips and dust, and they came out yellow. Port a model again for it.
+- Each texture's `$surfaceprop` from the game's `sound/materials.txt` (`source.textureTypes`,
+  `surfacepropOfType`), and each physics convex tagged with its surfaceprop's index in GMod's table, as vbsp
+  does.
+- Seen in GMod: Half-Life's stalkyard loads, drawn, lit, walked on, with physics. All 115 of Half-Life's maps
+  port, with physics.
+
 A ported ragdoll fitted to the body, its joints measured on its animations (`docs/SOURCE.md`):
 - Each piece is the convex hull of its bone's corners, the triangles' sides between pieces shared out among
   them. A bone with hit boxes and no body of its own is left to the piece above. GoldSrc's hit boxes are the

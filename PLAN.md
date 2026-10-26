@@ -310,6 +310,71 @@ Left from their work, bigger, after these: maps (GoldSrc BSP 30 rewritten as Sou
 game (Lua over rcon on a dedicated GMod server: PASS or FAIL from inside), the TS profile's entity keys. And of
 our own: a port's skeleton rebuilt as Valve's, so that GMod's own player animations (`m_anm.mdl`) play on it.
 
+**6f. Maps: a GoldSrc BSP 30 rewritten as Source's BSP 20** (planned 2026-10-25). Ported from stevenlafl's
+converter (`tools/convert-map.mjs`, `tools/map/`, `docs/bsp-goldsrc-to-source.md` in their TS port), read in
+full first. Every SMAK reader it calls (`readBsp`, `faceLightmap`, `visibleFrom`, `leafAt`, `texturesFor`,
+`skyOf`, `readSpr`...) is already ours. No decompile, no Valve compiler: the compiled geometry, baked light and
+visibility are kept, lump by lump. Each step keeps their rule and the reason they found for it:
+1. **The writer** (`source/bsp.mjs`): the header and lump versions, a packer, ColorRGBExp32, visibility rows
+   (Quake's run-length), a stored zip for the PAKFILE. Tested by reading back what it writes.
+2. **The world:**
+   - planes, with the turned-round plane for a face on the back of its node's plane;
+   - texinfo scaled to the power-of-two picture, and luxels at 16;
+   - faces, edges, vertex normals by face;
+   - light re-curved, `2 (sample/255)^2.2`;
+   - clusters as the open leaves numbered with no gaps;
+   - each leaf its own run of faces, in leaf order;
+   - node areas, models, one ambient sample a leaf at a third of its faces' light.
+3. **Textures:** VTF and VMT by the texture's kind (masked, liquid unlit and drifting, sky's six sides
+   clamped). A wad's textures are shared files in the addon; a map's own go in its PAKFILE. Unlit copies for
+   brush entities in render modes 1, 2, 3 and 5.
+4. **Collision brushes:** one a solid or liquid leaf of hull 0, with bevels. Clip brushes come from hulls 1
+   and 3, shrunk back by the player's box and carved into the tree. A brush entity's `skin` under 0 sets its
+   contents; `func_ladder` becomes ladder and player clip.
+5. **Entities:**
+   - player starts lowered 36;
+   - `renderamt` 0 where GoldSrc left it out;
+   - `rendercolor` only where GoldSrc tints;
+   - movers' `angles` as `movedir` (`pushdir`);
+   - `func_ladder` as a `func_brush`, drawn nothing;
+   - sprites as `env_sprite` on a Sprite material, every frame kept;
+   - a `cycler_sprite`'s model ported by `portToGmod` as a `prop_dynamic`, not solid;
+   - lights as WORLDLIGHTS, for models.
+6. **PHYSCOLLIDE**, with GMod's own physics, as vbsp does and as Steven does. A small C++ helper calls
+   `bin/win64/vphysics.dll`'s `ConvexFromPlanes` and `CollideWrite`. It is built with Visual Studio, whose
+   vtables match Valve's build of the DLL, then laid out as `ivp.cpp` does. GMod's DLL is the person's, like
+   its studiomdl. Without it, the map is written without the lump, with a warning: traces and props then fall
+   through. Ideally, later, SMAK writes the format itself.
+7. **In the game:**
+   - `rcon` over Source's protocol;
+   - `shoot`: GMod with `-usercon` as a listen server, the camera set by Lua, a screenshot. Allowed by the
+     person, 2026-10-25;
+   - probes and `check-collision` on a dedicated GMod server from SteamCMD (also allowed). A spot's hull 1 in
+     GoldSrc is held against a player-sized trace in Source;
+   - a twin map, the same brushes compiled by SDHLT and converted, and compiled by GMod's own vbsp, vvis and
+     vrad, to read side by side.
+
+Measure: Half-Life's deathmatch maps and a few of the campaign's load in GMod with nothing in the console.
+Their screenshots match SMAK's render of the GoldSrc map from the same spot. `check-collision` agrees on the
+spots of every map.
+
+**Steps 1 to 6 done 2026-10-25** (`smak gmod-map`, `src/source/map.mjs`, `bsp.mjs`, `mapbrushes.mjs`, `vcollide.*`):
+- All 115 of Half-Life's maps port with physics, in 1 to 6 s each.
+- Stalkyard was loaded in GMod: no console errors, drawn and lit right, walked on; traces hit the world and a
+  crate lands.
+- Found on the way, beyond Steven's converter:
+  - GMod's 64-bit vphysics on Windows hangs on drag areas and crashes on an outer hull;
+  - a convex's game data is its surfaceprop's index. Its own number gave antlion surfaces and killed vphysics
+    past 126 pieces;
+  - `$surfaceprop` comes from `materials.txt`;
+  - a VTF needs its thumbnail: the engine colours a bullet's chips from it. Without one, stalkyard's concrete
+    threw yellow "antlion blood" (seen by the person, measured in game: the bullets' traces were concrete).
+- Left of step 7: `rcon` and the probes in SMAK itself. Rcon answers on the LAN address. Several commands in a
+  row trip GMod's guard, so the Lua goes in a file run by `lua_openscript`.
+
+Their converter does not do, and nor will this at first: outputs (GoldSrc's targets as Source's I/O), water
+surfaces, animated textures, decals.
+
 **6e. What a port leaves behind.** Ragdolls (`$collisionjoints`), blended animations as pose parameters, bone
 controllers as pose parameters, NPC activities as Source names them, eyes and flexes.
 

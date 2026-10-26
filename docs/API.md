@@ -798,10 +798,24 @@ map's monsters come: `spawnsOf`, `spawnsTable`; its character in numbers: `chara
   - `sourceTris(model, { body, skin })`: its triangles as `render` takes them (`render(null, { tris })`).
   - `renderSource(model, { sheet, ...render's options })`.
 - `openVpk(dirFile)` → `{ files, has, read }`: Valve's packs, versions 1 and 2.
-- `writeVtf({ width, height, rgba }, { alpha, flags })`, `readVtf(bytes)` → `{ width, height, rgba, format, flags,
-  mips }`, `powerOfTwo(picture, { alpha })`, `VTF_FORMAT`, `VTF_FLAG`: Source's textures. Written uncompressed
-  (BGR888, BGRA8888 with one-bit alpha); DXT1, DXT3 and DXT5 are read too.
+- `writeVtf({ width, height, rgba }, { alpha, flags, keepHoles, frames })`, `readVtf(bytes)` → `{ width, height,
+  rgba, format, flags, mips }`, `powerOfTwo(picture, { alpha })`, `bleedHoles(rgba, width, height)`, `VTF_FORMAT`,
+  `VTF_FLAG`: Source's textures. Written uncompressed (BGR888; BGRA8888 with one-bit alpha, or eight-bit with
+  `alpha: "smooth"`), with a thumbnail; DXT1, DXT3 and DXT5 are read too.
 - `smdOf({ bones, frames, triangles })`: the compiler's text of a mesh or an animation.
+- `portMapToSource(file, { name, folder, folders, valve, physics })` → `{ name, bsp, files: [{ path, data }],
+  props: [{ file, model, name }], physics, warnings, facts }`: a GoldSrc map as a Source map (`docs/SOURCE.md`, "A
+  GoldSrc map in GMod"). `physics(models)` makes the PHYSCOLLIDE lump, or returns null.
+  - `portMapToGmod(file, { out, name, folder, folders, valve, physics, vphysics, helper, gmod, studiomdl })`: the same
+    written as an addon under `out/addon/`, with its physics and its props ported; adds `file` and `written`.
+  - `textureTypes(folders)` → `(textureName) => letter`: a game's `sound/materials.txt`, read as the engine reads it;
+    `surfacepropOfType(letter)`; `materialName(name)`; `worldLightsLump(entities, clusterAt)`.
+  - `regionOf(planes)`, `brushesOfTree(bsp, head, isBrush, mins, maxs)`, `brushesOfClipHull(bsp, head, half, mins,
+    maxs)`, `clipContents(bsp, head, point)`: the collision brushes rebuilt from a GoldSrc map's trees.
+- `physCollideLump(models, { vphysics, helper, gmod })`: a map's physics made by GMod's vphysics; `models` for each
+  model its convexes, `[{ planes, surfaceprop }]`. `findVphysics()`, `vcollideHelper()` (built once into `~/.smak/`).
+- `writeSourceBsp(lumps, { revision })`, `readSourceBsp(bytes)` → `{ version, revision, lumps: [{ version, bytes }] }`,
+  `Packer`, `colorRgbExp`, `visibilityLump(pvs, pas)`, `storedZip(files)`, `SOURCE_LUMP`, `SURF`, `CONTENTS`.
 
 ## Playing a map in the game (`src/play.mjs`, exported as `play`)
 

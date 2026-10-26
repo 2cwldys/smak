@@ -30,8 +30,12 @@ test("VTF: a picture of powers of two is written as it is, every mip level down 
   sure(read.width === 8 && read.height === 4, `its size: ${read.width}x${read.height}`);
   sure(read.mips === 4 && read.format === source.VTF_FORMAT.BGR888, `4 levels (8, 4, 2, 1 wide), BGR888: ${read.mips}, ${read.format}`); // prettier-ignore
   sure(Buffer.from(read.rgba).equals(Buffer.from(picture.rgba)), "the same pixels");
-  // 80 bytes of header, then the levels from the smallest: 1x1, 2x1, 4x2, 8x4, three bytes a pixel
-  sure(bytes.length === 80 + 3 * (1 + 2 + 8 + 32), `its length: ${bytes.length}`);
+  // 80 bytes of header, the thumbnail (the 8x4 level itself: no more than 16 a side), then the levels from the
+  // smallest: 1x1, 2x1, 4x2, 8x4, three bytes a pixel
+  sure(bytes.readUInt32LE(57) === source.VTF_FORMAT.BGR888 && bytes[61] === 8 && bytes[62] === 4, "an 8x4 BGR888 thumbnail");
+  sure(bytes.length === 80 + 3 * 32 + 3 * (1 + 2 + 8 + 32), `its length: ${bytes.length}`);
+  const big = source.writeVtf(ramp(64, 32));
+  sure(big[61] === 16 && big[62] === 8, `a 64x32 picture's thumbnail is its 16x8 level: ${big[61]}x${big[62]}`);
 });
 
 test("VTF: a picture of no power of two is resampled up to one; a masked one keeps its holes whole and its colours clean", () => {
@@ -46,8 +50,9 @@ test("VTF: a picture of no power of two is resampled up to one; a masked one kee
   const read = source.readVtf(bytes);
   sure(read.format === source.VTF_FORMAT.BGRA8888 && read.flags & source.VTF_FLAG.ONEBITALPHA, "BGRA8888, one-bit alpha");
   sure([...read.rgba].every((v, i) => i % 4 !== 3 || v === 0 || v === 255), "alpha only 0 or 255");
-  // the 2x2 level (after the header and the 1x1 level): its left column a hole, its right blue, with no red run into it
-  const level2 = bytes.subarray(80 + 4, 80 + 4 + 16);
+  // the 2x2 level (after the header, the 4x4 thumbnail of three bytes a pixel, and the 1x1 level): its left column a
+  // hole, its right blue, with no red run into it
+  const level2 = bytes.subarray(80 + 48 + 4, 80 + 48 + 4 + 16);
   sure(level2[3] === 0 && level2[7] === 255 && level2[4] === 255 && level2[6] === 0, `the 2x2 level: hole, then pure blue: ${[...level2]}`); // prettier-ignore
 });
 

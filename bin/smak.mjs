@@ -3627,6 +3627,43 @@ function gmodPort({ command, file, flags }) {
 }
 
 /**
+ * gmod-map: a GoldSrc map rewritten as a Source map for Garry's Mod (src/source/map.mjs), its geometry, light and
+ * visibility kept, its collision rebuilt, its physics made by GMod's own vphysics: an addon folder under -o.
+ */
+function gmodMap({ command, file, flags }) {
+  const out = need(command, flags.o, "-o <folder>: where the port goes (addon/ under it)");
+  const result = smak.source.portMapToGmod(
+    existing(file),
+    defined({
+      out,
+      name: flags.name,
+      folder: flags.folder,
+      folders: flags.game ? [existingFolder(flags.game)] : undefined,
+      valve: flags.valve === undefined ? undefined : flags.valve === "none" ? null : existingFolder(flags.valve),
+      physics: flags.physics !== false,
+      vphysics: flags.vphysics,
+      gmod: flags.gmod,
+      studiomdl: flags.studiomdl,
+    }),
+  );
+  const f = result.facts;
+  const warnings = result.warnings.map((warning) => `WARN  ${warning}`);
+  const where = `${join(out, "addon")} (into garrysmod/addons/<name>/), maps/${result.name}.bsp`;
+  answered(command, file, flags, {
+    detail: [
+      `      ${f.faces} faces, ${f.brushes} brushes (${f.clipBrushes} clip), ${f.clusters} clusters, ${f.leaves} leaves (${f.solidSplitOff} solid split off)`, // prettier-ignore
+      `      textures from ${f.textureSources.join(", ") || "none"}; ${f.packed} files inside the map, ${result.files.length} shared in the addon; sky ${f.sky}`, // prettier-ignore
+      `      physics: ${f.physics ? "made by GMod's vphysics" : "none"}; props ported: ${result.props.length}`,
+      `      the addon: ${where}`,
+      ...warnings,
+    ],
+    passed: true,
+    said: `written: ${where}; ${f.faces} faces, ${f.brushes} brushes, ${f.physics ? "with" : "without"} physics${warnings.length ? `; ${warnings.length} ${warnings.length === 1 ? "warning" : "warnings"}` : ""}`, // prettier-ignore
+    shown: warnings,
+  });
+}
+
+/**
  * A Source model named on the command line: a .mdl on the disk (its .vvd and .vtx beside it, its materials
  * looked for under the folder that holds its models/, --addon, and GMod's), or a path under the game
  * (models/kleiner.mdl) found in GMod's folders and packs.
@@ -4540,6 +4577,22 @@ const COMMANDS = {
   play <session> --attach --map <name> [--steps steps.json] [-o <folder>] [--expect ...] [--put ...] [--over ...]   a run in that session
   play <session> --attach --stay [--steps steps.json] [-o <folder>] [--from <section|step>]   more steps where the last run left the player
   play <session> --attach --close                                        the session ended
+`,
+  },
+  "gmod-map": {
+    run: gmodMap,
+    own: true,
+    help: `  gmod-map <bsp> -o <folder> [--name n] [--folder smak] [--game <mod folder>] [--valve <folder>|none] [--no-physics]
+                              [--vphysics <dll>] [--gmod <folder>] [--studiomdl <exe>]
+                                            a GoldSrc map rewritten as a Source map (BSP 20) for Garry's Mod, ported from
+                                            stevenlafl's converter: its geometry, baked light and visibility kept lump by lump,
+                                            its collision brushes rebuilt from the tree (clip brushes from the player's hulls), its
+                                            entities as Source reads them, its textures, sky and sprites as VTF and VMT (a wad's
+                                            shared in the addon; the map's own and Valve's inside the map), its physics made by
+                                            GMod's own vphysics (bin/win64/vphysics.dll, through a small helper built once with
+                                            Visual Studio; SMAK_VPHYSICS, SMAK_VCOLLIDE). <folder>/addon goes into
+                                            garrysmod/addons/<name>/. --game: the mod's folder, for its wads, skies, sprites and
+                                            models. --valve: Half-Life's valve folder (found in Steam's libraries unless given).
 `,
   },
   "gmod-port": {

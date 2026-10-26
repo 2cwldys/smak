@@ -268,10 +268,66 @@ and DXT5 are read, and so are the uncompressed formats.
 
 In a script: `smak.source`, see `docs/API.md` ("The Source engine").
 
+## A GoldSrc map in GMod
+
+```
+node bin/smak.mjs gmod-map <map.bsp> -o <work folder> [--game <mod folder>]
+```
+
+The compiled GoldSrc map (BSP 30) is rewritten as a Source map (BSP 20), lump by lump. There is no decompile and
+no Valve compiler: the geometry, the baked light and the visibility are the ones the GoldSrc compilers made.
+The converter is a port of stevenlafl's, made for their port of The Specialists to GMod. Each rule below was
+found in the game, by them, and is kept with its reason in `src/source/map.mjs`:
+- **Faces.** A face on the back of its node's plane names the plane turned round, or Source takes a brush
+  entity's faces for back faces and never draws them. Each corner gets its face's normal.
+- **Leaves.** Each leaf has its own run of faces, in leaf order; two leaves sharing one crash the client on
+  load. The clusters are the open leaves, numbered with no gaps, or the client warns of a vis overrun without
+  end.
+- **Light.** Re-curved to Source's shader, `2 (sample/255)^2.2`. Brush entities in render modes 1, 2, 3 and 5
+  get an unlit copy of their material, as GoldSrc draws them without a lightmap. Lights become WORLDLIGHTS, for
+  models, and each open leaf gets one ambient sample.
+- **Collision.** GoldSrc keeps no brushes, so they are rebuilt: one for each solid or liquid leaf of the drawn
+  tree, with bevels. Clip brushes come from the player's hulls (standing and ducked), shrunk back by the
+  player's box and carved into the tree as player and NPC clip. A brush entity's `skin` under 0 sets its
+  contents.
+- **Physics.** The PHYSCOLLIDE lump is made by GMod's own `bin/win64/vphysics.dll`, through a small C++ helper
+  (`src/source/vcollide.cpp`). It is built once with Visual Studio's C++ tools into `~/.smak/`. Name them with
+  `SMAK_VPHYSICS` and `SMAK_VCOLLIDE` where they are not found. Without them the map is written without
+  physics, and said: Lua's traces then miss and props fall through. Outside the game, GMod's 64-bit DLL hangs
+  on vbsp's drag areas and crashes on its outer hull of several pieces, so both are left out. A brush entity
+  collides as its pieces, as exactly. Each piece is tagged, as vbsp tags it, with the index of its surfaceprop in
+  GMod's own table. Tagged with its own number, as in stevenlafl's helper, the world's pieces were antlion (87)
+  and the rest, and a map of more than 126 pieces killed vphysics (23 of Half-Life's 115 maps).
+- **What a surface is made of.** Each texture's type is read from the game's `sound/materials.txt` as the
+  engine reads it, and becomes its material's `$surfaceprop`: concrete (GoldSrc's default), metal, dirt,
+  metalvent, metalgrate, tile, wood, computer, glass. A brush's physics takes the one most of its sides wear.
+- **Entities:**
+  - a player start comes down 36 units, to its feet;
+  - a missing `renderamt` is 0, as in GoldSrc;
+  - `rendercolor` tints only where GoldSrc tints;
+  - movers' `angles` become `movedir` (`pushdir`);
+  - `func_ladder` becomes a ladder `func_brush` that draws nothing;
+  - sprites become `env_sprite` on a Sprite material, every frame kept;
+  - a `cycler_sprite`'s model is ported by `gmod-port` as a `prop_dynamic`.
+- **Textures.** VTF and VMT by the texture's kind: masked, with its holes' colour bled and a fence's thin bars
+  kept at a distance; liquids unlit and drifting; the sky's six sides clamped. A wad's textures are shared files
+  of the addon (`materials/<folder>/<wad>/`). The map's own, and every file from Valve's `valve` folder (its
+  wads, skies and sprites), go inside the map's PAKFILE, never as loose files of Valve's in the addon.
+  Every VTF carries a thumbnail, as vtex writes one. The engine samples it for the colour of the chips and dust a
+  bullet throws up. Without one, the shotgun's impacts on stalkyard's concrete came out yellow, like antlion
+  blood, though the bullet's own trace said concrete on the server and on the client.
+
+Seen in GMod (2026-10-25), Half-Life's stalkyard: it loads with nothing in the console, drawn, lit and skied as
+GoldSrc draws it. The player stands on its floor, a trace hits the world, and a dropped crate lands. Half-Life's
+own pickups (`ammo_357`, `item_longjump`) are GMod's Half-Life: Source entities, which want that game's models:
+without it mounted they show as ERROR.
+
+Not done, as in stevenlafl's: outputs (GoldSrc's targets as Source's I/O), water surfaces, animated textures,
+decals.
+
 ## Not yet
 
 These are `PLAN.md`'s phases 6c to 6e:
 - the model seen in GMod by the kit itself;
 - new models made for Source: weapons, normal maps, more than one bone a vertex;
-- controllers as pose parameters;
-- maps.
+- controllers as pose parameters.

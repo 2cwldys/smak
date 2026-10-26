@@ -1,12 +1,12 @@
 // Source's textures (.vtf, version 7.2) written and read, with no VTFLib and no vtex.
 //
 //   writeVtf({ width, height, rgba }, { alpha })   a picture as a VTF: its size a power of two each way, every mip
-//                                                    level down to 1 by 1, no thumbnail
+//                                                    level down to 1 by 1, a thumbnail
 //   readVtf(bytes)                                  the largest picture of a VTF: { width, height, rgba, format, flags }
 //   powerOfTwo({ width, height, rgba }, { alpha })   a picture resampled to the nearest powers of two (up)
 //
-// THE FILE. An 80-byte header (VTFFileHeader_t of the SDK's vtf.h, 7.2), a small thumbnail the engine may use
-// for the colour of a surface (none here: its format is -1), then the picture at each mip level from the
+// THE FILE. An 80-byte header (VTFFileHeader_t of the SDK's vtf.h, 7.2), a small thumbnail the engine samples
+// for the colour of a surface (its first level of 16 a side or less, BGR888), then the picture at each mip level from the
 // smallest to the largest. A picture whose size is no power of two is resampled before it is written: the
 // engine's mip levels halve the size, and a texture of GoldSrc may be 200 by 150.
 //
@@ -43,6 +43,8 @@ export const VTF_FORMAT = { RGBA8888: 0, ABGR8888: 1, RGB888: 2, BGR888: 3, BGRA
 const BYTES = { 0: 4, 1: 4, 2: 3, 3: 3, 12: 4, 16: 4 };
 /** The texture flags of vtf.h that are written. */
 export const VTF_FLAG = { POINTSAMPLE: 0x1, TRILINEAR: 0x2, CLAMPS: 0x4, CLAMPT: 0x8, NORMAL: 0x80, NOMIP: 0x100, NOLOD: 0x200, ONEBITALPHA: 0x1000, EIGHTBITALPHA: 0x2000 }; // prettier-ignore
+/** The largest side of the thumbnail written. */
+const THUMBNAIL = 16;
 /** No thumbnail: IMAGE_FORMAT_NONE. */
 const NO_FORMAT = 0xffffffff;
 /** An alpha at or over this is solid, under it a hole, when a picture is resampled with holes. */
@@ -134,15 +136,90 @@ function pixelsIn({ width, height, rgba }, format) {
   return out;
 }
 
+// With `keepHoles`, each smaller level is made from the full picture: a pixel is solid when a quarter of the
+// block under it is, its colour the solid ones' mean. Halved level by level, a bar one or two pixels wide
+// falls under half within a mip or two and a fence's bars vanished at a distance in GMod; GoldSrc keeps a
+// block solid unless it is mostly holes (stevenlafl's finding, their tools/vtf.mjs).
+const SOLID_SHARE = 0.25;
+function shrunkKeepingSolid({ width, height, rgba }, level) {
+  const step = 1 << level;
+  const W = Math.max(1, width >> level);
+  const H = Math.max(1, height >> level);
+  const out = new Uint8Array(W * H * 4);
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      const solidSum = [0, 0, 0];
+      const allSum = [0, 0, 0];
+      let solid = 0;
+      let count = 0;
+      for (let dy = 0; dy < step; dy++)
+        for (let dx = 0; dx < step; dx++) {
+          const at = (Math.min(height - 1, y * step + dy) * width + Math.min(width - 1, x * step + dx)) * 4;
+          for (let c = 0; c < 3; c++) allSum[c] += rgba[at + c];
+          count++;
+          if (rgba[at + 3] < HALF) continue;
+          for (let c = 0; c < 3; c++) solidSum[c] += rgba[at + c];
+          solid++;
+        }
+      const to = (y * W + x) * 4;
+      for (let c = 0; c < 3; c++) out[to + c] = Math.round(solid ? solidSum[c] / solid : allSum[c] / count);
+      out[to + 3] = solid >= count * SOLID_SHARE ? 255 : 0;
+    }
+  return { width: W, height: H, rgba: out };
+}
+
+/**
+ * The holes of a picture (alpha 0) given their solid neighbours' colour, ring by ring outward, in place.
+ * GoldSrc marks a hole with its palette's last colour (often pure blue) and draws it with a hard mask; left in,
+ * that colour runs into the solid edge once Source filters it (a blue rim round bullet holes, stevenlafl saw).
+ */
+export function bleedHoles(rgba, width, height) {
+  let filled = Array.from({ length: width * height }, (_, i) => rgba[i * 4 + 3] > 0);
+  for (let ring = 0; ring < Math.max(width, height); ring++) {
+    const next = filled.slice();
+    let any = false;
+    for (let y = 0; y < height; y++)
+      for (let x = 0; x < width; x++) {
+        const i = y * width + x;
+        if (filled[i]) continue;
+        const sum = [0, 0, 0];
+        let n = 0;
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= width || ny >= height || !filled[ny * width + nx]) continue;
+          for (let c = 0; c < 3; c++) sum[c] += rgba[(ny * width + nx) * 4 + c];
+          n++;
+        }
+        if (!n) continue;
+        for (let c = 0; c < 3; c++) rgba[i * 4 + c] = Math.round(sum[c] / n);
+        next[i] = true;
+        any = true;
+      }
+    filled = next;
+    if (!any) break;
+  }
+  return rgba;
+}
+
 /**
  * A picture ({ width, height, rgba }) as a VTF. `alpha`: it has holes (alpha 0 or 255), written BGRA8888 with
- * ONEBITALPHA; else BGR888 and its alpha dropped. `flags`: more of VTF_FLAG. A size that is no power of two is
- * resampled up to one (powerOfTwo).
+ * ONEBITALPHA; "smooth", a graded alpha (EIGHTBITALPHA: a sprite whose edge fades); else BGR888 and its alpha
+ * dropped. `flags`: more of VTF_FLAG. `keepHoles`: smaller levels keep a pixel solid when a quarter of the block
+ * under it is (a fence's thin bars). `frames`: an animation's pictures, all of the first's size (a map's
+ * sprites cycle through them). A size that is no power of two is resampled up to one (powerOfTwo).
  */
-export function writeVtf(picture, { alpha = false, flags = 0 } = {}) {
-  const top = powerOfTwo(picture, { alpha });
-  const levels = [top];
-  while (levels.at(-1).width > 1 || levels.at(-1).height > 1) levels.push(halved(levels.at(-1), alpha));
+export function writeVtf(picture, { alpha = false, flags = 0, keepHoles = false, frames = [picture] } = {}) {
+  const holes = alpha === true;
+  const chains = frames.map((frame) => {
+    const top = powerOfTwo(frame, { alpha: holes });
+    const chain = [top];
+    while (chain.at(-1).width > 1 || chain.at(-1).height > 1)
+      chain.push(keepHoles && holes ? shrunkKeepingSolid(top, chain.length) : halved(chain.at(-1), holes));
+    return chain;
+  });
+  const levels = chains[0];
+  const top = levels[0];
   const format = alpha ? VTF_FORMAT.BGRA8888 : VTF_FORMAT.BGR888;
 
   const head = Buffer.alloc(HEADER_SIZE);
@@ -152,8 +229,8 @@ export function writeVtf(picture, { alpha = false, flags = 0 } = {}) {
   head.writeUInt32LE(HEADER_SIZE, HDR.headerSize);
   head.writeUInt16LE(top.width, HDR.width);
   head.writeUInt16LE(top.height, HDR.height);
-  head.writeUInt32LE((alpha ? VTF_FLAG.ONEBITALPHA : 0) | flags, HDR.flags);
-  head.writeUInt16LE(1, HDR.frames);
+  head.writeUInt32LE((alpha === "smooth" ? VTF_FLAG.EIGHTBITALPHA : alpha ? VTF_FLAG.ONEBITALPHA : 0) | flags, HDR.flags);
+  head.writeUInt16LE(frames.length, HDR.frames);
   head.writeUInt16LE(0, HDR.firstFrame);
   // the reflectivity: the picture's mean colour, linear (what the light compiler bounces off it)
   const mean = [0, 0, 0];
@@ -163,12 +240,18 @@ export function writeVtf(picture, { alpha = false, flags = 0 } = {}) {
   head.writeFloatLE(1, HDR.bumpScale);
   head.writeUInt32LE(format, HDR.format);
   head[HDR.mipCount] = levels.length;
-  head.writeUInt32LE(NO_FORMAT, HDR.lowFormat);
-  head[HDR.lowWidth] = 0;
-  head[HDR.lowHeight] = 0;
+  // the thumbnail: the first level no more than 16 a side, as vtex writes one. The engine samples it for the colour
+  // of what a bullet hits (HL2's impact chips and dust, GetLowResColorSample); with none it gives no colour, and
+  // the chips off a converted map's concrete came out yellow, like antlion blood (2026-10-25)
+  const thumb = levels.find((level) => level.width <= THUMBNAIL && level.height <= THUMBNAIL);
+  head.writeUInt32LE(VTF_FORMAT.BGR888, HDR.lowFormat);
+  head[HDR.lowWidth] = thumb.width;
+  head[HDR.lowHeight] = thumb.height;
   head.writeUInt16LE(1, HDR.depth);
-  // the smallest level first
-  return Buffer.concat([head, ...levels.reverse().map((level) => pixelsIn(level, format))]);
+  // the thumbnail, then the smallest level first, each level's frames in order
+  const parts = [head, pixelsIn(thumb, VTF_FORMAT.BGR888)];
+  for (let level = levels.length - 1; level >= 0; level--) for (const chain of chains) parts.push(pixelsIn(chain[level], format));
+  return Buffer.concat(parts);
 }
 
 /** The bytes of one level of a picture in a format. */
