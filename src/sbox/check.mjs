@@ -6,6 +6,7 @@
 //                                                  parts, skins, attachments, hit boxes, and its poses
 //   compareSbox(expected, read, { tolerance })     -> { passed, faults, said, worst }
 //   physicsProbeCode(vmdl, poses), comparePhysics(expected, read)   its physics read back, and tried
+//   soundProbeCode(vmdl, sounds, soundEvents), compareSounds(expected, read)   its sounds read back, played, heard
 //   checkSboxPort(file, { project, name, folder, kind, collision, surfaceprop, mass, sbox, perSequence, shot })
 //                                                  -> the whole check, in the editor
 //
@@ -20,6 +21,15 @@
 // blends' start, middle and end, where GoldSrc's renderer would put it (blendedPoseAt: StudioSlerpBones, each bone's
 // turn slerped and its place mixed), within the same tolerance.
 //
+// ITS SOUNDS (sound.mjs), when its events play any: each .sound read back as the editor compiled it, playing its
+// file, as long as the original (within SOUND_LENGTH), heard as far as GoldSrc heard it (its Distance, its falloff a
+// line from 1 to 0), with no occlusion or reverb, and as loud, window by window, as the original
+// (soundEnvelope: correlated SOUND_LIKENESS or more). Then each played, far off so that none is heard: one that
+// loops still playing after its length, one that does not stopped. And each animation with sound events played
+// through, by a renderer of its own: the sounds it is heard to play (SkinnedModelRenderer.OnSoundEvent) its events',
+// as many of each; a loop's played looping (s&box fires an event at a held animation's last frame not at all, a
+// looping one's each time round, as GoldSrc), each of its sounds heard and no other.
+//
 // THE EDITOR. The check runs in the project's editor (editor.mjs: the one open, else one opened and closed
 // after). Its probe object is made in the scene being edited and removed before the check ends; the scene is not
 // saved. Its picture (`shot`) is the editor's camera on the model posed in its first animation.
@@ -29,9 +39,13 @@ import { qofAngles, qslerp, anglesOf } from "../animate.mjs";
 import { GRAPH_SEQUENCE } from "./graph.mjs";
 import { portToSbox } from "./port.mjs";
 import { sourceName } from "../source/port.mjs";
+import { soundFoldersOf } from "../source/gmod.mjs";
 import { editorFor, runCsharp, sboxCall, projectFolder } from "./editor.mjs";
 import { compileVmdl, findSbox } from "./compile.mjs";
 import { restOf, insideLimits, jointStretch, quaternionOfTurn } from "./physics.mjs";
+import { soundEnvelope, ENVELOPE_WINDOW } from "./sound.mjs";
+import { readWav } from "../audio/wav.mjs";
+import { compileSounds } from "./compile.mjs";
 import { copyFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
@@ -257,6 +271,147 @@ return new { bodies, joints, restMoved, held, dropped, weighs };
 `;
 }
 
+/** How far a sound's length may be from the original's, in seconds (s&box's compile keeps it to 0.0001). */
+export const SOUND_LENGTH = 0.005;
+/** How alike a sound's loudness, window by window, must be to the original's (the correlation of the two):
+ * Half-Life's, compiled as Opus, are 0.9995 or more. */
+export const SOUND_LIKENESS = 0.99;
+/** How long an animation is played for its sound events, in seconds of the editor's: each is played that fast, or
+ * at its own rate when it is shorter. */
+const SOUND_EVENTS_IN = 1;
+/** The longest sound played to see whether it loops, in seconds: one longer is not played. */
+const SOUND_PLAYED_MOST = 10;
+/** How long past the longest sound's length the played sounds are looked at, in seconds. */
+const SOUND_LATE = 2;
+
+/**
+ * The C# that reads each of `sounds` ([{ sound, duration }]: a .sound, under Assets) as the editor compiled it, and
+ * its file's loudness window by window (ENVELOPE_WINDOW seconds, at the rate it was compiled at); plays each (SOUND_PLAYED_MOST long at most) far off, to
+ * see which still play after their length; and plays each of `soundEvents` ([{ sequence, duration, loops }]) through on
+ * the model at `vmdl`, a renderer of its own each, hearing the sound events it fires. Returns { sounds: [{ sound,
+ * missing } or { sound, file, valid, duration, distance, falloff, occlusion, reverb, envelope }], playing: { sound:
+ * bool }, heard: [{ sequence, sound, attachment }] }.
+ */
+export function soundProbeCode(vmdl, sounds, soundEvents = []) {
+  const played = sounds.filter((s) => s.duration <= SOUND_PLAYED_MOST);
+  // past the longest's end by SOUND_LATE: started together, one may start late (scientist's 25 sounds: the 5.8 s
+  // c1a2_sci_darkroom still played 0.5 s after its length), and a loop plays on whatever the wait
+  const wait = Math.max(0, ...played.map((s) => s.duration)) + SOUND_LATE;
+  const animations = soundEvents.map((e) => `(${csString(e.sequence)}, ${Math.max(1, e.duration / SOUND_EVENTS_IN).toFixed(4)}f, ${Boolean(e.loops)})`); // prettier-ignore
+  return `
+var scene = Editor.SceneEditorSession.Active?.Scene ?? Game.ActiveScene;
+var sounds = new System.Collections.Generic.List<object>();
+foreach ( var path in new string[] { ${sounds.map((s) => csString(s.sound)).join(", ")} } )
+{
+	var ev = ResourceLibrary.Get<SoundEvent>( path );
+	if ( ev is null ) { sounds.Add( new { sound = path, missing = true } ); continue; }
+	var sf = ev.Sounds?.FirstOrDefault();
+	short[] samples = null;
+	if ( sf is not null ) { await sf.LoadAsync(); samples = await sf.GetSamplesAsync(); }
+	var envelope = new System.Collections.Generic.List<float>();
+	// 10 ms by 10 ms at the rate it was compiled at (48000 as Opus, a small one's own as PCM), as soundEnvelope
+	double step = ( sf?.Rate ?? 0 ) * ${ENVELOPE_WINDOW};
+	if ( samples is not null && step > 0 )
+		for ( int k = 0; (int)System.Math.Floor( ( k + 1 ) * step ) <= samples.Length; k++ )
+		{
+			int from = (int)System.Math.Floor( k * step ), to = (int)System.Math.Floor( ( k + 1 ) * step );
+			double sum = 0;
+			for ( int i = from; i < to; i++ ) { double v = samples[i] / 32768.0; sum += v * v; }
+			envelope.Add( (float)System.Math.Round( System.Math.Sqrt( sum / ( to - from ) ), 5 ) );
+		}
+	sounds.Add( new { sound = path, file = sf?.ResourcePath, valid = sf?.IsValid ?? false, duration = sf?.Duration ?? 0, rate = sf?.Rate ?? 0, format = sf?.Format.ToString(), distance = ev.Distance,
+		falloff = new[] { 0.25f, 0.5f, 0.75f }.Select( t => ev.Falloff.Evaluate( t ) ).ToArray(), occlusion = ev.OcclusionEnabled, reverb = ev.ReverbEnabled, envelope } );
+}
+// each played far off (heard by no one: past its Distance from the camera), to see which loop
+var far = new Vector3( 0, 0, -100000 );
+var handles = new string[] { ${played.map((s) => csString(s.sound)).join(", ")} }.Select( p => (p, ResourceLibrary.Get<SoundEvent>( p )) ).Where( x => x.Item2 is not null ).Select( x => (x.Item1, Sound.Play( x.Item2, far )) ).ToList();
+if ( handles.Count > 0 ) await Task.Delay( ${Math.round(wait * 1000)} );
+var playing = handles.ToDictionary( h => h.Item1, h => h.Item2.IsPlaying );
+foreach ( var h in handles ) h.Item2.Stop();
+// each animation with sound events played through, the sounds it fires heard
+var model = Model.Load( ${csString(vmdl)} );
+var heard = new System.Collections.Generic.List<object>();
+var made = new System.Collections.Generic.List<GameObject>();
+foreach ( var (name, rate, loops) in new (string, float, bool)[] { ${animations.join(", ")} } )
+{
+	var go = scene.CreateObject();
+	go.Name = ${csString(PROBE)};
+	go.WorldPosition = new Vector3( 0, 0, -100000 );
+	var r = go.Components.Create<SkinnedModelRenderer>( false );
+	r.Model = model;
+	r.UseAnimGraph = false;
+	r.PlayAnimationsInEditorScene = true;
+	r.OnSoundEvent = ( e ) => heard.Add( new { sequence = name, sound = e.Name, attachment = e.AttachmentName } );
+	r.Enabled = true;
+	r.Sequence.Name = name;
+	r.Sequence.Looping = loops;
+	r.Sequence.PlaybackRate = rate;
+	made.Add( go );
+}
+if ( made.Count > 0 ) await Task.Delay( ${Math.round((SOUND_EVENTS_IN + 1) * 1000)} );
+foreach ( var g in made ) g.Destroy();
+return new { sounds, playing, heard };
+`;
+}
+
+/** The port's sounds read back (soundProbeCode's answer) held to the originals. -> { faults, said } */
+export function compareSounds(expected, read) {
+  const faults = [];
+  const got = new Map((read.sounds ?? []).map((s) => [s.sound, s]));
+  let least = 1;
+  let leastOf = "";
+  for (const want of expected.sounds) {
+    const s = got.get(want.sound);
+    if (!s || s.missing) {
+      faults.push(`${want.sound} did not load`);
+      continue;
+    }
+    if (!s.valid || s.file !== want.vsnd) {
+      faults.push(`${want.sound} plays ${s.file ?? "nothing"}${s.valid ? "" : " (not a sound s&box plays)"}, not ${want.vsnd}`); // prettier-ignore
+      continue;
+    }
+    if (Math.abs(s.duration - want.duration) > SOUND_LENGTH)
+      faults.push(`${want.sound} is ${s.duration.toFixed(3)} s long, not ${want.duration.toFixed(3)}`);
+    if (Math.abs(s.distance - want.distance) > 0.01)
+      faults.push(`${want.sound} is heard to ${s.distance} units, not ${want.distance} (GoldSrc's)`);
+    if (s.falloff.some((f, k) => Math.abs(f - (1 - (k + 1) / 4)) > 0.001))
+      faults.push(`${want.sound} falls off as ${s.falloff.map((f) => f.toFixed(3)).join(", ")} at a quarter, half and three quarters of its distance, not in a line (0.75, 0.5, 0.25)`); // prettier-ignore
+    if (s.occlusion || s.reverb) faults.push(`${want.sound} has ${s.occlusion ? "occlusion" : "reverb"}, which GoldSrc's mixer had not`); // prettier-ignore
+    const n = Math.min(want.envelope.length, s.envelope.length);
+    let dot = 0;
+    let a = 0;
+    let b = 0;
+    for (let i = 0; i < n; i++) {
+      dot += want.envelope[i] * s.envelope[i];
+      a += want.envelope[i] ** 2;
+      b += s.envelope[i] ** 2;
+    }
+    // a silent file is like a silent one
+    const likeness = a === 0 && b === 0 ? 1 : a === 0 || b === 0 ? 0 : dot / Math.sqrt(a * b);
+    if (likeness < least) [least, leastOf] = [likeness, want.sound];
+    if (likeness < SOUND_LIKENESS) faults.push(`${want.sound} is not as loud as the original window by window (correlated ${likeness.toFixed(4)}, not ${SOUND_LIKENESS} or more)`); // prettier-ignore
+  }
+  const played = expected.sounds.filter((s) => s.duration <= SOUND_PLAYED_MOST);
+  const wrong = played.filter((s) => read.playing?.[s.sound] !== undefined && read.playing[s.sound] !== (s.loop !== null)); // prettier-ignore
+  for (const s of wrong) faults.push(s.loop !== null ? `${s.sound} did not loop (GoldSrc's loops from ${s.loop.toFixed(3)} s)` : `${s.sound} still played after its length, as a loop (GoldSrc's does not loop)`); // prettier-ignore
+  // each animation's sound events heard, as many as it has of each; a loop's, played round more than once, each
+  // of its sounds and no other
+  const key = (list) => [...list].sort().join(", ");
+  let heard = 0;
+  for (const e of expected.soundEvents) {
+    const got = (read.heard ?? []).filter((h) => h.sequence === e.sequence).map((h) => h.sound);
+    const [has, wants] = e.loops ? [[...new Set(got)], [...new Set(e.sounds)]] : [got, e.sounds];
+    heard += e.loops ? e.sounds.filter((s) => has.includes(s)).length : got.length;
+    if (key(has) !== key(wants)) faults.push(`${e.sequence} played ${got.length ? key(has) : "no sound"}, not ${key(wants)}${e.loops ? " (looping)" : ""}`); // prettier-ignore
+  }
+  const loops = expected.sounds.filter((s) => s.loop !== null).length;
+  const said = [
+    `${expected.sounds.length} sounds as .sound assets, heard as far as GoldSrc heard them${loops ? ` (${loops} looping)` : ""}; as loud as the originals window by window (correlated ${least.toFixed(4)} at least${leastOf ? `, ${leastOf}` : ""})`, // prettier-ignore
+    `${expected.soundEvents.length} animations played through: ${heard} sound events heard, of ${expected.soundEvents.reduce((n, e) => n + e.sounds.length, 0)}`, // prettier-ignore
+  ];
+  return { faults, said };
+}
+
 /** The C# that removes the probe object. */
 export const removeProbeCode = () =>
   `var scene = Editor.SceneEditorSession.Active?.Scene ?? Game.ActiveScene;
@@ -342,6 +497,16 @@ export function expectedOf(src, port, { groups, perSequence = 2 } = {}) {
     graphParameters: port.graph ? [GRAPH_SEQUENCE, ...port.graphed.poses.map((p) => p.name)] : [],
     graphSamples,
     graphPoses,
+    // its sounds, when its events play any: each as written, and its loudness window by window at s&box's rate;
+    // and each animation with sound events, how long it is and the sounds it plays
+    sounds: (port.sounds ?? []).map((s) => {
+      const wav = readWav(port.files.find((f) => f.path === s.wav).data);
+      return { ...s, envelope: soundEnvelope(wav.x, wav.rate) };
+    }),
+    soundEvents: (port.soundEvents ?? []).map((e) => ({
+      ...e,
+      duration: durations.find((d) => d.name === e.sequence)?.duration ?? 0,
+    })),
   };
 }
 
@@ -554,11 +719,14 @@ export function compareSbox(expected, read, { tolerance = POSE_TOLERANCE } = {})
     ? comparePhysics(expected.physics, read.physics ?? { bodies: [], joints: [] })
     : null;
   if (physics) faults.push(...physics.faults);
+  const sounds = expected.sounds?.length ? compareSounds(expected, read.sounds ?? {}) : null;
+  if (sounds) faults.push(...sounds.faults);
   const said = [
     `${read.bones.length} bones, ${read.sequences.length} animations, ${read.parts.length} bodygroups, ${read.groups.length} material groups, ${read.attachments.length} attachments, ${read.hitboxes.length} hit boxes`, // prettier-ignore
     `${expected.samples.length} poses held to GoldSrc's: the farthest bone ${worst.off.toFixed(3)} units off${worst.bone ? ` (${worst.bone}, ${worst.at})` : ""}`, // prettier-ignore
     ...(graphed ? [`${expected.graphPoses.length} blends played by its graph (${expected.graph}) held to GoldSrc's: the farthest bone ${graphed.worst.off.toFixed(3)} units off${graphed.worst.bone ? ` (${graphed.worst.bone}, ${graphed.worst.at})` : ""}`] : []), // prettier-ignore
     ...(physics?.said ?? []),
+    ...(sounds?.said ?? []),
   ];
   return { passed: !faults.length, faults, said, worst };
 }
@@ -570,7 +738,7 @@ export function compareSbox(expected, read, { tolerance = POSE_TOLERANCE } = {})
  */
 export async function checkSboxPort(
   file,
-  { project, name, folder, kind, collision, surfaceprop, mass, sbox, perSequence = 2, shot, tolerance } = {},
+  { project, name, folder, kind, collision, surfaceprop, mass, sounds, sbox, perSequence = 2, shot, tolerance } = {},
 ) {
   const engine = sbox ?? findSbox();
   const root = projectFolder(project);
@@ -586,6 +754,7 @@ export async function checkSboxPort(
     collision,
     surfaceprop,
     mass,
+    sounds: sounds ?? soundFoldersOf(file),
   });
   if (!existsSync(join(assets, port.vmdl)))
     throw new Error(
@@ -593,15 +762,24 @@ export async function checkSboxPort(
     );
   if (!existsSync(join(assets, `${port.vmdl}_c`))) compileVmdl(assets, port.vmdl, { sbox: engine });
   if (port.graph && !existsSync(join(assets, `${port.graph}_c`))) compileVmdl(assets, port.graph, { sbox: engine });
+  const lacking = port.sounds.filter((s) => !existsSync(join(assets, s.wav)));
+  if (lacking.length) throw new Error(`${lacking[0].wav} is not in ${assets}: port the model there again (smak sbox-port ${own} -o ${assets})`); // prettier-ignore
+  const uncompiled = port.sounds.filter((s) => !existsSync(join(assets, `${s.vsnd}_c`))).map((s) => s.wav);
+  if (uncompiled.length) compileSounds(assets, uncompiled, { sbox: engine });
   const expected = expectedOf(src, port, { groups, perSequence });
   const editor = await editorFor(root, { sbox: engine });
   try {
     // the editor compiles what changed on disk; asked again, so the check reads this port's compile
     sboxCall(root, "asset_compile", { path: port.vmdl }, { sbox: engine });
     if (port.graph) sboxCall(root, "asset_compile", { path: port.graph }, { sbox: engine });
+    // its sounds' .sound assets, which only the editor compiles
+    if (port.sounds.length)
+      sboxCall(root, "call_tools", { calls: port.sounds.map((s) => ({ name: "asset_compile", arguments: { path: s.sound } })) }, { sbox: engine }); // prettier-ignore
     const read = runCsharp(root, probeCode(port.vmdl, expected.samples, expected.graphSamples), { sbox: engine });
     if (expected.physics && !read.error)
       read.physics = runCsharp(root, physicsProbeCode(port.vmdl, expected.physics.poses), { sbox: engine });
+    if (expected.sounds.length && !read.error)
+      read.sounds = runCsharp(root, soundProbeCode(port.vmdl, expected.sounds, expected.soundEvents), { sbox: engine }); // prettier-ignore
     const result = compareSbox(expected, read, { tolerance });
     if (shot && !read.error) {
       const size = Math.max(16, ...expected.poses[0].bones.map((p) => Math.hypot(...p))) * 2.2;

@@ -3667,7 +3667,8 @@ function sboxPort({ command, file, flags }) {
       ? `collides as a ragdoll of ${physics.shapes.length} pieces and ${physics.joints.length} joints (${physics.shapes[0].surface})`
       : `collides as its ${f.collision} (${physics.shapes[0].surface})`;
   const graph = result.graph ? ` (${f.poses.join(", ")} blended in its graph)` : "";
-  const made = `${f.bones.length} bones, ${f.meshes.length} meshes, ${f.sequences.length} animations${graph}, ${f.skins} ${f.skins === 1 ? "skin" : "skins"}, ${f.bodygroups.length} bodygroups, ${f.attachments.length} attachments, ${f.hitboxes} hit boxes; ${collides}`; // prettier-ignore
+  const sounds = f.sounds ? `; ${f.sounds} ${f.sounds === 1 ? "sound" : "sounds"} its events play` : "";
+  const made = `${f.bones.length} bones, ${f.meshes.length} meshes, ${f.sequences.length} animations${graph}, ${f.skins} ${f.skins === 1 ? "skin" : "skins"}, ${f.bodygroups.length} bodygroups, ${f.attachments.length} attachments, ${f.hitboxes} hit boxes; ${collides}${sounds}`; // prettier-ignore
   answered(command, file, flags, {
     detail: [`      ${made}`, `      the model: ${result.written}`, ...(result.graph ? [`      its animation graph: ${result.graph}`] : []), ...notes, ...warnings], // prettier-ignore
     passed: true,
@@ -4807,15 +4808,18 @@ const COMMANDS = {
                                             events and travel in a .vmdl (models/<folder>/<name>.vmdl), its textures as PNG and
                                             .vmat (materials/models/<folder>/<name>/), under -o, an s&box project's Assets folder;
                                             then compiled by s&box's own resourcecompiler (an outside program that comes with
-                                            s&box; --sbox, SMAK_SBOX). A loop's travel is taken out as root motion; an event is
-                                            kept as s&box's generic one (its number, its options). It collides as gmod-port's
+                                            s&box; --sbox, SMAK_SBOX). A loop's travel is taken out as root motion. An event that
+                                            plays a sound plays it in s&box (AE_CL_PLAYSOUND): its .wav copied from the game's
+                                            sound/ folders (its mod's, then valve's) under sounds/<folder>/, beside it a .sound
+                                            heard as far as GoldSrc heard it, a loop told in its .meta; any other event, and one
+                                            whose sound is not found, is kept as s&box's generic one (its number, its options).
+                                            It collides as gmod-port's
                                             does (--collision, --surfaceprop, --mass as there): its hull, or a ragdoll of a hull
                                             a piece and joints that bend as its animations bend it (a hinge or a cone), its weight
                                             shared by volume; pieces that meet at rest and are not joined are trimmed apart. An
                                             animation's blends (Half-Life's aiming) go in an animation graph (<name>.vanmgrph):
                                             an animation chosen by its "sequence", blended by blend_xr and the like, as GoldSrc's
-                                            game code did; each blend is an animation of its own too. What s&box has no place for
-                                            yet is warned of: the sounds events name.`,
+                                            game code did; each blend is an animation of its own too.`,
   },
   "sbox-check": {
     run: sboxCheck,
@@ -4831,7 +4835,10 @@ const COMMANDS = {
                                             collides as: each piece's hull, mass, surface and joint as the port wrote them, then
                                             tried in a physics world of its own: held at rest (no piece pushes another), held in
                                             the poses inside its joints' limits, and dropped onto a floor (it comes to rest, its
-                                            joints together). Give it the port's options (--name, --collision...). Uses the
+                                            joints together). Its sounds: each .sound as the editor compiled it, as long, as far
+                                            heard and as loud, 10 ms by 10 ms, as the original; played, a loop still playing
+                                            after its length; and each animation played through, its sound events heard. Give it
+                                            the port's options (--name, --collision...). Uses the
                                             editor open on the project, else opens one (sbox-cli, which comes with s&box) and
                                             closes it after. -o: the editor's picture of it. Ends in PASS or FAIL.`,
   },

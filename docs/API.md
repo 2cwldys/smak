@@ -866,6 +866,14 @@ map's monsters come: `spawnsOf`, `spawnsTable`; its character in numbers: `chara
   the animation of each blend), a blend node an animation that blends on one axis, a 2D blend one on two, a float
   parameter each of `poses` (`[{ name, min, max }]`). `portToSbox` returns it as `graph` (its path, or "") and
   `graphed` (`{ sequences, poses }`), and `facts.poses`.
+- `sboxSound(bytes, { path, distance })` → a GoldSrc `.wav` as s&box's files: `{ files, sound, vsnd, wav, duration,
+  loop, distance }` (the `.wav` as it is, a `.meta` when it loops, a `.sound` heard to `distance` in a line, no
+  occlusion or reverb), or `{ unread }`; `soundEventOf({ file, distance })` → a `.sound`'s text; `distanceOf(attn)`
+  → 1000 / attn, how far GoldSrc heard a sound (`ATTENUATION`: norm 0.8, idle 2, static 1.25);
+  `soundEnvelope(x, rate)` → its loudness 10 ms by 10 ms. `portToSbox`'s `sounds` (the game's sound folders) makes
+  the sounds its events play, returned as `sounds` and `soundEvents` (`[{ sequence, sounds }]`).
+- `compileSounds(assets, wavs, { sbox })` → `{ compiled, said, took }`: sound files compiled in one run, each to its
+  `.vsnd_c`.
 - `findSbox({ folder, env })` → s&box's folder (`SMAK_SBOX`, `FACEPUNCH_ENGINE`, a Steam library);
   `compileVmdl(assets, vmdl, { sbox, timeout })` → `{ compiled, said, notes, took }`, throwing what the compiler said.
 - `portToSource(...)` also returns `parts`: its SMDs as data by path (`smd`), its `bones`, `bodygroups`, `skins`,
@@ -877,7 +885,9 @@ map's monsters come: `spawnsOf`, `spawnsTable`; its character in numbers: `chara
   animations' lengths, parts, skins, attachments, hit boxes, GoldSrc's poses at the sampled frames, each blend's too, and `physics`:
   the hulls, masses and joints written, and the poses to hold the ragdoll in; and `graph`, `graphParameters`,
   `graphSamples`, `graphPoses`: its graph's blends at their start, middle and end), `probeCode(vmdl, samples,
-  graphSamples)` (the C# that reads and poses it, and plays its graph), `blendedPoseAt(src, seq, frame, share,
+  graphSamples)` (the C# that reads and poses it, and plays its graph), `soundProbeCode(vmdl, sounds,
+  soundEvents)` and `compareSounds(expected, read)` (its sounds read back, played, and its animations' sound events
+  heard), `blendedPoseAt(src, seq, frame, share,
   groups)` (every bone's matrix `share` of the way from an animation's first blend to its second, as GoldSrc's
   renderer mixes them), `removeProbeCode()`, `compareSbox(expected, read, { tolerance })` → `{ passed, faults,
   said, worst }`, `POSE_TOLERANCE` (0.1 units) and `REACH_TOLERANCE` (0.0005 of a bone's chain);

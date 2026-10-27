@@ -6,8 +6,8 @@ short scripts with it, draws what it made to check its own work, and plays the r
 also takes them to **Source**: a GoldSrc model ported to Garry's Mod, with physics and a ragdoll, and since 0.30 a
 GoldSrc map, held to the original in the running game. Since 0.31 a GoldSrc model goes to **s&box** (Source 2) too.
 
-![version](https://img.shields.io/badge/version-0.33.0-blue)
-![tests](https://img.shields.io/badge/tests-939%20passing-brightgreen)
+![version](https://img.shields.io/badge/version-0.34.0-blue)
+![tests](https://img.shields.io/badge/tests-944%20passing-brightgreen)
 ![node](https://img.shields.io/badge/node-18%2B-339933)
 ![dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)
 ![licence](https://img.shields.io/badge/licence-MIT-lightgrey)
@@ -21,7 +21,7 @@ model, map and shot in it was made by an agent with SMAK.
 ## What it can do (measured)
 
 ![commands](https://img.shields.io/badge/commands-86-555)
-![functions](https://img.shields.io/badge/public%20functions-776-555)
+![functions](https://img.shields.io/badge/public%20functions-783-555)
 ![docs](https://img.shields.io/badge/guides-22-555)
 ![profiles](https://img.shields.io/badge/game%20profiles-Master%20Sword%20%C2%B7%20The%20Specialists%20%C2%B7%20Half--Life-555)
 
@@ -75,6 +75,9 @@ model, map and shot in it was made by an agent with SMAK.
   dropped onto a floor until still, nothing through it.
 - **And they aim**: an animation's blends (Half-Life's aiming up and down) in an animation graph, chosen and blended
   by the game's code as GoldSrc's was (`sequence`, `blend_xr`); s&box's blend held to GoldSrc's at every bone.
+- **And they sound**: the sounds their events play as `.sound` assets, heard as far as GoldSrc heard them, their
+  loops kept, played by s&box with no game code. Half-Life's 13 models with sounds pass: every sound as loud as its
+  original, every event heard.
 
 ## How it works
 

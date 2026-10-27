@@ -416,7 +416,8 @@ editor open on the project is used, else one is opened and closed. All 210 of Ha
 **7c. Next, in order.** Collision: done (a hull, a ragdoll as s&box's physics
 shapes and joints, held in its physics by sbox-check, `docs/SBOX.md`); blends as an animation graph: done (a
 selector on `sequence`, a blend node on `blend_xr` and the like, held to GoldSrc's slerped blends by sbox-check);
-sounds as `.sound` assets; then the kit's own models built
+sounds as `.sound` assets: done (a model's event sounds,
+heard as GoldSrc heard them, their loops in a `.meta`; read back, played and heard by sbox-check); then the kit's own models built
 for s&box, then maps (a runtime GoldSrc map mount, as s&box's Quake mount, or a conversion to `.vmap`).
 
 ## Which model does the work (measured 2026-10-25)

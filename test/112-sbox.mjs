@@ -274,6 +274,102 @@ test("portToSbox: an animation's fps, loop and activity; a walk's travel taken o
   );
 });
 
+// ── its sounds: a game's sound folder with a step, a loop and a clip; one the folder has not ──
+const soundsFolder = join(folder, "game-sound");
+const within = (value, expected, tolerance) => Math.abs(value - expected) <= tolerance;
+const tone = (n, rate, every = 20) => Float32Array.from({ length: n }, (_, i) => 0.5 * Math.sin(i / every) * (1 - i / n));
+mkdirSync(join(soundsFolder, "common"), { recursive: true });
+mkdirSync(join(soundsFolder, "weapons"), { recursive: true });
+writeFileSync(join(soundsFolder, "common", "step1.wav"), smak.audio.writeWav(tone(2205, 11025), { rate: 11025, bits: 8 }));
+writeFileSync(join(soundsFolder, "weapons", "hum.wav"), smak.audio.writeWav(tone(22050, 22050), { rate: 22050, bits: 8, loop: 11025 })); // prettier-ignore
+writeFileSync(join(soundsFolder, "weapons", "clip.wav"), smak.audio.writeWav(tone(4410, 22050), { rate: 22050 }));
+const sounder = smak.buildMdl({
+  name: "sounder.mdl",
+  bones: portBones,
+  bodyparts: [{ name: "body", models: [{ name: "body", meshes: [{ tris: [tri(0)], texture: plain("skin.bmp") }] }] }],
+  sequences: [
+    { name: "walk", fps: 10, loops: true, frames: [still, still, still], events: [{ frame: 1, event: 1004, options: "common\\step1.wav" }, { frame: 2, event: 1008, options: "*weapons/hum.wav" }] }, // prettier-ignore
+    { name: "reload", fps: 10, frames: [still, still], events: [{ frame: 0, event: 5004, options: "weapons/clip.wav" }, { frame: 1, event: 1004, options: "common/gone.wav" }, { frame: 1, event: 5001, options: "10" }] }, // prettier-ignore
+    { name: "idle", fps: 10, frames: [still] },
+  ],
+  attachments: [{ name: "", bone: "arm", pos: [1, 2, 3] }],
+});
+const sounded = sbox.portToSbox(sounder, { name: "sounder", sounds: [soundsFolder] });
+const sounderVmdl = String(sounded.files.find((f) => f.path === sounded.vmdl).data);
+const soundFile = (path) => sounded.files.find((f) => f.path === path)?.data;
+
+test("portToSbox: the sounds its events play as .sound assets under sounds/<folder>/, heard as far as GoldSrc heard them; a loop told in its .meta", () => {
+  const paths = sounded.files.map((f) => f.path);
+  for (const path of ["sounds/smak/common/step1.wav", "sounds/smak/common/step1.sound", "sounds/smak/weapons/hum.wav", "sounds/smak/weapons/hum.wav.meta", "sounds/smak/weapons/clip.sound"]) // prettier-ignore
+    sure(paths.includes(path), `${path} in ${paths.filter((p) => p.startsWith("sounds")).join(", ")}`);
+  sure(!paths.includes("sounds/smak/common/step1.wav.meta"), "a sound that does not loop has no .meta");
+  sure(soundFile("sounds/smak/common/step1.wav").equals(readFileSync(join(soundsFolder, "common", "step1.wav"))), "the .wav kept as it is"); // prettier-ignore
+  const step = JSON.parse(soundFile("sounds/smak/common/step1.sound"));
+  sure(step.Sounds[0] === "sounds/smak/common/step1.vsnd" && step.Distance === 500, `a monster's step at ATTN_IDLE, 500 units: ${JSON.stringify(step)}`); // prettier-ignore
+  sure(step.Falloff.length === 2 && step.Falloff.every((p) => p.mode === "Linear") && step.Falloff[0].y === 1 && step.Falloff[1].y === 0, "its gain a line from 1 to 0"); // prettier-ignore
+  sure(!step.OcclusionEnabled && !step.ReverbEnabled && !step.AirAbsorption && !step.UI, "no occlusion, reverb or air: GoldSrc's mixer had none"); // prettier-ignore
+  sure(JSON.parse(soundFile("sounds/smak/weapons/clip.sound")).Distance === 1250, "a client's sound (5004) at ATTN_NORM, 1250 units"); // prettier-ignore
+  const meta = JSON.parse(soundFile("sounds/smak/weapons/hum.wav.meta"));
+  sure(meta.loop === true && within(meta.start, 0.5, 1e-6) && meta.end === undefined && /^[0-9a-f]{8}-/.test(meta.guid), `hum loops from its cue, half a second in, to its end: ${JSON.stringify(meta)}`); // prettier-ignore
+  const hum = sounded.sounds.find((s) => s.from === "weapons/hum.wav");
+  sure(within(hum.loop, 0.5, 1e-9) && within(hum.duration, 1, 1e-9) && hum.vsnd === "sounds/smak/weapons/hum.vsnd", JSON.stringify(hum)); // prettier-ignore
+  sure(sounded.facts.sounds === 3 && sounded.facts.soundEvents === 3, JSON.stringify(sounded.facts));
+});
+
+test("portToSbox: an event whose sound was found plays it (AE_CL_PLAYSOUND; a view model's clip at its first attachment); one not found, and any other, kept generic", () => {
+  sure(/event_class = "AE_CL_PLAYSOUND"\n\t+event_frame = 1\n\t+event_keys = \{\n\t+name = "sounds\/smak\/common\/step1\.sound"\n\t+\}/.test(sounderVmdl), "the step played by its .sound"); // prettier-ignore
+  sure(/event_class = "AE_CL_PLAYSOUND"\n\t+event_frame = 2\n\t+event_keys = \{\n\t+name = "sounds\/smak\/weapons\/hum\.sound"/.test(sounderVmdl), "a streamed one (*) too"); // prettier-ignore
+  sure(/event_class = "AE_CL_PLAYSOUND_ATTACHMENT"\n\t+event_frame = 0\n\t+event_keys = \{\n\t+name = "sounds\/smak\/weapons\/clip\.sound"\n\t+attachment = "attachment0"/.test(sounderVmdl), `5004 at the first attachment:\n${sounderVmdl.match(/AE_CL_PLAYSOUND_ATTACHMENT[\s\S]{0,200}/)?.[0]}`); // prettier-ignore
+  sure(/Int = 1004\n\t+StringData = "smak\/common\/gone\.wav"/.test(sounderVmdl) && /Int = 5001\n\t+StringData = "10"/.test(sounderVmdl), "the sound not found, and the muzzle flash, generic"); // prettier-ignore
+  sure(sounded.warnings.some((w) => /a sound its events play not found in .*game-sound.*: common\/gone\.wav/.test(w)), sounded.warnings.join("\n")); // prettier-ignore
+  sure(sounded.warnings.some((w) => /^2 events kept as s&box's generic ones/.test(w)), sounded.warnings.join("\n"));
+  sure(JSON.stringify(sounded.soundEvents) === JSON.stringify([{ sequence: "walk", loops: true, sounds: ["sounds/smak/common/step1.sound", "sounds/smak/weapons/hum.sound"] }, { sequence: "reload", loops: false, sounds: ["sounds/smak/weapons/clip.sound"] }]), JSON.stringify(sounded.soundEvents)); // prettier-ignore
+  // told no sound folder, every event is generic, as before
+  const unsounded = sbox.portToSbox(sounder, { name: "sounder" });
+  sure(unsounded.sounds.length === 0 && !/AE_CL_PLAYSOUND/.test(String(unsounded.files.find((f) => f.path === unsounded.vmdl).data)), "no folder, no sounds"); // prettier-ignore
+  sure(unsounded.warnings.some((w) => /4 sounds its events play not found in no sound folder/.test(w)), unsounded.warnings.join("\n")); // prettier-ignore
+});
+
+test("sboxSound: a file that is not a WAVE file is unread; soundEnvelope: a sound's loudness 10 ms by 10 ms at its own rate", () => {
+  sure(/not a WAVE file/.test(sbox.sboxSound(Buffer.from("ID3 an mp3"), { path: "sounds/x.wav" }).unread), "unread");
+  const loud = Float32Array.from({ length: 2205 }, (_, i) => (i < 1102 ? 0.5 : 0) * (i % 2 ? 1 : -1));
+  const envelope = sbox.soundEnvelope(loud, 22050);
+  sure(envelope.length === 10 && within(envelope[0], 0.5, 1e-6) && envelope[9] === 0, `10 windows of 220.5 samples: ${envelope.map((v) => v.toFixed(3))}`); // prettier-ignore
+  sure(sbox.soundEnvelope(loud.subarray(0, 441), 44100).length === 1, "at 44100, 441 samples a window");
+  sure(sbox.distanceOf(sbox.ATTENUATION.idle) === 500 && sbox.distanceOf(sbox.ATTENUATION.norm) === 1250, "1000 over the attenuation"); // prettier-ignore
+});
+
+test("expectedOf, soundProbeCode, compareSounds: its sounds read back, played, and its animations' sound events heard", () => {
+  const expected = sbox.expectedOf(sounder, sounded, { perSequence: 1 });
+  sure(expected.sounds.length === 3 && expected.sounds.every((s) => s.envelope.length > 0), JSON.stringify(expected.sounds.map((s) => [s.sound, s.envelope.length]))); // prettier-ignore
+  sure(within(expected.soundEvents.find((e) => e.sequence === "walk").duration, 0.2, 1e-9), "the walk's length, to play it through"); // prettier-ignore
+  const code = sbox.soundProbeCode(sounded.vmdl, expected.sounds, expected.soundEvents);
+  sure(/ResourceLibrary\.Get<SoundEvent>\( path \)/.test(code) && code.includes('"sounds/smak/weapons/hum.sound"') && /OnSoundEvent/.test(code) && /\("walk", 1\.0000f, true\)/.test(code) && /\("reload", 1\.0000f, false\)/.test(code), code); // prettier-ignore
+  const read = {
+    sounds: expected.sounds.map((s) => ({ sound: s.sound, file: s.vsnd, valid: true, duration: s.duration, distance: s.distance, falloff: [0.75, 0.5, 0.25], occlusion: false, reverb: false, envelope: s.envelope.map((v) => v * 0.9) })), // prettier-ignore
+    playing: Object.fromEntries(expected.sounds.map((s) => [s.sound, s.loop !== null])),
+    heard: expected.soundEvents.flatMap((e) => e.sounds.map((sound) => ({ sequence: e.sequence, sound }))),
+  };
+  const whole = sbox.compareSounds(expected, read);
+  sure(!whole.faults.length && /3 sounds as \.sound assets.*\(1 looping\).*correlated 1\.0000/.test(whole.said[0]) && /2 animations played through: 3 sound events heard, of 3/.test(whole.said[1]), JSON.stringify(whole)); // prettier-ignore
+  const broken = (change) => {
+    const copy = structuredClone(read);
+    change(copy);
+    return sbox.compareSounds(expected, copy).faults.join("\n");
+  };
+  const step = (r) => r.sounds.find((s) => s.sound.endsWith("step1.sound"));
+  sure(/step1\.sound did not load/.test(broken((r) => (step(r).missing = true))), "one that does not load");
+  sure(/heard to 1500 units, not 500/.test(broken((r) => (step(r).distance = 1500))), "heard too far");
+  sure(/falls off as .* not in a line/.test(broken((r) => (step(r).falloff = [0.22, 0.04, 0.01]))), "s&box's own falloff"); // prettier-ignore
+  sure(/is 9\.000 s long/.test(broken((r) => (step(r).duration = 9))), "of another length");
+  sure(/not as loud as the original/.test(broken((r) => step(r).envelope.reverse())), "its loudness reversed");
+  sure(/hum\.sound did not loop/.test(broken((r) => (r.playing["sounds/smak/weapons/hum.sound"] = false))), "the loop stopped"); // prettier-ignore
+  sure(/clip\.sound still played after its length/.test(broken((r) => (r.playing["sounds/smak/weapons/clip.sound"] = true))), "a one-shot looping"); // prettier-ignore
+  sure(/walk played sounds\/smak\/common\/step1\.sound, not .*hum\.sound \(looping\)/.test(broken((r) => r.heard.splice(1, 1))), "a sound event not heard"); // prettier-ignore
+  sure(!broken((r) => r.heard.push(...r.heard.filter((h) => h.sequence === "walk"))), "a loop's heard each time round"); // prettier-ignore
+  sure(/reload played sounds\/smak\/weapons\/clip\.sound, sounds\/smak\/weapons\/clip\.sound, not sounds\/smak\/weapons\/clip\.sound$/.test(broken((r) => r.heard.push({ sequence: "reload", sound: "sounds/smak/weapons/clip.sound" }))), "a one-shot's heard twice"); // prettier-ignore
+});
+
 // ── compiled, where s&box is ──
 let found = null;
 try {
@@ -334,6 +430,13 @@ testCompiled(
     sure(/did not compile models\/smak\/broken\.vmdl/.test(said) && /body-ref/.test(said), said);
   },
 );
+
+testCompiled("compiled: a model's sounds' files compiled in one run, each to its .vsnd_c beside it", () => {
+  const assets = join(folder, "sounded");
+  sbox.writeSboxPort(sounded, assets);
+  const made = sbox.compileSounds(assets, sounded.sounds.map((s) => s.wav), { sbox: found });
+  sure(made.compiled.length === 3 && made.compiled.every((f) => existsSync(f)) && made.compiled[0].endsWith(".vsnd_c"), JSON.stringify(made.compiled)); // prettier-ignore
+});
 
 testCompiled("compiled: smak sbox-port ends in PASS with what it made", () => {
   const file = join(folder, "portable.mdl");

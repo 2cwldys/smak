@@ -3,6 +3,20 @@
 The newest first. A version that changes what a model's file looks like, or that a model made before needs
 mending for, says so under **Mind**.
 
+## 0.34.0 (2026-10-26)
+
+s&box: a model's sounds, as `.sound` assets (`docs/SBOX.md`, "Its sounds"; `src/sbox/sound.mjs`):
+- `sbox-port` copies the sounds a model's events play (1004, 1008, 5004) from the game's sound folders (its mod's,
+  then valve's) under `sounds/<folder>/`, and beside each a `.sound` heard as GoldSrc heard it: its gain a line from 1
+  to 0 at 1000 units over its attenuation (a monster's 500, a view model's 1250), no occlusion or reverb. A loop is
+  told in a `.meta` (s&box's compiler does not read the cue chunk). The events become `AE_CL_PLAYSOUND` (5004 at the
+  first attachment), which s&box plays with no game code; the `.wav` is compiled with the model (`compileSounds`).
+- `sbox-check` reads each `.sound` back as the editor compiled it (its file, length, distance, falloff, and its
+  loudness 10 ms by 10 ms against the original), plays each to see that a loop loops, and plays each animation with
+  sound events through, hearing its sounds.
+- Measured: Half-Life's 13 models with sounds, 69 sounds and 185 sound events, pass; a model of the tests' with a
+  loop and a view model's clip at an unnamed attachment passes in the editor too.
+
 ## 0.33.0 (2026-10-26)
 
 s&box: an animation's blends, in an animation graph (`docs/SBOX.md`, `src/sbox/graph.mjs`):

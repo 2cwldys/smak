@@ -71,6 +71,8 @@ const list = (_class, children, more = {}) => ({ _class, children, ...more });
  *   bones:       [name]                                kept whether or not a vertex is on them
  *   bodygroups:  [{ name, choices: [{ name, meshes }] }]
  *   sequences:   [{ name, file, fps, loops, activity, weight, fade, travel: ["LX"...], root, events: [{ frame, event, options }] }]
+ *                an event with a `sound` (a .sound, under Assets) plays it: AE_CL_PLAYSOUND, at its `attachment`
+ *                when it has one (AE_CL_PLAYSOUND_ATTACHMENT); any other is AE_GENERIC_EVENT
  *   attachments: [{ name, bone, pos }]
  *   hitboxes:    [{ name, bone, group, min, max }]
  *   physics:     physics.mjs's { shapes, bodies, joints }, or null
@@ -149,12 +151,21 @@ export function vmdlOf({
               motion_type: "Single",
             });
           for (const e of s.events ?? [])
-            inside.push({
-              _class: "AnimEvent",
-              event_class: "AE_GENERIC_EVENT",
-              event_frame: KV3_INT(e.frame),
-              event_keys: { TypeName: "goldsrc", Int: KV3_INT(e.event), StringData: e.options ?? "" },
-            });
+            inside.push(
+              e.sound
+                ? {
+                    _class: "AnimEvent",
+                    event_class: e.attachment ? "AE_CL_PLAYSOUND_ATTACHMENT" : "AE_CL_PLAYSOUND",
+                    event_frame: KV3_INT(e.frame),
+                    event_keys: e.attachment ? { name: e.sound, attachment: e.attachment } : { name: e.sound },
+                  }
+                : {
+                    _class: "AnimEvent",
+                    event_class: "AE_GENERIC_EVENT",
+                    event_frame: KV3_INT(e.frame),
+                    event_keys: { TypeName: "goldsrc", Int: KV3_INT(e.event), StringData: e.options ?? "" },
+                  },
+            );
           return {
             _class: "AnimFile",
             name: s.name,

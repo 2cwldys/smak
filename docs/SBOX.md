@@ -34,6 +34,7 @@ Under `-o <Assets>`:
 | `models/smak/<name>.vanmgrph` | its animation graph, when an animation blends (compiled beside it too) |
 | `models/smak/<name>/<submodel>.dmx`, `anims/*.dmx` | its meshes and animations |
 | `materials/models/smak/<name>/<texture>.png`, `.vmat` | its textures and materials; `<texture>_mask.png`, a masked one's holes |
+| `sounds/smak/<its path>.wav`, `.sound` | the sounds its events play (`.wav.meta` a loop's); the `.wav` compiled beside it (`.vsnd_c`), the `.sound` by the editor |
 
 In the editor or a game's code, the model is `models/smak/<name>.vmdl`. `--folder` puts it under another folder
 than `smak`.
@@ -61,9 +62,13 @@ animation's fps, looping and activity, a loop's travel, chrome worked out once),
   that changes the materials it changes. A renderer picks one by its `MaterialGroup`.
 - **A loop's travel** taken out by the compiler as root motion (`ExtractMotion` on the root bone, along the axes
   GoldSrc's was, LX LY LZ): the walk plays in place and the game moves the model by it, as GoldSrc's did.
-- **Events** as s&box's generic event, `AE_GENERIC_EVENT`, at their frame: the event's number as `Int`, its
-  options (a sound's file, moved under the port's folder; a sentence; a script's words) as `StringData`, and
-  `TypeName` `goldsrc`. A game's code hears them through `SkinnedModelRenderer.OnGenericEvent`.
+- **Events that play a sound** (1004 a step, 1008 a voice, 5004 a view model's clip) as s&box's that play one,
+  `AE_CL_PLAYSOUND` naming a `.sound` (5004's `AE_CL_PLAYSOUND_ATTACHMENT`, at the model's first attachment, where
+  GoldSrc's client played it): `SkinnedModelRenderer` plays it, with no code of the game's. See "Its sounds" below.
+- **Every other event**, and one whose sound is not found, as s&box's generic event, `AE_GENERIC_EVENT`, at its
+  frame: the event's number as `Int`, its options (a sound's file, moved under the port's folder; a sentence; a
+  script's words) as `StringData`, and `TypeName` `goldsrc`. A game's code hears them through
+  `SkinnedModelRenderer.OnGenericEvent`.
 - **Hit boxes** as one `HitboxSet`, each box on its bone, its GoldSrc hit group as the tag `hitgroup_<n>`.
 - **Attachments** on their bones; a view model's first, unnamed, `muzzle`.
 - **Textures** as `complex.shader`'s materials: the picture as the colour, no shine (GoldSrc lit a model by its
@@ -101,6 +106,26 @@ fades from the first animation, so the check tells a new renderer before it star
 
 The seven of Half-Life's models that blend get a graph: agrunt, barney, hassassin, hgrunt, icky, player (52
 animations that aim) and tentacle2 (its taps by height, `blend_x` 86 to 376).
+
+## Its sounds
+
+The sounds a model's events play are looked for where GoldSrc looked: the `sound/` folder of the mod the model is
+in, then valve's (`sounds` in the API, as `gmod-port`). Each found is written under `sounds/<folder>/`, at the path
+the event named:
+- **the `.wav`, as it is.** s&box's compiler takes GoldSrc's files (8-bit at 11025, 22050 and 44100 Hz, 16-bit
+  stereo) and compiles them as Opus at 48000 Hz, of the same length, or a small one as 16-bit PCM at its own rate;
+- **its loop, in a `.meta` beside it** (`{ loop, start }`, the cue's time). GoldSrc loops a file from its cue point
+  to its end; s&box's compiler does not read the cue chunk (measured: `weapons/rocket1.wav` compiled with no loop),
+  it reads the `.meta`;
+- **a `.sound` that plays it as GoldSrc's mixer did.** GoldSrc's gain falls in a straight line from 1 where the
+  sound is to 0 at 1000 units over its attenuation (Xash3D's `S_SpatializeChannel`, as Quake's); a monster's events
+  play at `ATTN_IDLE` (500 units), a view model's at `ATTN_NORM` (1250). The `.sound`'s `Distance` is that, its
+  `Falloff` a line from 1 to 0 (s&box's mixer gains a sound by its falloff at its distance over its `Distance`),
+  with no occlusion, reverb or air absorption, which GoldSrc's mixer had not.
+
+`resourcecompiler` compiles the `.wav` (`compileSounds`, one run for all of a model's); a `.sound` only the editor
+compiles, which it does on opening the project, and `sbox-check` asks it to. A sound the game has not
+(Half-Life's `holo.mdl` names 18 that Steam's Half-Life leaves out) is said, and its event kept generic.
 
 ## What it collides as
 
@@ -178,8 +203,9 @@ Measured on Half-Life's barney in s&box's editor, its bones read back while it p
 
 ## What is left behind, and said
 
-- **The sounds events name are not copied.** s&box plays a `.sound` asset, not a file named in an event; the path
-  is in the event for a game's code.
+- **A sound that follows the model.** s&box plays an event's sound where the model (or its attachment) was when
+  the event fired, and leaves it there; GoldSrc's followed the entity. A step is over before it shows.
+- **Sentences** (`!HG_ALERT`), which an event may name in GoldSrc: kept in the generic event's options.
 - **Bone controllers**, as for GMod.
 
 ## How a port is checked
@@ -216,7 +242,15 @@ compiled model back in the editor and holds it to what the original says:
   off (none may move 1: the joints hold what the animation does; GoldSrc's animations move bones as well as turn
   them, barney's head 2 units off his neck in smlflinch, which no joint holds); dropped from 20 units onto a floor
   with s&box's gravity until it is still (no piece moved 1 unit in the last second), 15 seconds at most: it comes
-  to rest, nothing through the floor, its joints together, within 1 unit or 1% of its size, whichever is more.
+  to rest, nothing through the floor, its joints together, within 1 unit or 1% of its size, whichever is more;
+- **its sounds**, when its events play any: each `.sound` as the editor compiled it, playing its file, as long as the
+  original (within 0.005 s), heard to GoldSrc's distance in a line, with no occlusion or reverb, and as loud as the
+  original 10 ms by 10 ms (correlated 0.99 or more; Half-Life's are 0.998 or more). Then each played far below the
+  scene, where no one hears it: one that loops still playing after its length, one that does not stopped. And each
+  animation with sound events played through by a renderer of its own: the sounds it is heard to fire
+  (`OnSoundEvent`) must be its events', as many of each. A loop is played looping, each of its sounds heard and no
+  other: s&box fires an event at the last frame of an animation held at its end not at all, and a looping one's each
+  time round, as GoldSrc did.
 
 It talks to the editor through `sbox-cli` (which comes with s&box: `sbox/bin/managed/sbox-cli.exe`), over a local
 pipe, never the network. It uses the editor open on the project, or opens one and closes it after (a minute). Its
@@ -239,7 +273,11 @@ a call now tries once more.
 With their graphs (2026-10-26), the seven that blend pass too: 207 blends played by their graphs, every bone
 within 0.023 units of GoldSrc's but tentacle2's tentacle (0.19 at its end, as its animations). 210 of 210 compile.
 
+With their sounds (2026-10-26): the 13 of Half-Life's models whose events play sounds pass, 69 sounds and 185 sound
+events (agrunt, barney, bullsquid, garg, gman, hgrunt, islave, loader, scientist, v_357, v_9mmar, v_9mmhandgun,
+zombie); every sound as loud as its original 10 ms by 10 ms correlated 0.993 or more (all but v_357 0.998 or more), every event
+heard. holo.mdl's sounds are not in Steam's Half-Life, and its events stay generic.
+
 ## Not yet
 
-- Sounds as `.sound` assets.
-- Maps.
+- Maps (and with them, the sounds a map plays: `ambient_generic`, sentences, a texture's steps).
