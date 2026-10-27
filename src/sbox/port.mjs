@@ -7,6 +7,7 @@
 //
 // WHAT GOES WHERE (under `out`, laid out as an s&box project's Assets):
 //   models/<folder>/<name>.vmdl                          the model's document; compiled beside it (.vmdl_c)
+//   models/<folder>/<name>.vanmgrph                      its animation graph, when an animation blends
 //   models/<folder>/<name>/<submodel>.dmx, anims/*.dmx   its meshes and animations
 //   models/<folder>/<name>/physics/*.dmx                 what it collides as: a hull, or a ragdoll's pieces
 //   materials/models/<folder>/<name>/<texture>.png .vmat (and <texture>_mask.png, a masked one's holes)
@@ -24,7 +25,8 @@
 //   copied: s&box plays a .sound asset, not a file named in an event;
 // - what it collides as made by Source's port (a prop's convex hull, a figure's ragdoll) and written as ModelDoc's
 //   physics nodes (physics.mjs);
-// - the first of an animation's blends only, said in a warning.
+// - an animation's blends in an animation graph (graph.mjs), the way s&box blends: each blend an animation of its
+//   own, the graph choosing an animation by its name and blending it by the GMod port's pose parameters (blend_xr).
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { readStudio, sequenceFilesOf } from "../studio-file.mjs";
@@ -35,6 +37,7 @@ import { dmxOf, boneNameOf } from "./dmx.mjs";
 import { vmdlOf, vmatOf } from "./vmdl.mjs";
 import { compileVmdl } from "./compile.mjs";
 import { physicsOf } from "./physics.mjs";
+import { graphOf, GRAPH_SEQUENCE } from "./graph.mjs";
 
 /** GoldSrc's masked texture flag (STUDIO_NF_MASKED): its palette's last colour a hole. */
 const MASKED = 64;
@@ -168,32 +171,53 @@ export function portToSbox(
           },
         ]
       : [];
-  const blended = [];
   const renamed = [];
-  const animations = sequences.map((s) => {
-    const stem = s.files[0].replace(/\.smd$/, "");
+  // each animation, and after them all each blend after an animation's first (its own animation, <name>_blend1, so
+  // that the others keep GoldSrc's numbers), which the graph blends
+  const blendsAfter = [];
+  const animationOf = (s, path, named, first) => {
+    const stem = path.replace(/\.smd$/, "");
     const file = `${base}/${stem}.dmx`;
     files.push({
       path: file,
-      data: dmxOf(dmxData(s.files[0]), { fps: s.fps, name: stem.replace(/^anims\//, "") }),
+      data: dmxOf(dmxData(path), { fps: s.fps, name: stem.replace(/^anims\//, "") }),
     });
-    if (s.files.length > 1) blended.push(`${s.name} (${s.files.length})`);
-    const named = nodeName(s.name);
-    if (named !== s.name) renamed.push(`${s.name} as ${named}`);
     return {
       name: named,
       file,
       fps: s.fps,
       loops: s.loops,
-      activity: s.activity,
+      // a blend is played by the graph, never asked for by its activity; its events are the first's
+      activity: first ? s.activity : null,
       weight: s.weight,
       fade: view ? 0 : 0.2,
       travel: s.travel,
       root,
-      events: s.events,
+      events: first ? s.events : [],
     };
+  };
+  const graphed = sequences.map((s) => {
+    const named = nodeName(s.name);
+    if (named !== s.name) renamed.push(`${s.name} as ${named}`);
+    const names = s.files.map((path, b) => (b ? `${named}_blend${b}` : named));
+    s.files.slice(1).forEach((path, k) => blendsAfter.push(animationOf(s, path, names[k + 1], false)));
+    return { name: named, loops: s.loops, blends: s.files.length > 1 ? s.blends : [], files: names };
   });
-  if (blended.length) warnings.push(`the first blend only of each animation that blends (${blended.join(", ")}): s&box blends by its animation graph, which a port does not make yet`); // prettier-ignore
+  const animations = [...sequences.map((s, i) => animationOf(s, s.files[0], graphed[i].name, true)), ...blendsAfter];
+  // the graph that blends them, when one does: each blend axis's parameter over the values of every animation on it
+  const ranges = new Map();
+  for (const { pose, start, end } of graphed.flatMap((g) => g.blends)) {
+    const [low, high] = ranges.get(pose) ?? [Infinity, -Infinity];
+    ranges.set(pose, [Math.min(low, start, end), Math.max(high, start, end)]);
+  }
+  const poses = [...ranges].map(([name, [min, max]]) => ({ name, min, max }));
+  let graph = "";
+  if (poses.length) {
+    graph = `models/${where}/${port.name}.vanmgrph`;
+    files.push({ path: graph, data: graphOf({ sequences: graphed, poses, fade: view ? 0 : 0.2, preview: `models/${where}/${port.name}.vmdl` }) }); // prettier-ignore
+    const blending = graphed.filter((g) => g.blends.length).map((g) => g.name);
+    warnings.push(`${blending.length} animations blend (${blending.join(", ")}): in its animation graph (${graph}), chosen by its "${GRAPH_SEQUENCE}" and blended by ${poses.map((p) => `${p.name} (${p.min} to ${p.max})`).join(", ")}; each blend after the first is an animation of its own too (<name>_blend1)`); // prettier-ignore
+  }
   if (renamed.length) warnings.push(`animations named as s&box's compiler takes them: ${renamed.join(", ")}`);
   const events = sequences.reduce((n, s) => n + s.events.length, 0);
   if (events) warnings.push(`${events} events kept as s&box's generic ones (AE_GENERIC_EVENT: its number as Int, its options as StringData), for the game's code; the sounds they name are not copied`); // prettier-ignore
@@ -230,6 +254,7 @@ export function portToSbox(
       attachments,
       hitboxes,
       physics,
+      graph,
     }),
   });
   return {
@@ -241,10 +266,14 @@ export function portToSbox(
     parts,
     // what it collides as, as written (sbox/check.mjs holds the compiled model's physics to it), or null
     physics,
+    // its animation graph (.vanmgrph, under Assets) when an animation blends, else ""; and what is in it
+    graph,
+    graphed: { sequences: graphed, poses },
     facts: {
       bones: boneNames,
       meshes: meshes.map((m) => m.name),
       sequences: animations.map((a) => a.name),
+      poses: poses.map((p) => p.name),
       materials: materials.map((m) => m.name),
       skins: 1 + skins.length,
       bodygroups: bodygroups.map((g) => ({ name: g.name, choices: g.choices.length })),
@@ -267,8 +296,9 @@ export function writeSboxPort(port, out) {
 
 /**
  * The whole port of one model file: read (its textures from <name>T.mdl, its animations from <name>01.mdl...
- * when they are beside it), written under `out`, and compiled by s&box's resourcecompiler (unless compile is false).
- * Returns { ...the port, written (the .vmdl's path), compiled: { compiled, notes, took } or null }.
+ * when they are beside it), written under `out`, and compiled by s&box's resourcecompiler (unless compile is false),
+ * its animation graph too. Returns { ...the port, written (the .vmdl's path), compiled: { compiled, notes, took,
+ * graph (its graph's compile, when it has one) } or null }.
  */
 export function portToSboxFile(
   file,
@@ -289,5 +319,7 @@ export function portToSboxFile(
   });
   const written = writeSboxPort(port, resolve(out));
   const compiled = compile ? compileVmdl(resolve(out), port.vmdl, { sbox }) : null;
+  // and its graph, which the model's compile names but does not make
+  if (compile && port.graph) compiled.graph = compileVmdl(resolve(out), port.graph, { sbox });
   return { ...port, written, compiled };
 }

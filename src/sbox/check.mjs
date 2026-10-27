@@ -14,13 +14,19 @@
 // attachment and hit box. Then each animation is played at its first frame and its middle one (more with
 // perSequence), stopped there, and every bone's place in the model's space read: it must be where GoldSrc's frame
 // puts it (mdl.poseAt), within `tolerance` units. A model turned, a bone misnamed (its channel then moves nothing),
-// a bone dropped, a walk whose travel was not taken out all show as bones off their place.
+// a bone dropped, a walk whose travel was not taken out all show as bones off their place. Each blend after an
+// animation's first is held so too, as the animation of its own it is. And a model whose animations blend has its
+// graph played (graph.mjs): each such animation chosen by the graph's `sequence` and held at its first frame at its
+// blends' start, middle and end, where GoldSrc's renderer would put it (blendedPoseAt: StudioSlerpBones, each bone's
+// turn slerped and its place mixed), within the same tolerance.
 //
 // THE EDITOR. The check runs in the project's editor (editor.mjs: the one open, else one opened and closed
 // after). Its probe object is made in the scene being edited and removed before the check ends; the scene is not
 // saved. Its picture (`shot`) is the editor's camera on the model posed in its first animation.
 import { readStudio, sequenceFilesOf } from "../studio-file.mjs";
-import { sequenceGroups, poseAt, sequences as sequencesOf, readSequence } from "../mdl.mjs";
+import { sequenceGroups, poseAt, sequences as sequencesOf, readSequence, frameValues, boneParents, boneMatrices } from "../mdl.mjs"; // prettier-ignore
+import { qofAngles, qslerp, anglesOf } from "../animate.mjs";
+import { GRAPH_SEQUENCE } from "./graph.mjs";
 import { portToSbox } from "./port.mjs";
 import { sourceName } from "../source/port.mjs";
 import { editorFor, runCsharp, sboxCall, projectFolder } from "./editor.mjs";
@@ -44,12 +50,49 @@ const PROBE_AT = [0, 0, -10000];
 const csString = (s) => `"${String(s).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 
 /**
- * The C# that reads the compiled model at `vmdl` and poses it at each of `samples` ([{ sequence, time }]). It
- * returns { error } or { bones, sequences, parts, groups, attachments, hitboxes, poses }; the probe object is left
- * posed at the first sample for a picture, and removed by removeProbeCode.
+ * Every bone's matrix at one frame of an animation that blends, `share` of the way from its first blend to its
+ * second (0 to 1), as GoldSrc's renderer mixes the two (StudioSlerpBones): each bone's turn slerped, its place
+ * mixed. (GoldSrc's game code gives the share as a byte, 0 to 255; a graph's parameter is not so stepped.)
  */
-export function probeCode(vmdl, samples) {
+export function blendedPoseAt(src, seq, frame, share, groups) {
+  const [first, second] = [0, 1].map((blend) => frameValues(src, seq, frame, blend, groups));
+  const values = first.map((six, i) => {
+    const other = second[i];
+    const turn = qslerp(qofAngles(six.slice(3)), qofAngles(other.slice(3)), share);
+    return [...[0, 1, 2].map((k) => six[k] + (other[k] - six[k]) * share), ...anglesOf(turn)];
+  });
+  return boneMatrices(boneParents(src).map((parent) => ({ parent })), values);
+}
+
+/** How fast the graph plays when it is held: so slowly that it stays at an animation's first frame (at 0 it is not
+ * played at all). */
+const GRAPH_HELD = 0.0001;
+
+/**
+ * The C# that reads the compiled model at `vmdl` and poses it at each of `samples` ([{ sequence, time }]), and its
+ * graph at each of `graphSamples` ([{ sequence, set: [[parameter, value]] }]: a renderer of its own each, told them
+ * before it starts, so that its graph starts on that animation, and played at GRAPH_HELD). It returns { error } or
+ * { bones, sequences, parts, groups, attachments, hitboxes, poses, graph, graphParameters, graphPoses }; the probe
+ * object is left posed at the first sample for a picture, and removed by removeProbeCode.
+ */
+export function probeCode(vmdl, samples, graphSamples = []) {
   const list = samples.map((s) => `(${csString(s.sequence)}, ${Number(s.time).toFixed(6)}f)`).join(", ");
+  const graphed = graphSamples
+    .map((s) => `{
+	var g = scene.CreateObject();
+	g.Name = ${csString(PROBE)};
+	g.WorldPosition = new Vector3( ${PROBE_AT.join(", ")} );
+	var gr = g.Components.Create<SkinnedModelRenderer>( false );
+	gr.Model = model;
+	gr.UseAnimGraph = true;
+	gr.PlaybackRate = ${GRAPH_HELD}f;
+	gr.PlayAnimationsInEditorScene = true;
+	gr.Set( ${csString(GRAPH_SEQUENCE)}, ${csString(s.sequence)} );
+${s.set.map(([name, value]) => `\tgr.Set( ${csString(name)}, ${Number(value).toFixed(6)}f );`).join("\n")}
+	gr.Enabled = true;
+	graphed.Add( (g, gr) );
+}`)
+    .join("\n");
   return `
 var model = Model.Load( ${csString(vmdl)} );
 if ( model is null || model.IsError ) return new { error = "the model did not load: " + ${csString(vmdl)} };
@@ -87,7 +130,14 @@ foreach ( var (name, time) in samples.Reverse() )
 	var world = r.GetBoneTransforms( true );
 	poses.Insert( 0, new { sequence = name, time, at = r.Sequence.Time, bones = world.Select( t => r3( t.Position - go.WorldPosition ) ).ToArray() } );
 }
-return new { bones, sequences, durations, parts, groups, attachments, hitboxes, poses };
+var graphed = new System.Collections.Generic.List<(GameObject, SkinnedModelRenderer)>();
+${graphed}
+if ( graphed.Count > 0 ) await Task.Delay( 300 );
+var graph = graphed.Count > 0 ? graphed[0].Item2.SceneModel?.AnimationGraph : null;
+var graphParameters = graph is null ? new string[0] : Enumerable.Range( 0, graph.ParamCount ).Select( i => graph.GetParameterName( i ) ).ToArray();
+var graphPoses = graphed.Select( p => p.Item2.GetBoneTransforms( true ).Select( t => r3( t.Position - p.Item1.WorldPosition ) ).ToArray() ).ToArray();
+foreach ( var (g, _) in graphed ) g.Destroy();
+return new { bones, sequences, durations, parts, groups, attachments, hitboxes, poses, graph = graph?.Name, graphParameters, graphPoses };
 `;
 }
 
@@ -215,7 +265,9 @@ return "removed";`;
 
 /**
  * What the original says the compiled model must hold, from its bytes (`src`) and its port (portToSbox's). The
- * samples: each animation at its first frame and its middle one, `perSequence` frames in all (1 to its length).
+ * samples: each animation at its first frame and its middle one, `perSequence` frames in all (1 to its length),
+ * each blend of it too; and its graph's, when it has one: each animation that blends at its first frame, at its
+ * blends' start, middle and end (one that blends on two axes at its four corners).
  */
 export function expectedOf(src, port, { groups, perSequence = 2 } = {}) {
   const list = sequencesOf(src);
@@ -223,20 +275,26 @@ export function expectedOf(src, port, { groups, perSequence = 2 } = {}) {
   const poses = [];
   const physics = physicsExpected(port);
   const names = port.facts.bones;
-  for (const s of port.parts.sequences) {
+  const graphSamples = [];
+  const graphPoses = [];
+  const durations = [];
+  const placesOf = (matrices) => matrices.map((m) => [m[0][3], m[1][3], m[2][3]]);
+  port.parts.sequences.forEach((s, n) => {
     const index = s.index;
-    if (index === undefined) continue;
+    if (index === undefined) return;
     const frames = readSequence(src, index, 0, groups).frames.length;
+    const graphed = port.graphed.sequences[n];
+    graphed.files.forEach((name) => durations.push({ name, duration: (frames - 1) / s.fps }));
     const picks = [...new Set(Array.from({ length: Math.min(perSequence, frames) }, (_, k) => Math.round((k * (frames - 1)) / Math.max(1, perSequence - 1))))]; // prettier-ignore
-    for (const frame of picks) {
+    for (const [blend, animation] of graphed.files.entries()) for (const frame of picks) {
       const time = frame / s.fps;
-      const matrices = poseAt(src, index, frame, 0, groups);
-      const pose = matrices.map((m) => [m[0][3], m[1][3], m[2][3]]);
-      samples.push({ sequence: port.facts.sequences[port.parts.sequences.indexOf(s)], time });
-      poses.push({ name: list[index].name, frame, bones: pose });
-      // a ragdoll held in the pose, when every joint is well inside its limits there and holds its bone where the
-      // pose has it
-      if (physics?.limits.length) {
+      const matrices = poseAt(src, index, frame, blend, groups);
+      const pose = placesOf(matrices);
+      samples.push({ sequence: animation, time });
+      poses.push({ name: blend ? animation : list[index].name, frame, bones: pose });
+      // a ragdoll held in the pose (an animation's first blend's), when every joint is well inside its limits there
+      // and holds its bone where the pose has it
+      if (physics?.limits.length && !blend) {
         const turns = matrices.map((m) => m.map((row) => row.slice(0, 3)));
         const placed = turns.map((turn, i) => ({ turn, at: pose[i] }));
         const inside = Math.min(...physics.limits.map((j) => insideLimits(j.limits, physics.rest.map((p) => p.turn), turns, j.above, j.bone))); // prettier-ignore
@@ -253,10 +311,25 @@ export function expectedOf(src, port, { groups, perSequence = 2 } = {}) {
           }); // prettier-ignore
       }
     }
-  }
+    // the graph: at its first frame, at its blends' start, middle and end (on two axes, its four corners)
+    const { blends } = graphed;
+    if (blends.length === 1) {
+      const [{ pose, start, end }] = blends;
+      for (const share of [0, 0.5, 1]) {
+        const value = start + (end - start) * share;
+        graphSamples.push({ sequence: graphed.name, set: [[pose, value]] });
+        graphPoses.push({ name: `${graphed.name} at ${pose} ${+value.toFixed(3)}`, frame: 0, bones: placesOf(blendedPoseAt(src, index, 0, share, groups)) }); // prettier-ignore
+      }
+    } else if (blends.length === 2)
+      graphed.files.forEach((_, k) => {
+        const set = [[blends[0].pose, k % 2 ? blends[0].end : blends[0].start], [blends[1].pose, k < 2 ? blends[1].start : blends[1].end]]; // prettier-ignore
+        graphSamples.push({ sequence: graphed.name, set });
+        graphPoses.push({ name: `${graphed.name} at ${set.map(([p, v]) => `${p} ${v}`).join(", ")}`, frame: 0, bones: placesOf(poseAt(src, index, 0, k, groups)) }); // prettier-ignore
+      });
+  });
   return {
     bones: port.facts.bones.map((name, i) => [name, port.parts.bones[i].parent]),
-    sequences: port.facts.sequences.map((name, i) => ({ name, duration: (readSequence(src, port.parts.sequences[i].index, 0, groups).frames.length - 1) / port.parts.sequences[i].fps })), // prettier-ignore
+    sequences: durations,
     parts: port.facts.bodygroups,
     skins: port.facts.skins,
     attachments: port.facts.attachments,
@@ -264,6 +337,11 @@ export function expectedOf(src, port, { groups, perSequence = 2 } = {}) {
     samples,
     poses,
     physics,
+    // its animation graph, when it has one: its .vanmgrph, its parameters, and its poses as samples are
+    graph: port.graph,
+    graphParameters: port.graph ? [GRAPH_SEQUENCE, ...port.graphed.poses.map((p) => p.name)] : [],
+    graphSamples,
+    graphPoses,
   };
 }
 
@@ -429,43 +507,57 @@ export function compareSbox(expected, read, { tolerance = POSE_TOLERANCE } = {})
     faults.push(`${read.hitboxes.length} hit boxes, not ${expected.hitboxes}`);
   // the poses: each bone of the port where GoldSrc's frame puts it, within `tolerance` and REACH_TOLERANCE of its
   // chain's length in that pose
-  let worst = { off: 0 };
-  const offPoses = [];
   const link = (pose, i) => {
     const parent = expected.bones[i][1];
     return parent < 0 ? 0 : Math.hypot(...[0, 1, 2].map((a) => pose.bones[i][a] - pose.bones[parent][a]));
   };
-  expected.samples.forEach((sample, k) => {
-    const got = read.poses[k];
-    const want = expected.poses[k];
-    if (!got) return;
-    const chain = [];
-    expected.bones.forEach(
-      ([, parent], i) => (chain[i] = (parent < 0 ? 0 : (chain[parent] ?? 0)) + link(want, i)),
-    );
-    let off = 0;
-    let over = 0;
-    let bone = "";
-    let overBone = "";
-    expected.bones.forEach(([name], i) => {
-      const at = names.indexOf(name);
-      if (at < 0 || !got.bones[at]) return;
-      const d = Math.hypot(...[0, 1, 2].map((a) => got.bones[at][a] - want.bones[i][a]));
-      if (d > off) [off, bone] = [d, name];
-      const beyond = d - (tolerance + REACH_TOLERANCE * chain[i]);
-      if (beyond > over) [over, overBone] = [beyond, `${name} ${d.toFixed(2)} units off`];
+  const held = (wants, gots, labelOf) => {
+    let worst = { off: 0 };
+    const off = [];
+    wants.forEach((want, k) => {
+      const got = gots?.[k];
+      if (!got) return;
+      const chain = [];
+      expected.bones.forEach(
+        ([, parent], i) => (chain[i] = (parent < 0 ? 0 : (chain[parent] ?? 0)) + link(want, i)),
+      );
+      let most = 0;
+      let over = 0;
+      let bone = "";
+      let overBone = "";
+      expected.bones.forEach(([name], i) => {
+        const at = names.indexOf(name);
+        if (at < 0 || !got[at]) return;
+        const d = Math.hypot(...[0, 1, 2].map((a) => got[at][a] - want.bones[i][a]));
+        if (d > most) [most, bone] = [d, name];
+        const beyond = d - (tolerance + REACH_TOLERANCE * chain[i]);
+        if (beyond > over) [over, overBone] = [beyond, `${name} ${d.toFixed(2)} units off`];
+      });
+      if (most > worst.off) worst = { off: most, bone, at: labelOf(k) };
+      if (over > 0) off.push(`${labelOf(k)}: ${overBone}`);
     });
-    if (off > worst.off) worst = { off, bone, sequence: sample.sequence, frame: want.frame };
-    if (over > 0) offPoses.push(`${sample.sequence} frame ${want.frame}: ${overBone}`);
-  });
-  if (offPoses.length) faults.push(`${offPoses.length} of ${expected.samples.length} poses with a bone off GoldSrc's place: ${offPoses.slice(0, 5).join("; ")}`); // prettier-ignore
+    return { worst, off };
+  };
+  const posed = held(expected.poses, read.poses?.map((p) => p.bones), (k) => `${expected.samples[k].sequence} frame ${expected.poses[k].frame}`); // prettier-ignore
+  const worst = posed.worst;
+  if (posed.off.length) faults.push(`${posed.off.length} of ${expected.samples.length} poses with a bone off GoldSrc's place: ${posed.off.slice(0, 5).join("; ")}`); // prettier-ignore
+  // the graph: there, with its parameters, and each animation that blends where GoldSrc's blend puts it
+  let graphed = null;
+  if (expected.graph) {
+    if (read.graph !== expected.graph) faults.push(`its animation graph is ${read.graph ?? "none"}, not ${expected.graph}`); // prettier-ignore
+    const lacking = expected.graphParameters.filter((p) => !(read.graphParameters ?? []).includes(p));
+    if (read.graph && lacking.length) faults.push(`its graph has no parameter ${lacking.join(", ")}`);
+    graphed = held(expected.graphPoses, read.graphPoses, (k) => expected.graphPoses[k].name);
+    if (graphed.off.length) faults.push(`${graphed.off.length} of ${expected.graphPoses.length} blends played by its graph with a bone off GoldSrc's place: ${graphed.off.slice(0, 5).join("; ")}`); // prettier-ignore
+  }
   const physics = expected.physics
     ? comparePhysics(expected.physics, read.physics ?? { bodies: [], joints: [] })
     : null;
   if (physics) faults.push(...physics.faults);
   const said = [
     `${read.bones.length} bones, ${read.sequences.length} animations, ${read.parts.length} bodygroups, ${read.groups.length} material groups, ${read.attachments.length} attachments, ${read.hitboxes.length} hit boxes`, // prettier-ignore
-    `${expected.samples.length} poses held to GoldSrc's: the farthest bone ${worst.off.toFixed(3)} units off${worst.bone ? ` (${worst.bone}, ${worst.sequence} frame ${worst.frame})` : ""}`, // prettier-ignore
+    `${expected.samples.length} poses held to GoldSrc's: the farthest bone ${worst.off.toFixed(3)} units off${worst.bone ? ` (${worst.bone}, ${worst.at})` : ""}`, // prettier-ignore
+    ...(graphed ? [`${expected.graphPoses.length} blends played by its graph (${expected.graph}) held to GoldSrc's: the farthest bone ${graphed.worst.off.toFixed(3)} units off${graphed.worst.bone ? ` (${graphed.worst.bone}, ${graphed.worst.at})` : ""}`] : []), // prettier-ignore
     ...(physics?.said ?? []),
   ];
   return { passed: !faults.length, faults, said, worst };
@@ -500,12 +592,14 @@ export async function checkSboxPort(
       `${port.vmdl} is not in ${assets}: port it there first (smak sbox-port ${own} -o ${assets})`,
     );
   if (!existsSync(join(assets, `${port.vmdl}_c`))) compileVmdl(assets, port.vmdl, { sbox: engine });
+  if (port.graph && !existsSync(join(assets, `${port.graph}_c`))) compileVmdl(assets, port.graph, { sbox: engine });
   const expected = expectedOf(src, port, { groups, perSequence });
   const editor = await editorFor(root, { sbox: engine });
   try {
     // the editor compiles what changed on disk; asked again, so the check reads this port's compile
     sboxCall(root, "asset_compile", { path: port.vmdl }, { sbox: engine });
-    const read = runCsharp(root, probeCode(port.vmdl, expected.samples), { sbox: engine });
+    if (port.graph) sboxCall(root, "asset_compile", { path: port.graph }, { sbox: engine });
+    const read = runCsharp(root, probeCode(port.vmdl, expected.samples, expected.graphSamples), { sbox: engine });
     if (expected.physics && !read.error)
       read.physics = runCsharp(root, physicsProbeCode(port.vmdl, expected.physics.poses), { sbox: engine });
     const result = compareSbox(expected, read, { tolerance });

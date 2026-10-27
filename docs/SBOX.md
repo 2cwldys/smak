@@ -31,6 +31,7 @@ Under `-o <Assets>`:
 | | |
 | --- | --- |
 | `models/smak/<name>.vmdl` | the model's document; `<name>.vmdl_c` beside it, compiled |
+| `models/smak/<name>.vanmgrph` | its animation graph, when an animation blends (compiled beside it too) |
 | `models/smak/<name>/<submodel>.dmx`, `anims/*.dmx` | its meshes and animations |
 | `materials/models/smak/<name>/<texture>.png`, `.vmat` | its textures and materials; `<texture>_mask.png`, a masked one's holes |
 
@@ -68,6 +69,38 @@ animation's fps, looping and activity, a loop's travel, chrome worked out once),
 - **Textures** as `complex.shader`'s materials: the picture as the colour, no shine (GoldSrc lit a model by its
   normals alone), and the texture's flags as its features. Masked (64) is alpha-tested on a mask of its holes,
   additive (32) is added to what is behind it, and fullbright (4) lights itself.
+
+## Blends, in an animation graph
+
+GoldSrc's game code chose an animation by its number (`pev->sequence`) and said how far along its blends it was
+(`SetBlending`, Half-Life's aiming up and down: a value between the blends' start and end). s&box blends only in an
+animation graph, so a model one of whose animations blends gets one (`<name>.vanmgrph`, named by the `.vmdl`) that
+does what GoldSrc's game code did:
+
+```
+var r = go.Components.Create<SkinnedModelRenderer>();
+r.Model = Model.Load( "models/smak/barney.vmdl" );
+r.Set( "sequence", "shootgun" );   // the animation, by its name
+r.Set( "blend_xr", 20f );          // where along its blends: barney's gun from -50 (down) to 50 (up)
+```
+
+- **`sequence`**, an enum: an option each animation, in the model's order. A selector on it plays one; a new one
+  starts at its first frame (as GoldSrc's `ResetSequenceInfo`) and fades in over 0.2 seconds (a view model's at
+  once, as its fades).
+- **An axis a float**, named as the GMod port's pose parameter (`blend_xr` a pitch, `blend_x`, `blend` where GoldSrc
+  names no motion), ranging over every animation that blends on it, starting at 0 (level) or the nearest end. An
+  animation that blends on one axis is a blend node over its two at the values they stand for; one past its range
+  is held at its end, as `SetBlending` holds it. One on two axes is a 2D blend of its four.
+- **Each blend an animation of its own** too (`shootgun_blend1`), after all the model's own, so that those keep
+  GoldSrc's numbers. With `UseAnimGraph` off, `Sequence.Name` plays any of them, as before.
+
+Measured in the editor: s&box's blend is GoldSrc's. Barney's `shootgun` played by the graph at -50, -25, 0, 25 and
+50 is within 0.008 units of where GoldSrc's renderer puts every bone (`StudioSlerpBones`: each bone's turn slerped,
+its place mixed). A graph at a playback rate of 0 is not played at all; and told its parameters after it starts, it
+fades from the first animation, so the check tells a new renderer before it starts.
+
+The seven of Half-Life's models that blend get a graph: agrunt, barney, hassassin, hgrunt, icky, player (52
+animations that aim) and tentacle2 (its taps by height, `blend_x` 86 to 376).
 
 ## What it collides as
 
@@ -145,8 +178,6 @@ Measured on Half-Life's barney in s&box's editor, its bones read back while it p
 
 ## What is left behind, and said
 
-- **An animation's blends after the first** (Half-Life's aiming up and down). s&box blends by its animation graph,
-  which a port does not make yet.
 - **The sounds events name are not copied.** s&box plays a `.sound` asset, not a file named in an event; the path
   is in the event for a game's code.
 - **Bone controllers**, as for GMod.
@@ -172,7 +203,11 @@ compiled model back in the editor and holds it to what the original says:
   `--tolerance` units (0.1) and 0.0005 of the bone's chain (its links to the root, end to end): s&box compresses
   rotations, which moves the end of a long chain farther (a turn of 0.03 degrees; a model turned one degree is 35
   times that). A turned model, a misnamed bone (its channel then moves nothing), a dropped bone, a
-  walk whose travel was not taken out all show here as bones off their place;
+  walk whose travel was not taken out all show here as bones off their place. Each blend after an animation's first
+  is held so too, as the animation of its own it is;
+- **its graph's blends**, when it has one: the graph there, with `sequence` and each axis's parameter, and each
+  animation that blends played by it at its first frame at its blends' start, middle and end (one on two axes at its
+  four corners), every bone where GoldSrc's renderer puts it, within the same tolerance;
 - **what it collides as**: a body on each piece's bone, its hull's corners within 0.5 units of the port's, its mass
   and surface, and each joint between its pieces, of its kind and limits, at the
   child's place, about its axis. Then tried in physics worlds of its own (made and deleted; nothing in the scene):
@@ -201,7 +236,10 @@ tentacle2's tentacle 650 units along its chain (nihilanth's arm, the osprey's pr
 0.16). The run found loader's renumbered bodygroups, and one call (of thousands) that found no running editor, which
 a call now tries once more.
 
+With their graphs (2026-10-26), the seven that blend pass too: 207 blends played by their graphs, every bone
+within 0.023 units of GoldSrc's but tentacle2's tentacle (0.19 at its end, as its animations). 210 of 210 compile.
+
 ## Not yet
 
-- Blends as an animation graph; sounds as `.sound` assets.
+- Sounds as `.sound` assets.
 - Maps.

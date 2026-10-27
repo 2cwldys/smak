@@ -838,6 +838,98 @@ test("expectedOf: each animation's first and middle frames, GoldSrc's pose at ea
   sure(/smak_sbox_check/.test(sbox.removeProbeCode()), "the probe object removed by its name");
 });
 
+// ── a model whose animations blend: on one axis (Half-Life's aiming), and on two ──
+const down = portBones.map((b) => [...b.pos, 0, -0.5, 0]);
+const up = portBones.map((b) => [...b.pos, 0, 0.5, 0]);
+const aimer = smak.buildMdl({
+  name: "aimer.mdl",
+  bones: portBones,
+  bodyparts: [{ name: "body", models: [{ name: "body", meshes: [{ tris: [tri(0)], texture: plain("skin.bmp") }] }] }],
+  sequences: [
+    { name: "idle", fps: 10, loops: true, frames: [still] },
+    { name: "aim", fps: 10, frames: [down, down], blendFrames: [[up, up]], blendtype: [smak.MOTION.XR, 0], blendstart: [-45, 0], blendend: [60, 0], activity: 1, actweight: 1, events: [{ frame: 1, event: 5001, options: "10" }] }, // prettier-ignore
+    { name: "shoot", fps: 10, frames: [down], blendFrames: [[up]], blendtype: [smak.MOTION.XR, 0], blendstart: [-50, 0], blendend: [35, 0] }, // prettier-ignore
+    { name: "look", fps: 10, frames: [still], blendFrames: [[down], [up], [still]], blendtype: [smak.MOTION.XR, smak.MOTION.YR], blendstart: [-10, -20], blendend: [10, 20] }, // prettier-ignore
+  ],
+});
+const aimed = sbox.portToSbox(aimer, { name: "aimer" });
+const graphText = String(aimed.files.find((f) => f.path === aimed.graph)?.data);
+
+test("portToSbox: an animation's blends in an animation graph, chosen by its sequence and blended on the GMod port's pose parameters; each blend an animation of its own", () => {
+  sure(aimed.graph === "models/smak/aimer.vanmgrph", `the graph beside the model: ${aimed.graph}`);
+  const doc = String(aimed.files.find((f) => f.path === aimed.vmdl).data);
+  sure(doc.includes('anim_graph_name = "models/smak/aimer.vanmgrph"'), "the model names it");
+  sure(aimed.facts.sequences.join() === "idle,aim,shoot,look,aim_blend1,shoot_blend1,look_blend1,look_blend2,look_blend3", `the blends after every animation, which keep GoldSrc's numbers: ${aimed.facts.sequences}`); // prettier-ignore
+  const blend = doc.slice(doc.indexOf('name = "aim_blend1"'), doc.indexOf('name = "shoot_blend1"'));
+  sure(/activity_name = ""/.test(blend) && !/AnimEvent/.test(blend) && /aim_blend1\.dmx/.test(blend), `a blend asked for by no activity, its events the first's:\n${blend}`); // prettier-ignore
+  sure(aimed.files.some((f) => f.path === "models/smak/aimer/anims/look_blend3.dmx"), "each blend's animation written");
+  sure(graphText.startsWith("<!-- kv3 encoding:text") && /format:animgraph2/.test(graphText), "KV3, an animgraph2");
+  sure(/m_enumOptions = \[\n\s*"idle",\n\s*"aim",\n\s*"shoot",\n\s*"look",\n\s*\]/.test(graphText), `an option an animation, in the model's order:\n${graphText}`); // prettier-ignore
+  sure(/m_name = "blend_xr"[\s\S]*?m_fDefaultValue = 0\.0\s*m_fMinValue = -50\.0\s*m_fMaxValue = 60\.0/.test(graphText), "blend_xr over every range on it, level at the start"); // prettier-ignore
+  sure(/m_name = "blend_yr"[\s\S]*?m_fMinValue = -20\.0\s*m_fMaxValue = 20\.0/.test(graphText), "blend_yr over look's");
+  sure(/"CSelectorAnimNode"[\s\S]*?m_selectionSource = "SelectionSource_Enum"[\s\S]*?m_bResetOnChange = true/.test(graphText), "a selector on the enum, a new animation started at its first frame"); // prettier-ignore
+  const one = graphText.slice(graphText.indexOf('m_sName = "aim"'));
+  sure(/"CBlendAnimNode"/.test(graphText) && /m_name = "aim"\s*m_blendValue = -45\.0[\s\S]*?m_name = "aim_blend1"\s*m_blendValue = 60\.0/.test(one), "aim blended from -45 to 60"); // prettier-ignore
+  sure(/"CBlend2DAnimNode"[\s\S]*?"look"\s*m_blendValue = \[ -10\.0, -20\.0 \][\s\S]*?"look_blend1"\s*m_blendValue = \[ 10\.0, -20\.0 \][\s\S]*?"look_blend2"\s*m_blendValue = \[ -10\.0, 20\.0 \][\s\S]*?"look_blend3"\s*m_blendValue = \[ 10\.0, 20\.0 \]/.test(graphText), "look's four, the first axis's two at the second's start, then at its end"); // prettier-ignore
+  sure(aimed.warnings.some((w) => /3 animations blend \(aim, shoot, look\): in its animation graph/.test(w)), `said: ${aimed.warnings}`); // prettier-ignore
+  sure(!aimed.warnings.some((w) => /first blend only/.test(w)), "no blend left behind");
+  sure(port.graph === "" && /anim_graph_name = ""/.test(vmdl), "a model whose animations do not blend has no graph");
+  const view = sbox.portToSbox(aimer, { name: "v_aimer" });
+  const viewGraph = String(view.files.find((f) => f.path === view.graph).data);
+  sure(/m_blendDuration = 0\.0/.test(viewGraph) && /m_blendDuration = 0\.2/.test(graphText), "a view model's animations change at once, as its fades");
+});
+
+test("blendedPoseAt: an animation part of the way between its two blends, as GoldSrc's renderer mixes them (turns slerped)", () => {
+  const ends = [0, 1].map((blend) => smak.poseAt(aimer, 1, 0, blend));
+  const at = (pose) => pose[1].slice(0, 3).map((row) => row[3]);
+  const apart = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+  near(apart(at(sbox.blendedPoseAt(aimer, 1, 0, 0)), at(ends[0])), 0, 1e-6, "at 0 its first blend");
+  near(apart(at(sbox.blendedPoseAt(aimer, 1, 0, 1)), at(ends[1])), 0, 1e-6, "at 1 its second");
+  // half way between -0.5 and 0.5 about y: not turned, the second bone straight out along x
+  near(apart(at(sbox.blendedPoseAt(aimer, 1, 0, 0.5)), [2, 0, 0]), 0, 1e-6, "half way, the turn between");
+  const quarter = at(sbox.blendedPoseAt(aimer, 1, 0, 0.25));
+  near(apart(quarter, [2 * Math.cos(0.25), 0, 2 * Math.sin(0.25)]), 0, 1e-6, `a quarter of the way, a quarter of the turn: ${quarter}`); // prettier-ignore
+});
+
+test("expectedOf, compareSbox: each blend held as an animation, and the graph's blends at their start, middle and end", () => {
+  const expected = sbox.expectedOf(aimer, aimed, { perSequence: 2 });
+  sure(expected.sequences.map((s) => s.name).join() === "idle,aim,aim_blend1,shoot,shoot_blend1,look,look_blend1,look_blend2,look_blend3", `every animation's length: ${expected.sequences.map((s) => s.name)}`); // prettier-ignore
+  sure(expected.samples.filter((s) => s.sequence === "aim_blend1").length === 2, "a blend's frames sampled as its first's");
+  const labels = expected.graphPoses.map((p) => p.name);
+  sure(labels.slice(0, 3).join() === "aim at blend_xr -45,aim at blend_xr 7.5,aim at blend_xr 60" && labels.length === 10, `aim's start, middle and end; look's four corners: ${labels}`); // prettier-ignore
+  sure(expected.graphParameters.join() === "sequence,blend_xr,blend_yr", `${expected.graphParameters}`);
+  const code = sbox.probeCode(aimed.vmdl, expected.samples, expected.graphSamples);
+  sure(code.includes('gr.Set( "sequence", "aim" );') && code.includes('gr.Set( "blend_xr", 7.500000f );') && /gr\.PlaybackRate = 0\.0001f/.test(code), "the graph told its animation and value, and held"); // prettier-ignore
+  sure(code.indexOf('gr.Set( "sequence"') < code.indexOf("gr.Enabled = true"), "told before it starts, so it starts on that animation");
+  const read = {
+    bones: expected.bones,
+    sequences: expected.sequences.map((s) => s.name),
+    durations: Object.fromEntries(expected.sequences.map((s) => [s.name, s.duration])),
+    parts: [],
+    groups: [],
+    attachments: [],
+    hitboxes: [],
+    poses: expected.poses.map((p) => ({ bones: p.bones })),
+    graph: aimed.graph,
+    graphParameters: ["sequence", "blend_xr", "blend_yr"],
+    graphPoses: expected.graphPoses.map((p) => p.bones.map(([x, y, z]) => [x, y, z + 0.03])),
+  };
+  const good = sbox.compareSbox(expected, read);
+  sure(good.passed && good.said.some((s) => /10 blends played by its graph \(models\/smak\/aimer\.vanmgrph\) held to GoldSrc's: the farthest bone 0\.030 units off/.test(s)), `${good.faults} ${good.said}`); // prettier-ignore
+  const off = sbox.compareSbox(expected, { ...read, graphPoses: read.graphPoses.map((p, k) => (k === 1 ? p.map(([x, y, z]) => [x, y, z + 1]) : p)) }); // prettier-ignore
+  sure(off.faults.some((f) => /1 of 10 blends played by its graph with a bone off GoldSrc's place: aim at blend_xr 7\.5/.test(f)), `${off.faults}`); // prettier-ignore
+  const none = sbox.compareSbox(expected, { ...read, graph: null, graphParameters: [] });
+  sure(none.faults.some((f) => /its animation graph is none, not models\/smak\/aimer\.vanmgrph/.test(f)), `${none.faults}`); // prettier-ignore
+});
+
+testCompiled("compiled: a model's animation graph compiles beside it", () => {
+  const assets = join(folder, "Assets");
+  sbox.writeSboxPort(aimed, assets);
+  sbox.compileVmdl(assets, aimed.vmdl, { sbox: found });
+  const result = sbox.compileVmdl(assets, aimed.graph, { sbox: found });
+  sure(existsSync(join(assets, "models/smak/aimer.vanmgrph_c")) && !result.notes.length, `${result.notes.join("; ")}`);
+});
+
 test("compareSbox: a port read back whole passes, and says how far its farthest bone is", () => {
   const expected = sbox.expectedOf(portable, port, { perSequence: 2 });
   const read = {

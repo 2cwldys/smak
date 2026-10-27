@@ -21,6 +21,7 @@
 //   PhysicsBodyMarkupList  a PhysicsBodyMarkup a piece whose mass is given (mass_override), a ragdoll's its inertia
 //                       and damping as Source's port's QC has them
 //   PhysicsJointList    a PhysicsJointRevolute or PhysicsJointConical a ragdoll's joint (physics.mjs)
+// and the RootNode's anim_graph_name the model's animation graph, when it has one (graph.mjs).
 //
 // THE MATERIAL is complex.shader's (the shader every s&box model's material names): the picture as its colour, no
 // shine (GoldSrc lit a model by its normals alone), and a texture's flags as its features: masked (64) alpha-tested
@@ -73,6 +74,7 @@ const list = (_class, children, more = {}) => ({ _class, children, ...more });
  *   attachments: [{ name, bone, pos }]
  *   hitboxes:    [{ name, bone, group, min, max }]
  *   physics:     physics.mjs's { shapes, bodies, joints }, or null
+ *   graph:       the model's animation graph (.vanmgrph, under Assets), or none
  */
 export function vmdlOf({
   meshes = [],
@@ -83,6 +85,7 @@ export function vmdlOf({
   attachments = [],
   hitboxes = [],
   physics = null,
+  graph = "",
 }) {
   const children = [];
   children.push(
@@ -293,7 +296,7 @@ export function vmdlOf({
       children,
       model_archetype: "",
       primary_associated_entity: "",
-      anim_graph_name: "",
+      anim_graph_name: graph,
     },
   };
   return `${HEADER}\n${kv3(root)}\n`;

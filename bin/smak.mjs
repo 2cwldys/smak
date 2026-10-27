@@ -3666,9 +3666,10 @@ function sboxPort({ command, file, flags }) {
     : f.collision === "ragdoll"
       ? `collides as a ragdoll of ${physics.shapes.length} pieces and ${physics.joints.length} joints (${physics.shapes[0].surface})`
       : `collides as its ${f.collision} (${physics.shapes[0].surface})`;
-  const made = `${f.bones.length} bones, ${f.meshes.length} meshes, ${f.sequences.length} animations, ${f.skins} ${f.skins === 1 ? "skin" : "skins"}, ${f.bodygroups.length} bodygroups, ${f.attachments.length} attachments, ${f.hitboxes} hit boxes; ${collides}`; // prettier-ignore
+  const graph = result.graph ? ` (${f.poses.join(", ")} blended in its graph)` : "";
+  const made = `${f.bones.length} bones, ${f.meshes.length} meshes, ${f.sequences.length} animations${graph}, ${f.skins} ${f.skins === 1 ? "skin" : "skins"}, ${f.bodygroups.length} bodygroups, ${f.attachments.length} attachments, ${f.hitboxes} hit boxes; ${collides}`; // prettier-ignore
   answered(command, file, flags, {
-    detail: [`      ${made}`, `      the model: ${result.written}`, ...notes, ...warnings],
+    detail: [`      ${made}`, `      the model: ${result.written}`, ...(result.graph ? [`      its animation graph: ${result.graph}`] : []), ...notes, ...warnings], // prettier-ignore
     passed: true,
     said:
       flags.compile === false
@@ -4810,8 +4811,11 @@ const COMMANDS = {
                                             kept as s&box's generic one (its number, its options). It collides as gmod-port's
                                             does (--collision, --surfaceprop, --mass as there): its hull, or a ragdoll of a hull
                                             a piece and joints that bend as its animations bend it (a hinge or a cone), its weight
-                                            shared by volume; pieces that meet at rest and are not joined are trimmed apart. What
-                                            s&box has no place for yet is warned of: blends after the first, the sounds events name.`,
+                                            shared by volume; pieces that meet at rest and are not joined are trimmed apart. An
+                                            animation's blends (Half-Life's aiming) go in an animation graph (<name>.vanmgrph):
+                                            an animation chosen by its "sequence", blended by blend_xr and the like, as GoldSrc's
+                                            game code did; each blend is an animation of its own too. What s&box has no place for
+                                            yet is warned of: the sounds events name.`,
   },
   "sbox-check": {
     run: sboxCheck,
@@ -4822,13 +4826,14 @@ const COMMANDS = {
                                             and held to the original: every bone under its parent, every animation of its length,
                                             the bodygroups, skins, attachments and hit boxes, and each animation stopped at
                                             --frames of its frames (its first and middle by default) with every bone where
-                                            GoldSrc's frame puts it, within --tolerance units. What it collides as: each piece's
-                                            hull, mass, surface and joint as the port wrote them, then tried in a physics world
-                                            of its own: held at rest (no piece pushes another), held in the poses inside its
-                                            joints' limits, and dropped onto a floor (it comes to rest, its joints together). Give
-                                            it the port's options (--name, --collision...). Uses the editor open on the
-                                            project, else opens one (sbox-cli, which comes with s&box) and closes it after.
-                                            -o: the editor's picture of it. Ends in PASS or FAIL.`,
+                                            GoldSrc's frame puts it, within --tolerance units; each blend too, and the graph's
+                                            blends at their start, middle and end, where GoldSrc's renderer mixes them. What it
+                                            collides as: each piece's hull, mass, surface and joint as the port wrote them, then
+                                            tried in a physics world of its own: held at rest (no piece pushes another), held in
+                                            the poses inside its joints' limits, and dropped onto a floor (it comes to rest, its
+                                            joints together). Give it the port's options (--name, --collision...). Uses the
+                                            editor open on the project, else opens one (sbox-cli, which comes with s&box) and
+                                            closes it after. -o: the editor's picture of it. Ends in PASS or FAIL.`,
   },
   "gmod-rcon": {
     run: gmodRcon,

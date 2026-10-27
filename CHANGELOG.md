@@ -3,6 +3,21 @@
 The newest first. A version that changes what a model's file looks like, or that a model made before needs
 mending for, says so under **Mind**.
 
+## 0.33.0 (2026-10-26)
+
+s&box: an animation's blends, in an animation graph (`docs/SBOX.md`, `src/sbox/graph.mjs`):
+- `sbox-port` writes every blend of an animation (before, the first only), each an animation of its own
+  (`shootgun_blend1`) after the model's own, and a model one of whose animations blends gets an animation graph
+  (`<name>.vanmgrph`, named by the `.vmdl`, compiled beside it): a selector on the enum `sequence` (an option each
+  animation, a new one started at its first frame), under it each animation that blends a blend node on the GMod
+  port's pose parameter (`blend_xr`) at the values its blends stand for, one on two axes a 2D blend. A game's code
+  does what GoldSrc's did: `Set( "sequence", "shootgun" )`, `Set( "blend_xr", 20f )`.
+- Measured: s&box's blend node mixes as GoldSrc's renderer does (barney's `shootgun` within 0.008 units at five
+  values); a graph played at a rate of 0 is not played at all.
+- `sbox-check` holds each blend as an animation, and plays the graph: each animation that blends at its blends'
+  start, middle and end, held to GoldSrc's mix (`blendedPoseAt`). The seven of Half-Life's models that blend (agrunt,
+  barney, hassassin, hgrunt, icky, player, tentacle2) pass, 207 blends within 0.023 units (tentacle2's tip 0.19).
+
 ## 0.32.0 (2026-10-26)
 
 s&box: what a port collides as (`docs/SBOX.md`, `src/sbox/physics.mjs`):

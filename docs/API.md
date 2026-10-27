@@ -859,8 +859,13 @@ map's monsters come: `spawnsOf`, `spawnsTable`; its character in numbers: `chara
 - `dmxOf({ bones, frames, triangles }, { fps, name })` → the text of a mesh's DMX (with triangles) or an
   animation's: `smdOf`'s input. `boneNameOf(name)` (spaces as underscores, as s&box keeps them),
   `quaternionOf([rx, ry, rz])`.
-- `vmdlOf({ meshes, materials, skins, bodygroups, sequences, attachments, hitboxes })` → a `.vmdl`'s text;
+- `vmdlOf({ meshes, materials, skins, bodygroups, sequences, attachments, hitboxes, physics, graph })` → a `.vmdl`'s text;
   `vmatOf({ color, mask, flags })` → a `.vmat`'s; `kv3(value)` with `KV3_FLOAT(v)`, `KV3_INT(v)`.
+- `graphOf({ sequences, poses, fade, preview })` → a `.vanmgrph`'s text: a selector on the enum `GRAPH_SEQUENCE`
+  ("sequence"), an option each of `sequences` (`[{ name, loops, blends: [{ pose, start, end }], files }]`, `files`
+  the animation of each blend), a blend node an animation that blends on one axis, a 2D blend one on two, a float
+  parameter each of `poses` (`[{ name, min, max }]`). `portToSbox` returns it as `graph` (its path, or "") and
+  `graphed` (`{ sequences, poses }`), and `facts.poses`.
 - `findSbox({ folder, env })` → s&box's folder (`SMAK_SBOX`, `FACEPUNCH_ENGINE`, a Steam library);
   `compileVmdl(assets, vmdl, { sbox, timeout })` → `{ compiled, said, notes, took }`, throwing what the compiler said.
 - `portToSource(...)` also returns `parts`: its SMDs as data by path (`smd`), its `bones`, `bodygroups`, `skins`,
@@ -869,9 +874,12 @@ map's monsters come: `spawnsOf`, `spawnsTable`; its character in numbers: `chara
 - `checkSboxPort(file, { project, name, folder, kind, collision, surfaceprop, mass, sbox, perSequence = 2, tolerance =
   0.1, shot })` → `{ passed, faults, said, worst, shot, opened }` (async): the port read back and posed in the
   project's editor and held to the original. Its parts: `expectedOf(src, port, { groups, perSequence })` (the bones,
-  animations' lengths, parts, skins, attachments, hit boxes, GoldSrc's poses at the sampled frames, and `physics`:
-  the hulls, masses and joints written, and the poses to hold the ragdoll in), `probeCode(vmdl, samples)` (the C#
-  that reads and poses it), `removeProbeCode()`, `compareSbox(expected, read, { tolerance })` → `{ passed, faults,
+  animations' lengths, parts, skins, attachments, hit boxes, GoldSrc's poses at the sampled frames, each blend's too, and `physics`:
+  the hulls, masses and joints written, and the poses to hold the ragdoll in; and `graph`, `graphParameters`,
+  `graphSamples`, `graphPoses`: its graph's blends at their start, middle and end), `probeCode(vmdl, samples,
+  graphSamples)` (the C# that reads and poses it, and plays its graph), `blendedPoseAt(src, seq, frame, share,
+  groups)` (every bone's matrix `share` of the way from an animation's first blend to its second, as GoldSrc's
+  renderer mixes them), `removeProbeCode()`, `compareSbox(expected, read, { tolerance })` → `{ passed, faults,
   said, worst }`, `POSE_TOLERANCE` (0.1 units) and `REACH_TOLERANCE` (0.0005 of a bone's chain);
   `physicsProbeCode(vmdl, poses)` (the C# that reads its physics and tries it in worlds of its own: at rest, posed,
   dropped), `comparePhysics(expected, read)` → `{ faults, said }`, `REST_HOLD` (0.1 units), `POSE_HOLD` (1),
