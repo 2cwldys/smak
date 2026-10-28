@@ -3,6 +3,44 @@
 The newest first. A version that changes what a model's file looks like, or that a model made before needs
 mending for, says so under **Mind**.
 
+## Unreleased
+
+s&box, a map's light (`docs/SBOX.md`, "A map, as a scene"):
+- A map is lit by its own lightmaps (`lighting: "lightmaps"`, the default; `src/sbox/lightmap.mjs`): every face's
+  lightmap in one picture of the map's, each face's place there in its corners' vertex colour, and SMAK's shader
+  (`shaders/smak_lightmapped.shader`, written into the project) laying it on the texture as GoldSrc does. TS's
+  ts_lobby: 1.02 times as bright as GoldSrc draws it, every start within 1.00 to 1.04, correlated 1.00, nothing to bake
+  (with s&box's lights, 0.12: TS's lamps are in no lights.rad). `lightmapAtlas`, `lightmapShader`,
+  `LIGHTMAP_SHADER`, `LIGHTMAP_SCALE`, `OFFSET_BIAS` exported; `meshBlob` takes a polygon's `color`.
+- Its light styles played as the game plays them: a steady style added at its letter's share, one that changes (a
+  flicker, a light's own pattern) in a layer of the atlas below the faces, its pattern in `lightstyles.png`, played
+  by the shader's clock. `stylePatterns` and `GOLDSRC_STYLES` (`src/maps/light.mjs`) say each style's pattern as the
+  map starts. ts_parking (Half-Life's flicker on 109 faces): every start 1.00 to 1.04, correlated 1.00. A light
+  switched by its name stays as the map starts it (no stock TS map switches one).
+- The lightmapped faces take no shine from s&box's lights (the shader ends without them): ts_parking's 131 lights
+  had put patches of gloss on its walls.
+- s&box's lights stay as `lighting: "lights"` (`--lighting lights` on `sbox-map` and `sbox-map-check`), with: the
+  indirect light at 4 probes per 1024 units (`INDIRECT_LIGHT_DENSITY`, was 8: ts_lobby's 66096 probes baked at 6 to 26
+  a second); its bake kept while the port writes the same (`smak_bake.json`, `bakeKeyOf`, `recordBake`), older
+  bakes' files removed; its time allowed from its probes (`indirectProbes`), the editor's minimized windows shown
+  while it bakes (`editorWindowsShown`).
+- A brush entity in render mode 1 to 3 is drawn seen through at its `renderamt` and lit by itself (it was opaque);
+  one at `renderamt` 0, and the classes the game never draws (triggers, ladders, monster clips, zones), not drawn.
+  Those classes do not block: ts_lobby's trigger_hurts had blocked 3.5 spots in a hundred.
+- A `{` texture's holes are open only on a brush entity in render mode 4; on the world and in any other mode they
+  are filled with the palette's last colour, as the game draws them (`drawMap`'s `lookOf`).
+- The sky's picture laid as s&box's sky shader reads it: -X in its middle (measured with a picture coloured by the
+  way each part faces). With +X there, as before, ts_lobby's sky was turned half round.
+- Sky brushes are solid for players (`clipBrushesOf(bsp, { skySolid: true })`): ts_lobby's open roof had let
+  4.6 spots in a hundred through. And the world's sky faces collide, never drawn (`sky clip`, under `clip`): a sky
+  face that closes the map has the void behind it, where the clip brushes' samples miss the hull's growth
+  (ts_parking: 2.24 spots in a hundred blocked otherwise than in GoldSrc, 0.40 with them).
+- A texture drawn translucent (render mode 1 to 3 or 5) whose sides are not powers of two wears a copy that is
+  (`_pot.png`): complex.shader's translucent mipmaps failed on ts_parking's `ts_wall19` (96 by 128).
+- `sbox-map-check` writes each start's two pictures (`shots`), and sbox-cli calls get their own time
+  (`--request-timeout`). It pictures each start twice, the first to stream the textures in: with one, coarse
+  mipmaps of ts_parking's atlas had put three starts at 1.14 to 1.18.
+
 ## 0.36.0 (2026-10-27)
 
 s&box, a map's light (`docs/SBOX.md`, "A map, as a scene"):

@@ -6,6 +6,7 @@
 //   editorFor(project, { sbox, wait })                  -> { opened, close() }: the project's editor, opened if none is
 //   compileAssets(project, paths, { sbox })             -> the paths the editor's asset_compile could not compile
 //   compileFailures(answered, paths)                     the same, read from call_tools' answers
+//   editorWindowsShown()                                 -> restore(): the editors' minimized windows shown a while
 //
 // sbox-cli talks to an editor over a local named pipe, never the network. `--call` connects, calls one tool and
 // disconnects; the editor keeps running. It finds the editor by the project the call is made from (`cwd`), so a
@@ -25,6 +26,46 @@ const OPEN_TIMEOUT = 300_000;
 /** sbox-cli's path in s&box's folder. */
 export const sboxCli = (sbox) => join(sbox ?? findSbox(), "bin", "managed", "sbox-cli.exe");
 
+/** Shows the s&box editors' minimized windows on Windows, without taking the focus; returns what minimizes them
+ * again. A minimized editor draws no frame (its log: "QueuePresentAndWait() looped ... without a present event"),
+ * three a second at most, and what draws frame by frame crawls: ts_lobby's indirect light, baked by an editor
+ * sbox-cli had opened minimized, had not finished in 28 minutes (2026-10-28). Elsewhere, nothing done. */
+export function editorWindowsShown() {
+  if (process.platform !== "win32") return () => {};
+  const windows = (show, handles = "") =>
+    spawnSync(
+      "powershell",
+      [
+        "-NoProfile",
+        "-Command",
+        `
+Add-Type @"
+using System; using System.Collections.Generic; using System.Diagnostics; using System.Runtime.InteropServices;
+public class SmakWindows {
+  delegate bool Each(IntPtr h, IntPtr l);
+  [DllImport("user32.dll")] static extern bool EnumWindows(Each each, IntPtr l);
+  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+  [DllImport("user32.dll")] static extern bool IsIconic(IntPtr h);
+  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int how);
+  public static List<long> Minimized() {
+    var editors = new HashSet<uint>();
+    foreach (var p in Process.GetProcessesByName("sbox-dev")) editors.Add((uint)p.Id);
+    var found = new List<long>();
+    EnumWindows((h, l) => { uint pid; GetWindowThreadProcessId(h, out pid); if (editors.Contains(pid) && IsIconic(h)) found.Add(h.ToInt64()); return true; }, IntPtr.Zero);
+    return found;
+  }
+}
+"@
+${show ? `$found = [SmakWindows]::Minimized(); foreach ($h in $found) { [void][SmakWindows]::ShowWindow([IntPtr]$h, 4) }; $found -join ","` : `foreach ($h in "${handles}".Split(",")) { if ($h) { [void][SmakWindows]::ShowWindow([IntPtr][long]$h, 7) } }`}`,
+      ],
+      { encoding: "utf8", windowsHide: true },
+    ).stdout?.trim() ?? "";
+  const shown = windows(true);
+  return () => {
+    if (shown) windows(false, shown);
+  };
+}
+
 /** The folder of a project: the one with its .sbproj. Throws when `project` is not one. */
 export function projectFolder(project) {
   const folder = resolve(project);
@@ -36,13 +77,18 @@ export function projectFolder(project) {
 
 /** One call: sbox-cli exits 0 when the tool answered, 2 when the tool reported an error, 1 when it could not connect. */
 function call(project, tool, args, { sbox, timeout = CALL_TIMEOUT } = {}) {
-  const result = spawnSync(sboxCli(sbox), ["--call", tool, JSON.stringify(args ?? {})], {
-    cwd: projectFolder(project),
-    encoding: "utf8",
-    timeout,
-    windowsHide: true,
-    maxBuffer: 64 * 1024 * 1024,
-  });
+  // sbox-cli gives up on a request after its own --request-timeout (300 s unless told): told this call's
+  const result = spawnSync(
+    sboxCli(sbox),
+    ["--request-timeout", String(Math.ceil(timeout / 1000)), "--call", tool, JSON.stringify(args ?? {})],
+    {
+      cwd: projectFolder(project),
+      encoding: "utf8",
+      timeout,
+      windowsHide: true,
+      maxBuffer: 64 * 1024 * 1024,
+    },
+  );
   return {
     status: result.status,
     out: result.stdout ?? "",

@@ -121,6 +121,45 @@ export function stylesAtStart(bsp) {
   return { on: (style) => !off.has(style), dark, switched: [...flags.keys()].sort((a, b) => a - b) };
 }
 
+/**
+ * The patterns the game gives the styles under 32 as a map starts (the SDK's dlls/world.cpp, W_Precache; TS's the
+ * same): a letter a tenth of a second, "a" dark, "m" the light as baked, "z" twice it nearly. A style none sets
+ * is drawn as baked.
+ */
+export const GOLDSRC_STYLES = new Map([
+  [0, "m"],
+  [1, "mmnmmommommnonmmonqnmmo"],
+  [2, "abcdefghijklmnopqrstuvwxyzyxwvutsrqponmlkjihgfedcba"],
+  [3, "mmmmmaaaaammmmmaaaaaabcdefgabcdefg"],
+  [4, "mamamamamama"],
+  [5, "jklmnopqrstuvwxyzyxwvutsrqponmlkj"],
+  [6, "nmonqnmomnmomomno"],
+  [7, "mmmaaaabcdefgmmmmaaaammmaamm"],
+  [8, "mmmaaammmaaammmabcdefaaaammmmabcdefmmmaaaa"],
+  [9, "aaaaaaaazzzzzzzz"],
+  [10, "mmamammmmammamamaaamammma"],
+  [11, "abcdefghijklmnopqrrqponmlkjihgfedcba"],
+  [12, "mmnnmmnnnmmnn"],
+  [63, "a"],
+]);
+/**
+ * Each style's pattern as the map starts (`GOLDSRC_STYLES`, and a switched light's as CLight::Spawn sets it: "a"
+ * when every light of the style starts dark, else its `pattern`, or "m"): a Map of style to pattern; a style not
+ * in it is drawn as baked ("m").
+ */
+export function stylePatterns(bsp) {
+  const patterns = new Map(GOLDSRC_STYLES);
+  const start = stylesAtStart(bsp);
+  for (const entity of bsp.entities ?? []) {
+    if (!LIGHT_CLASSES.includes(valueOf(entity, "classname"))) continue;
+    const style = Number.parseInt(valueOf(entity, "style") ?? "", 10);
+    if (!(style >= SWITCHED_FROM)) continue;
+    const startsOff = (Number.parseInt(valueOf(entity, "spawnflags") ?? "0", 10) & START_OFF) !== 0;
+    if (!start.on(style)) patterns.set(style, "a");
+    else if (!startsOff) patterns.set(style, valueOf(entity, "pattern") || "m");
+  }
+  return patterns;
+}
 /** Which styles a count adds up, by `switched` (`SWITCHED`): a test of a style. */
 export function stylesCounted(bsp, switched = "start") {
   if (!SWITCHED.includes(switched))

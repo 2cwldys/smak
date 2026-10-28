@@ -3718,7 +3718,7 @@ async function sboxMap({ command, file, flags, listed }) {
   const mod = await profileOf(flags, listed);
   const result = smak.sbox.portMapToSboxFile(
     existing(file),
-    defined({ out, name: flags.name, folder: flags.folder, folders: flags.game ? [existingFolder(flags.game)] : undefined, starts: mod?.starts }),
+    defined({ out, name: flags.name, folder: flags.folder, folders: flags.game ? [existingFolder(flags.game)] : undefined, starts: mod?.starts, lighting: flags.lighting }), // prettier-ignore
   );
   const f = result.facts;
   const warnings = result.warnings.map((warning) => `WARN  ${warning}`);
@@ -3747,6 +3747,7 @@ async function sboxMapCheck({ command, file, flags, listed }) {
       folder: flags.folder,
       folders: flags.game ? [existingFolder(flags.game)] : undefined,
       starts: mod?.starts,
+      lighting: flags.lighting,
       count: numberOf(flags, "count"),
       seed: numberOf(flags, "seed"),
       allow: numberOf(flags, "allow"),
@@ -4907,16 +4908,18 @@ const COMMANDS = {
   "sbox-map": {
     run: sboxMap,
     own: true,
-    help: `  sbox-map <bsp> -o <Assets folder> [--name n] [--folder smak] [--game <mod folder>] [--mod msc]
+    help: `  sbox-map <bsp> -o <Assets folder> [--name n] [--folder smak] [--game <mod folder>] [--mod msc] [--lighting lights]
                                             a GoldSrc map made an s&box scene (scenes/<folder>/<name>.scene), under -o, an s&box
                                             project's Assets folder: each face of the BSP a polygon of the scene editor's own
                                             meshes (MeshComponent: drawn, collided with, editable), the world's in one, each
                                             brush entity's in its own at its origin; its clip brushes rebuilt from the player's
                                             hulls (as gmod-map's), solid, seen in the editor only; its textures as PNG and .vmat
                                             (a wad's under materials/<folder>/<wad>/, shared), its sky one picture round the world;
-                                            its starts as SpawnPoints at their feet; its lights as s&box's (light, light_spot,
-                                            light_environment), and a face whose texture shines (Valve's lights.rad) lit by
-                                            itself with a light before it. --game: the mod's folder, for its wads and sky. --mod: a
+                                            its starts as SpawnPoints at their feet; its light the map's own lightmaps (one
+                                            picture of the map's, read by SMAK's shader as GoldSrc lays light on a texture),
+                                            its light entities as s&box's lights for what moves. --lighting lights: s&box's
+                                            lights instead (a face whose texture shines lit by itself with a light before it, an
+                                            indirect light volume to bake). --game: the mod's folder, for its wads and sky. --mod: a
                                             profile (msc, ts, or a file), whose start classes the starts are. Not yet:
                                             doors, buttons and other moving brushes (drawn where they start), items, sounds.`,
   },
@@ -4924,7 +4927,7 @@ const COMMANDS = {
     run: sboxMapCheck,
     own: true,
     help: `  sbox-map-check <bsp> --project <folder> [-o shot.png] [--name n] [--folder smak] [--game <mod folder>] [--mod msc]
-                              [--count 5000] [--seed 1] [--allow 0.5] [--no-light] [--sbox <folder>]
+                              [--lighting lights] [--count 5000] [--seed 1] [--allow 0.5] [--no-light] [--sbox <folder>]
                                             the map ported (sbox-map's, into the project's Assets) and held to the GoldSrc map in
                                             s&box's own editor: every mesh with its faces and its materials compiled, the sky, the
                                             starts and lights where they were; where a player is blocked, at --count spots

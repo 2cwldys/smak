@@ -29,21 +29,27 @@
 //
 // THE EDITOR. The scene is opened in the project's editor (a tab of its own, not saved), as the one being edited:
 // a scene loaded and never ticked builds no physics.
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { readBsp, contentsAt, floorUnder } from "../maps/bsp.mjs";
 import { drawMap } from "../maps/draw.mjs";
 import { mapOwnFolders } from "../maps/wad.mjs";
 import { png, unpng } from "../image.mjs";
 import { collisionSpots, worldInBox } from "../source/collision.mjs";
-import { editorFor, runCsharp, sboxCall, projectFolder, compileFailures } from "./editor.mjs";
+import { LIGHTMAP_SHADER } from "./lightmap.mjs";
+import { editorFor, editorWindowsShown, runCsharp, sboxCall, projectFolder, compileFailures } from "./editor.mjs";
 import { findSbox } from "./compile.mjs";
-import { portMapToSboxFile, PLAYER_HALF_HEIGHT, WORLD_TAG, CLIP_TAG, BRUSH_TAG } from "./map.mjs";
+import { portMapToSboxFile, indirectProbes, sceneDataOf, BAKE_RECORD, BAKED_FIELDS, INDIRECT_LIGHT, PLAYER_HALF_HEIGHT, WORLD_TAG, CLIP_TAG, BRUSH_TAG } from "./map.mjs"; // prettier-ignore
 import { join } from "node:path";
 
 /** In hundredths of the spots, how many may disagree (gmod-collision's --allow). */
 export const COLLISION_ALLOW = 0.5;
 /** How far a spawn point's floor may be from GoldSrc's, in units. */
 export const FLOOR_TOLERANCE = 0.5;
+/** How long the indirect light's bake may take: this much a probe as the bake counts them, and no less than this, in
+ * milliseconds. test_scripts' 2704 baked at 193 a second; ts_lobby's, each probe drawing 69 shadowed lights, at 6 to 26
+ * (2026-10-28): 200 ms a probe, a little slower than the slowest. */
+const BAKE_PER_PROBE = 200;
+const BAKE_LEAST = 300_000;
 /** The pictures of the light: their size, field of view (degrees across), and the eye above a start's feet
  * (GoldSrc's player's view, 28 above its middle). */
 export const LIGHT_VIEW = { width: 640, height: 360, fov: 80, eye: 64 };
@@ -287,6 +293,12 @@ foreach ( var c in s.GetAllObjects( true ).Where( o => o.Tags.Has( ${csString(CL
 return true;
 `;
 
+/** The C# that compiles a shader of the project's: "compiled" when it compiled, else its errors. */
+export const shaderCompileCode = (path) => `
+try { await Shader.CompileFileAsync( ${csString(path)} ); return "compiled"; }
+catch ( ShaderCompileException e ) { return string.Join( " | ", e.Errors.Select( x => x.ToString() ) ); }
+`;
+
 /** The C# that bakes the open scene's indirect light (sbox-map's volume over the world), the scene saved before
  * (s&box bakes only a saved scene) and after; how many volumes were baked. */
 export const bakeIndirectLightCode = () => `
@@ -301,6 +313,30 @@ session.Save( false );
 return volumes.Count( v => v.IrradianceTexture is not null );
 `;
 
+/**
+ * The bake just saved in the scene (`assets`/`scene`) recorded beside its files under the port's key, so that a
+ * port that writes the same again keeps it (map.mjs writeSboxMap); and the files of the bakes before it removed
+ * (each bake writes three of its own, named by the bake, and leaves the last one's). Returns the textures, or null.
+ */
+export function recordBake(assets, scene, key) {
+  const saved = JSON.parse(readFileSync(join(assets, scene), "utf8"));
+  const volume = saved.GameObjects?.find((o) => o.Name === INDIRECT_LIGHT)?.Components?.find((c) => c.__type === "Sandbox.IndirectLightVolume"); // prettier-ignore
+  if (!BAKED_FIELDS.every((f) => volume?.[f])) return null;
+  const textures = Object.fromEntries(BAKED_FIELDS.map((f) => [f, volume[f]]));
+  const data = join(assets, sceneDataOf(scene));
+  writeFileSync(join(data, BAKE_RECORD), `${JSON.stringify({ key, textures }, null, 1)}
+`);
+  const bake = /_([0-9a-f]{32}).vtex$/i.exec(textures.IrradianceTexture)?.[1].toLowerCase();
+  const ddgi = join(data, "ddgi");
+  if (bake && existsSync(ddgi))
+    for (const name of readdirSync(ddgi))
+      if (/_[0-9a-f]{32}.vtex(_c)?$/i.test(name) && !name.toLowerCase().includes(bake))
+        try {
+          rmSync(join(ddgi, name));
+        } catch {} // the editor may still hold it; the next bake removes it
+  return textures;
+}
+
 /** Two pictures side by side, the first on the left. */
 function sideBySide(a, b) {
   const width = a.width + b.width;
@@ -314,19 +350,23 @@ function sideBySide(a, b) {
 /**
  * A GoldSrc map ported into `project`'s Assets and held to its original in the project's editor (the one open,
  * else one opened for the check and closed after). `light: false` leaves its light unpictured. `shot`: a
- * picture's path, GoldSrc's view from the first start beside s&box's.
+ * picture's path, GoldSrc's view from the first start beside s&box's; `shots`: a folder, each start's two views in it
+ * (start_00.png and on).
  */
-export async function checkSboxMap(file, { project, name, folder, folders = [], starts, count, seed, allow, light = true, sbox, shot } = {}) {
+export async function checkSboxMap(file, { project, name, folder, folders = [], starts, lighting, count, seed, allow, light = true, sbox, shot, shots } = {}) {
   const root = projectFolder(project);
   const engine = sbox ?? findSbox();
-  const port = portMapToSboxFile(file, { out: join(root, "Assets"), name, folder, folders, starts });
+  const port = portMapToSboxFile(file, { out: join(root, "Assets"), name, folder, folders, starts, lighting });
   const expected = expectedMapOf(file, port, { count, seed });
   const editor = await editorFor(root, { sbox: engine });
   try {
     // the editor compiles what changed on disk on its own; asked, so the check reads this port's
+    // the shader first (asset_compile does not answer for a .shader: Shader.CompileFileAsync, which says its errors)
+    const shaderFailed = port.lighting === "lightmaps" ? runCsharp(root, shaderCompileCode(LIGHTMAP_SHADER), { sbox: engine }) : null; // prettier-ignore
     const compiling = [...new Set(port.meshes.flatMap((m) => m.materials))].concat(port.sky ? [port.sky] : []);
     const compiled = sboxCall(root, "call_tools", { calls: compiling.map((path) => ({ name: "asset_compile", arguments: { path } })) }, { sbox: engine }); // prettier-ignore
     const failed = compileFailures(compiled, compiling);
+    if (shaderFailed && shaderFailed !== "compiled") failed.unshift(`${LIGHTMAP_SHADER} (${shaderFailed})`);
     const floors = expected.floors.map((f) => [f.feet[0], f.feet[1], f.origin[2]]);
     const read = runCsharp(root, mapProbeCode(port.scene, expected.spots, floors), { sbox: engine });
     const result = compareSboxMap(expected, read, { allow });
@@ -336,14 +376,30 @@ export async function checkSboxMap(file, { project, name, folder, folders = [], 
     }
     const views = lightViewsOf(port);
     if (light && !read.error && views.length) {
-      result.bakedVolumes = runCsharp(root, bakeIndirectLightCode(), { sbox: engine });
+      // baked again only when the port wrote something other than it wrote for the bake it has
+      if (port.lighting === "lightmaps") result.said.push("lit by the map's own lightmaps: nothing to bake");
+      else if (port.baked) result.said.push("the indirect light's bake kept: the port wrote the same as when it was baked");
+      else {
+        const bake = Math.max(BAKE_LEAST, indirectProbes(expected.bsp) * BAKE_PER_PROBE);
+        // drawn on the screen while it bakes: minimized, the editor bakes at a crawl
+        const minimize = editorWindowsShown();
+        try {
+          result.bakedVolumes = runCsharp(root, bakeIndirectLightCode(), { sbox: engine, timeout: bake });
+        } finally {
+          minimize();
+        }
+        if (!recordBake(join(root, "Assets"), port.scene, port.bakeKey)) result.said.push("the indirect light's bake not recorded: the saved scene names no textures"); // prettier-ignore
+      }
       const { width, height, fov } = LIGHT_VIEW;
       const searched = [...mapOwnFolders(file), ...folders];
       const goldsrc = views.map((v) => drawMap(expected.bsp, { from: v.eye, yaw: v.yaw, pitch: 0, fov, width, height, folders: searched, entities: false, labels: false })); // prettier-ignore
       const ids = runCsharp(root, lightCamerasCode(views), { sbox: engine });
       let made;
       try {
-        const pictured = sboxCall(root, "call_tools", { calls: ids.map((camera) => ({ name: "camera_screenshot", arguments: { camera, width, height } })) }, { sbox: engine }); // prettier-ignore
+        const calls = ids.map((camera) => ({ name: "camera_screenshot", arguments: { camera, width, height } }));
+        // each start pictured twice, the first only to stream its textures in
+        sboxCall(root, "call_tools", { calls }, { sbox: engine });
+        const pictured = sboxCall(root, "call_tools", { calls }, { sbox: engine });
         made = [...String(typeof pictured === "string" ? pictured : JSON.stringify(pictured)).matchAll(/[A-Za-z]:\\[^\r\n"]+?\.png/g)].map((m) => unpng(readFileSync(m[0].replace(/\\\\/g, "\\")))); // prettier-ignore
       } finally {
         runCsharp(root, lightCamerasGoneCode(), { sbox: engine });
@@ -357,6 +413,15 @@ export async function checkSboxMap(file, { project, name, folder, folders = [], 
         if (shot) {
           writeFileSync(shot, sideBySide(goldsrc[0], made[0]));
           result.shot = shot;
+        }
+        // every start's two pictures, numbered as the starts are
+        if (shots) {
+          mkdirSync(shots, { recursive: true });
+          result.shots = goldsrc.map((g, i) => {
+            const at = join(shots, `start_${String(i).padStart(2, "0")}.png`);
+            writeFileSync(at, sideBySide(g, made[i]));
+            return at;
+          });
         }
       }
       result.passed = !result.faults.length;

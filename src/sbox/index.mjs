@@ -8,8 +8,9 @@
 //   sound.mjs    sboxSound soundEventOf distanceOf soundEnvelope   a GoldSrc sound as a .sound asset, heard as GoldSrc heard it
 //   compile.mjs  findSbox compileVmdl compileSounds            s&box's resourcecompiler, run on a project's Assets
 //   editor.mjs   sboxCall runCsharp editorFor projectFolder    its editor driven through sbox-cli
-//   map.mjs      portMapToSbox writeSboxMap portMapToSboxFile meshBlob   a GoldSrc map as an s&box scene
-//   mapcheck.mjs checkSboxMap compareSboxMap mapProbeCode     a map's port opened in the editor, held to its original
+//   map.mjs      portMapToSbox writeSboxMap portMapToSboxFile meshBlob bakeKeyOf   a GoldSrc map as an s&box scene
+//   lightmap.mjs lightmapAtlas lightmapShader                a map drawn with its own lightmaps: their atlas, the shader
+//   mapcheck.mjs checkSboxMap compareSboxMap mapProbeCode recordBake  a map's port opened in the editor, held to its original
 //   check.mjs    checkSboxPort compareSbox expectedOf probeCode blendedPoseAt   a port read back and posed in the editor,
 //                                                              held to its original
 export * from "./port.mjs";
@@ -22,4 +23,5 @@ export * from "./editor.mjs";
 export * from "./physics.mjs";
 export * from "./check.mjs";
 export * from "./map.mjs";
+export * from "./lightmap.mjs";
 export * from "./mapcheck.mjs";

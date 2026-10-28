@@ -3,7 +3,7 @@
 //
 // No game: every model is made here. The compile runs where s&box is found (a Steam library, SMAK_SBOX or
 // FACEPUNCH_ENGINE), and is said to be skipped where it is not, as GMod's studiomdl's cases are.
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import * as smak from "../src/index.mjs";
 import { turned, turnOfQuaternion } from "../src/import-math.mjs";
@@ -1109,7 +1109,7 @@ import { HERE } from "./helper.mjs";
 
 const twoRooms = join(HERE, "fixtures", "tworooms.bsp");
 const roomsBsp = smak.maps.readBsp(readFileSync(twoRooms));
-const roomsPort = sbox.portMapToSbox(twoRooms);
+const roomsPort = sbox.portMapToSbox(twoRooms, { lighting: "lights" });
 const roomsScene = JSON.parse(roomsPort.files.find((f) => f.path === roomsPort.scene).data);
 
 /** A PolygonMesh's blob read back: its half-edges and its streams. */
@@ -1199,7 +1199,7 @@ test("portMapToSbox: the world tagged for traces, the func_wall its own, the sta
   sure(opaque, "the grate's picture opaque, its holes in the mask");
   sure(mask.rgba.some((v, i) => i % 4 === 0 && v === 0) && mask.rgba.some((v, i) => i % 4 === 0 && v === 255), "the mask has holes and solid");
   sure(roomsScene.GameObjects.every((g) => /^[0-9a-f-]{36}$/.test(g.__guid)), "every object a GUID");
-  const again = sbox.portMapToSbox(twoRooms);
+  const again = sbox.portMapToSbox(twoRooms, { lighting: "lights" });
   sure(again.files.find((f) => f.path === again.scene).data === roomsPort.files.find((f) => f.path === roomsPort.scene).data, "the same scene each time"); // prettier-ignore
   sure(/sky desert/.test(roomsPort.warnings.join(" ")) && roomsPort.sky === null, "a sky not found is said");
   const indirect = byName[sbox.INDIRECT_LIGHT]?.Components[0];
@@ -1214,7 +1214,7 @@ test("portMapToSbox: a brush entity blocks with its every brush, unseen; starts 
   const solids = wall.Children ?? [];
   sure(solids.length > 0 && solids.every((c) => c.Tags === `${sbox.BRUSH_TAG},${sbox.CLIP_TAG}` && c.Components[0].Collision === "Hull" && c.Components[0].HideInGame), `its solids: ${solids.length}`); // prettier-ignore
   sure(roomsPort.meshes.find((m) => m.model === 1).at.join() === "0,0,0", "where the entity is, for the check");
-  const none = sbox.portMapToSbox(twoRooms, { starts: ["ms_player_spawn"] });
+  const none = sbox.portMapToSbox(twoRooms, { starts: ["ms_player_spawn"], lighting: "lights" });
   const noneScene = JSON.parse(none.files.find((f) => f.path === none.scene).data);
   sure(!noneScene.GameObjects.some((g) => g.Components?.[0]?.__type === "Sandbox.SpawnPoint"), "info_player_start not a start of the mod's");
   sure(/no spawn point \(ms_player_spawn\)/.test(none.warnings.join(" ")), none.warnings.join(" "));
@@ -1228,7 +1228,7 @@ test("portMapToSbox: a brush entity blocks with its every brush, unseen; starts 
   entities.push([["classname", "info_texlights"], ["origin", "0 0 0"], ["{smakgrate", "255 128 64 200"]]);
   const msc = join(tmp, "tworooms_msc.bsp");
   writeFileSync(msc, smak.maps.withEntities(readFileSync(twoRooms), entities));
-  const port = sbox.portMapToSbox(msc, { starts: ["ms_player_begin", "ms_player_spawn"] });
+  const port = sbox.portMapToSbox(msc, { starts: ["ms_player_begin", "ms_player_spawn"], lighting: "lights" });
   const scene = JSON.parse(port.files.find((f) => f.path === port.scene).data);
   sure(scene.GameObjects.some((g) => g.Name === "ms_player_begin" && g.Components[0].__type === "Sandbox.SpawnPoint"), "ms_player_begin a start");
   const grate = port.lights.find((l) => l.classname === "texlight" && /smakgrate/i.test(l.texture));
@@ -1245,6 +1245,157 @@ test("portMapToSbox: a brush entity blocks with its every brush, unseen; starts 
   // its share added in linear light: (100 / 255) to the power 2.2
   const vmat = port.files.find((f) => f.path === drawn).data;
   sure(/F_ADDITIVE_BLEND 1/.test(vmat) && /F_SELF_ILLUM 1/.test(vmat) && /g_vColorTint "\[0\.127530 0\.127530 0\.127530 0\.000000\]"/.test(vmat), vmat); // prettier-ignore
+  // render mode 2 (glass) seen through at its renderamt; at renderamt 0 not drawn, and solid all the same
+  const withWall = (keys) => {
+    const changed = roomsBsp.entities.map((pairs) => (Object.fromEntries(pairs).classname === "func_wall" ? [...pairs.filter(([k]) => k !== "rendermode" && k !== "renderamt"), ...keys] : pairs)); // prettier-ignore
+    const at = join(tmp, `tworooms_rm${keys.map(([, v]) => v).join("_")}.bsp`);
+    writeFileSync(at, smak.maps.withEntities(readFileSync(twoRooms), changed));
+    const p = sbox.portMapToSbox(at, { lighting: "lights" });
+    return { p, wall: JSON.parse(p.files.find((f) => f.path === p.scene).data).GameObjects.find((g) => g.Name === "func_wall *1") }; // prettier-ignore
+  };
+  const glass = withWall([["rendermode", "2"], ["renderamt", "150"]]);
+  const seen = glass.wall.Components[0].Mesh.Materials[0];
+  const seenVmat = glass.p.files.find((f) => f.path === seen).data;
+  sure(/_see150\.vmat$/.test(seen) && /F_TRANSLUCENT 1/.test(seenVmat) && /g_flOpacityScale "0\.588"/.test(seenVmat) && !/F_ADDITIVE_BLEND/.test(seenVmat), seenVmat); // prettier-ignore
+  const gone = withWall([["rendermode", "2"], ["renderamt", "0"]]);
+  sure(gone.wall.Components.length === 0 && gone.wall.Children?.length > 0, "faded to nothing: no mesh drawn, its solids kept");
+  sure(!gone.p.meshes.some((m) => m.name === "func_wall *1"), "and no mesh for the check to look for");
+  // out of render mode 4 a `{` texture's holes are filled with the palette's last colour, the picture opaque
+  const normal = withWall([["rendermode", "0"], ["renderamt", "255"]]);
+  const filled = normal.wall.Components[0].Mesh.Materials[0];
+  const filledVmat = normal.p.files.find((f) => f.path === filled).data;
+  sure(/mask_smakgrate_filled\.vmat$/.test(filled) && !/F_ALPHA_TEST/.test(filledVmat) && /mask_smakgrate_filled\.png/.test(filledVmat), filledVmat); // prettier-ignore
+  const filledPicture = smak.unpng(normal.p.files.find((f) => f.path.endsWith("mask_smakgrate_filled.png")).data);
+  const holed = smak.unpng(roomsPort.files.find((f) => f.path.endsWith("mask_smakgrate.png")).data);
+  sure(filledPicture.rgba.every((v, i) => i % 4 !== 3 || v === 255) && filledPicture.rgba.some((v, i) => v !== holed.rgba[i]), "opaque, and the holes another colour than the open grate's"); // prettier-ignore
+  sure(/_see150\.vmat$/.test(seen) && !/F_ALPHA_TEST/.test(seenVmat) && /mask_smakgrate_filled\.png/.test(seenVmat), "seen through, filled too");
+});
+
+test("portMapToSbox lighting lightmaps: the map's lightmaps in one atlas, each face's place there in its corners' colour, its materials SMAK's shader; no lights of s&box's to bake", () => {
+  const port = sbox.portMapToSbox(twoRooms);
+  const scene = JSON.parse(port.files.find((f) => f.path === port.scene).data);
+  const types = scene.GameObjects.flatMap((g) => g.Components.map((c) => c.__type));
+  sure(!types.includes("Sandbox.IndirectLightVolume") && !scene.GameObjects.some((g) => /^texlight/.test(g.Name)), "no indirect light, no texture lights"); // prettier-ignore
+  sure(port.files.some((f) => f.path === sbox.LIGHTMAP_SHADER && /VertexPaintTintColor/.test(f.data)), "the shader written");
+  const world = scene.GameObjects.find((g) => g.Name === "worldspawn").Components[0];
+  const vmat = port.files.find((f) => f.path === world.Mesh.Materials[0]).data;
+  sure(/\/lit\//.test(world.Mesh.Materials[0]) && vmat.includes(`shader "${sbox.LIGHTMAP_SHADER}"`) && /TextureLightmap "materials\/smak\/maps\/tworooms\/lightmap\.png"/.test(vmat), vmat); // prettier-ignore
+  const grate = scene.GameObjects.find((g) => g.Name === "func_wall *1").Components[0].Mesh.Materials[0];
+  sure(/_holes\.vmat$/.test(grate) && /F_ALPHA_TEST 1/.test(port.files.find((f) => f.path === grate).data), `the grate in render mode 4 keeps its holes: ${grate}`); // prettier-ignore
+  // every face's corners lead to its own samples: a corner's texture pixel / 16 plus its place is the atlas pixel
+  // of the sample it stands on
+  const bsp = smak.maps.readBsp(readFileSync(twoRooms));
+  const faces = bsp.models.flatMap((_, m) => smak.maps.modelFaces(bsp, m));
+  const atlas = sbox.lightmapAtlas(bsp, faces);
+  let checked = 0;
+  for (const face of faces) {
+    const place = atlas.offsetOf(face);
+    const lightmap = smak.maps.faceLightmap(bsp, face);
+    if (!place) continue;
+    const offset = [place[0] + place[1] * 256 - sbox.OFFSET_BIAS, place[2] + place[3] * 256 - sbox.OFFSET_BIAS];
+    for (const [s, t] of smak.maps.faceTexels(bsp, face)) {
+      const i = Math.floor((s - lightmap.originS) / 16 + 1e-6);
+      const j = Math.floor((t - lightmap.originT) / 16 + 1e-6);
+      const x = Math.floor(s / 16 + offset[0] + 1e-6);
+      const y = Math.floor(t / 16 + offset[1] + 1e-6);
+      const want = [...lightmap.styles[0].rgb.subarray((j * lightmap.width + i) * 3, (j * lightmap.width + i) * 3 + 3)];
+      const got = [...atlas.rgba.subarray((y * atlas.width + x) * 4, (y * atlas.width + x) * 4 + 3)];
+      sure(want.join() === got.join(), `face ${face}, corner ${s} ${t}: ${got} in the atlas, ${want} in its lightmap`);
+      checked++;
+    }
+  }
+  sure(checked > 20, `${checked} corners`);
+  // and in the world's mesh, its faces' corners carry their places
+  const colors = readMeshBlob(world.Mesh.Data).sections.colors;
+  sure(colors.some((v) => v !== 0), "the world's corners coloured");
+  const lights = sbox.portMapToSbox(twoRooms, { lighting: "lights" });
+  sure(sbox.meshBlob([{ corners: [[0, 0, 0], [1, 0, 0], [0, 1, 0]], uvs: [[0, 0], [1, 0], [0, 1]], material: 0, color: [1, 2, 3, 4] }]) !== sbox.meshBlob([{ corners: [[0, 0, 0], [1, 0, 0], [0, 1, 0]], uvs: [[0, 0], [1, 0], [0, 1]], material: 0 }]) && lights.files.some((f) => /IndirectLightVolume/.test(f.data)), "lighting lights keeps s&box's"); // prettier-ignore
+});
+
+test("lightmapAtlas styles: a steady style added at its letter's share, one that changes in a layer below with its pattern's row; stylePatterns as the game starts them", () => {
+  const bsp = smak.maps.readBsp(readFileSync(twoRooms));
+  const faces = bsp.models.flatMap((_, m) => smak.maps.modelFaces(bsp, m));
+  const face = faces.find((f) => smak.maps.faceLightmap(bsp, f)?.styles.length === 1);
+  const lightmap = smak.maps.faceLightmap(bsp, face);
+  const pixelOf = (atlas, x, y) => [...atlas.rgba.subarray((y * atlas.width + x) * 4, (y * atlas.width + x) * 4 + 4)];
+  const firstOf = (atlas) => {
+    const place = atlas.offsetOf(face);
+    // the face's first sample: its place plus its first sample's place on the texture's grid
+    return [place[0] + place[1] * 256 - sbox.OFFSET_BIAS + lightmap.originS / 16, place[2] + place[3] * 256 - sbox.OFFSET_BIAS + lightmap.originT / 16]; // prettier-ignore
+  };
+  const baked = [...lightmap.styles[0].rgb.subarray(0, 3)];
+  const plain = sbox.lightmapAtlas(bsp, faces);
+  sure(plain.layers === 0 && plain.styles === null && pixelOf(plain, ...firstOf(plain)).slice(0, 3).join() === baked.join(), "as baked"); // prettier-ignore
+  const dark = sbox.lightmapAtlas(bsp, faces, new Map([[0, "a"]]));
+  sure(dark.offsetOf(face) === null, "a style dark has no patch");
+  const bright = sbox.lightmapAtlas(bsp, faces, new Map([[0, "z"]]));
+  const brighter = pixelOf(bright, ...firstOf(bright)).slice(0, 3);
+  sure(brighter.every((v, c) => v === Math.min(255, Math.round((baked[c] * 25) / 12))), `"z": ${brighter} from ${baked}`);
+  const flicker = sbox.lightmapAtlas(bsp, faces, new Map([[0, "maz"]]));
+  const [x, y] = firstOf(flicker);
+  sure(flicker.layers === 1 && pixelOf(flicker, x, y).slice(0, 3).join() === "0,0,0", "nothing steady");
+  const below = pixelOf(flicker, x, y + flicker.firstLayer);
+  sure(below.slice(0, 3).join() === baked.join() && below[3] === 0, `the layer below: ${below}`);
+  sure(flicker.height >= flicker.firstLayer + flicker.layerHeight && flicker.layerHeight <= flicker.firstLayer, "one layer, as tall as the faces that change"); // prettier-ignore
+  const { rows, rgba, width } = flicker.styles;
+  sure(rows.join() === "0" && [rgba[0], rgba[4], rgba[8], rgba[12]].join() === "120,0,250,120" && rgba[1] === 3 && width === 64, "its pattern, m a z, three long"); // prettier-ignore
+  // the game's patterns: HL's under 32, a switched light's its own or "m", "a" when it starts dark
+  const light = (style, extra = []) => [["classname", "light"], ["style", String(style)], ...extra];
+  const patterns = smak.maps.stylePatterns({ entities: [light(32, [["pattern", "aaz"]]), light(33, [["spawnflags", "1"]]), light(34)] }); // prettier-ignore
+  sure(patterns.get(1) === "mmnmmommommnonmmonqnmmo" && patterns.get(32) === "aaz" && patterns.get(33) === "a" && patterns.get(34) === "m", [...patterns].join(" ")); // prettier-ignore
+  // a map with no style that changes writes no styles picture
+  const port = sbox.portMapToSbox(twoRooms);
+  sure(!port.files.some((f) => /lightstyles\.png$/.test(f.path)), "no styles picture for a map with none");
+});
+
+test("portMapToSbox: the world's sky faces solid, never drawn, under the clip brushes", () => {
+  // the rooms with their floor's texture named sky: its 6 faces
+  const bytes = Buffer.from(readFileSync(twoRooms));
+  const floor = smak.maps.readBsp(bytes).textures.find((t) => t.name === "smakfloor");
+  bytes.fill(0, floor.at, floor.at + 16).write("sky", floor.at, "latin1");
+  const skyRooms = join(tmp, "tworooms_sky.bsp");
+  writeFileSync(skyRooms, bytes);
+  const port = sbox.portMapToSbox(skyRooms);
+  const scene = JSON.parse(port.files.find((f) => f.path === port.scene).data);
+  const skyClip = scene.GameObjects.find((g) => g.Name === "clip")?.Children?.find((c) => c.Name === "sky clip");
+  sure(skyClip, "a sky clip");
+  const mesh = skyClip.Components[0];
+  sure(mesh.Collision === "Mesh" && mesh.HideInGame === true && skyClip.Tags.includes(sbox.CLIP_TAG), JSON.stringify({ ...mesh, Mesh: undefined })); // prettier-ignore
+  sure(port.meshes.find((m) => m.name === "sky clip")?.faces === 6, "its 6 faces");
+  const world = scene.GameObjects.find((g) => g.Name === "worldspawn").Components[0];
+  sure(!world.Mesh.Materials.some((m) => /smakfloor/.test(m)), "the sky not drawn");
+});
+
+test("writeSboxMap: a bake recorded is kept by a port that writes the same, its old files removed; a port that writes otherwise bakes again", () => {
+  const out = join(tmp, "bake_assets");
+  rmSync(out, { recursive: true, force: true });
+  const first = sbox.portMapToSboxFile(twoRooms, { out, lighting: "lights" });
+  sure(first.baked === false && /^[0-9a-f]{64}$/.test(first.bakeKey), "nothing to keep at first");
+  // the editor's bake as it leaves it: the scene saved naming three textures, an older bake's beside them
+  const ddgi = join(out, sbox.sceneDataOf(first.scene), "ddgi");
+  mkdirSync(ddgi, { recursive: true });
+  const id = (n) => n.toString(16).padStart(32, "0");
+  const scene = JSON.parse(readFileSync(join(out, first.scene), "utf8"));
+  const volume = scene.GameObjects.find((g) => g.Name === sbox.INDIRECT_LIGHT).Components[0];
+  for (const field of sbox.BAKED_FIELDS) {
+    const kind = field.replace("Texture", "");
+    volume[field] = `${sbox.sceneDataOf(first.scene)}/ddgi/indirect light_${kind.toLowerCase()}_${volume.__guid}_${id(2)}.vtex`;
+    for (const n of [1, 2]) writeFileSync(join(ddgi, `indirect light_${kind}_${volume.__guid}_${id(n)}.vtex_c`), "");
+  }
+  writeFileSync(join(out, first.scene), JSON.stringify(scene));
+  const textures = sbox.recordBake(out, first.scene, first.bakeKey);
+  sure(textures?.IrradianceTexture === volume.IrradianceTexture, "recorded");
+  const left = readdirSync(ddgi);
+  sure(left.length === 3 && left.every((n) => n.includes(id(2))), `the older bake's files removed: ${left}`);
+  const again = sbox.portMapToSboxFile(twoRooms, { out, lighting: "lights" });
+  const kept = JSON.parse(readFileSync(join(out, again.scene), "utf8")).GameObjects.find((g) => g.Name === sbox.INDIRECT_LIGHT).Components[0]; // prettier-ignore
+  sure(again.baked && sbox.BAKED_FIELDS.every((f) => kept[f] === volume[f]), "the same port keeps the bake");
+  // the same scene of a map changed (the grate drawn otherwise)
+  const bsp = smak.maps.readBsp(readFileSync(twoRooms));
+  const changed = join(tmp, "tworooms_changed.bsp");
+  writeFileSync(changed, smak.maps.withEntities(readFileSync(twoRooms), bsp.entities.map((pairs) => (Object.fromEntries(pairs).classname === "func_wall" ? pairs.map(([k, v]) => [k, k === "rendermode" ? "0" : v]) : pairs)))); // prettier-ignore
+  const other = sbox.portMapToSboxFile(changed, { out, name: "tworooms", lighting: "lights" });
+  sure(other.scene === first.scene && !other.baked && other.bakeKey !== first.bakeKey, "a port that writes otherwise bakes again");
 });
 
 test("rotationOf: Source's angles as s&box's quaternion: yaw turns left about up, pitch looks down", () => {

@@ -323,9 +323,10 @@ export const WHITE_PNG = png(4, 4, new Uint8Array(64).fill(255));
 /**
  * The text of a .vmat for a GoldSrc texture: `color` its picture, `mask` (a masked texture's) the picture of its
  * holes, black where the last colour of its palette was, `illum` (a fullbright one's) a white picture (WHITE_PNG),
- * where it lights itself.
+ * where it lights itself. `opacity` (0 to 1): seen through, as a brush entity GoldSrc draws in render mode 1 to 3 at
+ * its renderamt (glass); `see` the picture of how solid it is (white, or its mask).
  */
-export function vmatOf({ color, mask, illum, flags = 0, tint }) {
+export function vmatOf({ color, mask, illum, flags = 0, tint, opacity, see }) {
   const lines = [
     "// Made by SMAK (sbox-port) from a GoldSrc texture.",
     "",
@@ -335,6 +336,7 @@ export function vmatOf({ color, mask, illum, flags = 0, tint }) {
   ];
   if (flags & NF.masked && mask) lines.push("\tF_ALPHA_TEST 1");
   if (flags & NF.additive) lines.push("\tF_TRANSLUCENT 1", "\tF_ADDITIVE_BLEND 1");
+  else if (opacity !== undefined) lines.push("\tF_TRANSLUCENT 1");
   if (flags & NF.fullbright) lines.push("\tF_SELF_ILLUM 1");
   lines.push(
     `\tTextureColor ${string(color)}`,
@@ -345,6 +347,8 @@ export function vmatOf({ color, mask, illum, flags = 0, tint }) {
   if (tint !== undefined) lines.push(`\tg_vColorTint "[${tint.map((t) => t.toFixed(6)).join(" ")} 0.000000]"`);
   if (flags & NF.masked && mask)
     lines.push(`\tTextureTranslucency ${string(mask)}`, '\tg_flAlphaTestReference "0.500"');
+  else if (opacity !== undefined && see) lines.push(`\tTextureTranslucency ${string(see)}`);
+  if (opacity !== undefined && !(flags & NF.additive)) lines.push(`\tg_flOpacityScale "${opacity.toFixed(3)}"`);
   if (flags & NF.fullbright)
     // its mask a picture: complex.shader's mask given as a colour ("[1 1 1 0]") is made a texture under
     // materials/default/ that s&box does not have, and the face is drawn red (stalkyard's lamps, 2026-10-27)

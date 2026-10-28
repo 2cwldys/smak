@@ -876,7 +876,8 @@ map's monsters come: `spawnsOf`, `spawnsTable`; its character in numbers: `chara
   `.vsnd_c`.
 - `portMapToSbox(file, { name, folder, folders, starts })` → a GoldSrc map as an s&box scene: `{ name, scene, files, meshes,
   spawns, lights, sky, warnings, facts }` (its faces as MeshComponents, its clip brushes, each brush entity solid
-  with every brush, textures, sky, starts (`starts`: a mod's start classes), lights and an indirect light volume); `writeSboxMap(port, out)`; `portMapToSboxFile(file, { out, ... })`. `meshBlob(polygons)` → a
+  with every brush, textures, sky, starts (`starts`: a mod's start classes), light: `lighting` "lightmaps" (the default: the
+  map's own, in an atlas SMAK's shader reads) or "lights" (s&box's, with texture lights and an indirect light volume)); `writeSboxMap(port, out)`; `portMapToSboxFile(file, { out, ... })`. `meshBlob(polygons)` → a
   PolygonMesh's saved blob (base64) of `[{ corners, uvs, material }]`, each polygon its own corners, anticlockwise;
   `rotationOf([pitch, yaw, roll])` → Source's angles as s&box's quaternion text. `WORLD_TAG`, `CLIP_TAG`, `BRUSH_TAG`,
   `INDIRECT_LIGHT`, `SUN_SCALE`, `SKY_LIGHT_SHARE`, `LIGHT_REACH`, `TEXLIGHT_SCALE`, `TEXLIGHT_POWER`, `TEXLIGHT_REACH`.

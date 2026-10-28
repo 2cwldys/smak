@@ -6,7 +6,7 @@
 //   brushesOfClipHull(bsp, head, half, mins, maxs)     the brushes of a clip hull, shrunk back to the drawn shape
 //   clipContents(bsp, head, point)                     GoldSrc's contents at a point of a clip hull
 //   clipOutsideHull(bsp, brush, head, half)            how much of a rebuilt clip brush, grown, leaves a hull
-//   clipBrushesOf(bsp)                                 the world's clip brushes: those of hulls 1 and 3 open in hull 0
+//   clipBrushesOf(bsp, { skySolid })                   the world's clip brushes: those of hulls 1 and 3 open in hull 0
 //
 // THE DRAWN TREE (hull 0). Each of its solid or liquid leaves is the convex region the planes on the way down to it
 // cut out, so each becomes one brush: those planes facing out of it, less the ones that do not touch it, plus
@@ -25,6 +25,7 @@ const BOUNDS_MARGIN = 64;
 const GS_SOLID = -2;
 // GoldSrc's contents (bspfile.h) a drawn leaf has, other than open
 const GS_FILLED = new Set([-2, -3, -4, -5, -6]);
+const GS_SKY = -6;
 // half the player's standing and ducked boxes, which qcsg grew hulls 1 and 3's brushes by
 const PLAYER_HALF = [16, 16, 36];
 const DUCKED_HALF = [16, 16, 18];
@@ -357,7 +358,9 @@ function withBevels(sides, mins, maxs, windings = []) {
 
 /**
  * The clip brushes of a map's world, rebuilt from hulls 1 and 3 (brushesOfClipHull): those open in hull 0, where
- * the drawn world is not; the rest are the world's own, already solid. Returns brushesOfClipHull's.
+ * the drawn world is not; the rest are the world's own, already solid. Returns brushesOfClipHull's. `skySolid`: the
+ * sky's brushes rebuilt too, for a port where the sky is a picture, not solid (s&box: TS's ts_lobby let a player
+ * through its sky walls, 222 of 229 spots blocked only in GoldSrc, 2026-10-28); Source's sky brushes are solid.
  */
 /**
  * A brush entity's solids (model `model`, 1 and up) as the mapper drew them, from its standing hull: every one,
@@ -369,11 +372,12 @@ export function entityBrushesOf(bsp, model) {
   return headNodes[1] >= 0 ? brushesOfClipHull(bsp, headNodes[1], PLAYER_HALF, mins, maxs) : [];
 }
 
-export function clipBrushesOf(bsp) {
+export function clipBrushesOf(bsp, { skySolid = false } = {}) {
   const world = bsp.models[0];
   const openInDrawn = (p) => {
     const leaf = leafAt(bsp, p);
-    return leaf !== 0 && !GS_FILLED.has(bsp.leaves[leaf].contents);
+    const contents = bsp.leaves[leaf].contents;
+    return leaf !== 0 && (!GS_FILLED.has(contents) || (skySolid && contents === GS_SKY));
   };
   const SAMPLES = [0.1, 0.3, 0.5, 0.7, 0.9];
   // from both the standing and the ducked hull: a clip brush on the floor merges into the floor's growth in hull 1

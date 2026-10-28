@@ -36,7 +36,8 @@
 // SpotLight before it, as strong as hlrad made it (TEXLIGHT_SCALE). The sun is SUN_SCALE times its colour, the sky's light SKY_LIGHT_SHARE
 // of it: GoldSrc's light compiler bounced the light and spread the sky's, which s&box's lights do not, and these
 // were fitted so that stalkyard's 21 starts look as bright as GoldSrc draws them with its lightmaps (mapcheck.mjs).
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { readBsp, modelFaces, facePolygon, faceTexture, faceUvs, faceNormal, embeddedTexture, worldBounds } from "../maps/bsp.mjs";
 import { texlightsFor } from "../maps/texlights.mjs";
@@ -49,6 +50,7 @@ import { bleedHoles, powerOfTwo } from "../source/vtf.mjs";
 import { PORT_FOLDER } from "../source/port.mjs";
 import { clipBrushesOf, entityBrushesOf, regionOf } from "../source/mapbrushes.mjs";
 import { vmatOf, WHITE_PNG } from "./vmdl.mjs";
+import { lightmapAtlas, lightmapShader, LIGHTMAP_SHADER } from "./lightmap.mjs";
 import { guidOf } from "./sound.mjs";
 
 /** GoldSrc's player origin is the middle of its 72-high box; s&box's spawn point is where the feet go. */
@@ -69,9 +71,32 @@ export const WORLD_TAG = "world";
 export const CLIP_TAG = "clip";
 /** A brush entity's that blocks (a door, a func_wall): solid as the world is, but not of it. */
 export const BRUSH_TAG = "brush";
-/** The game object of the map's indirect light, and its probes per 1024 units (s&box's own default). */
+/** The game object of the map's indirect light, and its probes per 1024 units, a probe every 256: half s&box's own
+ * default of 8, an eighth of the probes. At 8 ts_lobby's bake counted 66096 probes, each drawing its 69 shadowed
+ * lights, at 6 to 26 a second: one to three hours (2026-10-28); at 4, 9576. */
 export const INDIRECT_LIGHT = "indirect light";
-const INDIRECT_LIGHT_DENSITY = 8;
+export const INDIRECT_LIGHT_DENSITY = 4;
+/** How many probes a map's indirect light bakes, as s&box's bake counts them: the world's box and 16 units round it,
+ * INDIRECT_LIGHT_DENSITY per 1024 units each way and one more, twice over (ts_lobby's at 8 counted 66096: 2 x 36 x 34 x
+ * 27, 2026-10-28). */
+export function indirectProbes(bsp) {
+  const world = worldBounds(bsp);
+  return 2 * [0, 1, 2].reduce((n, c) => n * (Math.max(1, Math.ceil(((world.maxs[c] - world.mins[c] + 32) * INDIRECT_LIGHT_DENSITY) / 1024)) + 1), 1); // prettier-ignore
+}
+/** The record of a bake beside its files (in the scene's own data folder, `<scene>_scene_data`): what the port wrote
+ * when it was baked (bakeKeyOf) and the volume's three textures. A port that writes the same again keeps the bake
+ * (writeSboxMap), as a bake takes minutes to hours (INDIRECT_LIGHT_DENSITY). */
+export const BAKE_RECORD = "smak_bake.json";
+/** The fields of s&box's IndirectLightVolume that its bake fills. */
+export const BAKED_FIELDS = ["IrradianceTexture", "DistanceTexture", "RelocationTexture"];
+/** The folder of a scene's own data (its bakes), as s&box names it: scenes/ts/ts_lobby.scene's is scenes/ts/ts_lobby_scene_data. */
+export const sceneDataOf = (scene) => scene.replace(/\.scene$/, "_scene_data");
+/** What a port wrote, every file's path and bytes, hashed: the same key, the same map lit the same way. */
+export function bakeKeyOf(port) {
+  const hash = createHash("sha256");
+  for (const { path, data } of port.files) hash.update(`${path}\n`).update(data).update("\n");
+  return hash.digest("hex");
+}
 /** Texture flags of sbox-port's vmatOf (GoldSrc's STUDIO_NF_): a holed texture's, and a see-through one's. */
 const MASKED = 64;
 const ADDITIVE = 32;
@@ -99,8 +124,16 @@ const TEXLIGHT_OFF = 2;
 const TEXLIGHT_CONE = [60, 89];
 /** How many units a tool texture's picture spans. */
 const TOOL_TEXTURE_SPAN = 64;
-/** The brush entities that collide with nothing. */
-const NOT_SOLID = new Set(["func_illusionary"]);
+/** GoldSrc's render modes in which renderamt says how solid a brush entity looks (0: not drawn), and the added one;
+ * and the brush entities the game never draws, whatever they wear (as draw.mjs has them). */
+const FADING_MODES = [1, 2, 3, 5];
+const ADDITIVE_MODE = 5;
+/** The render mode in which a `{` texture's holes are open (kRenderTransAlpha). */
+const HOLES_MODE = 4;
+const NEVER_DRAWN = /^(trigger_|func_ladder$|func_monsterclip$|func_buyzone$|func_bomb_target$|msarea_)/;
+/** The brush entities that do not block a player: func_illusionary, and those the game never draws (a trigger, a
+ * ladder, a monster's clip, a zone); ts_lobby's trigger_hurts blocked 3.5 in a hundred spots when kept solid (2026-10-28). */
+const notSolid = (classname) => classname === "func_illusionary" || NEVER_DRAWN.test(classname);
 /** Spawn points' classes. */
 const SPAWNS = new Set(["info_player_start", "info_player_deathmatch"]);
 
@@ -141,7 +174,8 @@ const rotationAlong = (d) =>
 /**
  * A PolygonMesh's saved blob (MeshBlob, version 1), base64, of `polygons` `[{ corners, uvs, material }]`: each
  * polygon its own corners, as s&box winds them (anticlockwise seen from the front), `uvs` one per corner,
- * `material` the index of its material in the mesh's list.
+ * `material` the index of its material in the mesh's list; `color`, if given, its corners' vertex colour, [r, g, b, a]
+ * bytes (a lightmapped face's place in its map's atlas: lightmap.mjs).
  */
 export function meshBlob(polygons) {
   let vertices = 0;
@@ -152,7 +186,8 @@ export function meshBlob(polygons) {
   const positions = [];
   const uvs = [];
   const materials = [];
-  for (const { corners, uvs: cornerUvs, material } of polygons) {
+  const colors = [];
+  for (const { corners, uvs: cornerUvs, material, color = [0, 0, 0, 0] } of polygons) {
     const n = corners.length;
     for (let i = 0; i < n; i++) {
       positions.push(corners[i]);
@@ -166,6 +201,7 @@ export function meshBlob(polygons) {
       halfEdges.push([vertices + next, edges + 2 * i + 1, edges + 2 * next, faceEdges.length]);
       halfEdges.push([vertices + i, edges + 2 * i, edges + 2 * before + 1, -1]);
       uvs.push(cornerUvs[next], [0, 0]);
+      colors.push(...color, 0, 0, 0, 0);
     }
     faceEdges.push(edges + 2 * (n - 1));
     materials.push(material);
@@ -189,7 +225,7 @@ export function meshBlob(polygons) {
     ["topology", topology],
     ["positions", floats(positions)],
     ["blends", Buffer.alloc(edges * 4)],
-    ["colors", Buffer.alloc(edges * 4)],
+    ["colors", Buffer.from(colors)],
     ["texcoord", floats(uvs)],
     ["materialindex", ints(materials)],
     ["edgeflags", Buffer.alloc(edges * 4)],
@@ -216,7 +252,9 @@ function gameObject(id, name, { position, rotation, tags = "", components = [] }
   };
 }
 
-/** The sky as one picture round the world, longitude across (+X in its middle, turning left), latitude down. */
+/** The sky as one picture round the world, longitude across, latitude down, as s&box's sky shader lays it: -X in
+ * its middle, +Y a quarter of the way to its right. Measured with a picture coloured by the way each part
+ * faces (2026-10-28): with +X in its middle, as made before, ts_lobby's sky came out turned half round. */
 function skyPicture(sky, width = SKY_WIDTH) {
   const height = width / 2;
   const rgba = new Uint8Array(width * height * 4);
@@ -224,7 +262,7 @@ function skyPicture(sky, width = SKY_WIDTH) {
   for (let row = 0; row < height; row++) {
     const lat = (0.5 - (row + 0.5) / height) * Math.PI;
     for (let column = 0; column < width; column++) {
-      const lon = (0.5 - (column + 0.5) / width) * 2 * Math.PI;
+      const lon = (1 - (column + 0.5) / width) * 2 * Math.PI;
       skyColour(sky, Math.cos(lat) * Math.cos(lon), Math.cos(lat) * Math.sin(lon), Math.sin(lat), colour);
       const at = (row * width + column) * 4;
       rgba.set([Math.round(colour[0]), Math.round(colour[1]), Math.round(colour[2]), 255], at);
@@ -239,7 +277,8 @@ function skyPicture(sky, width = SKY_WIDTH) {
  * in, after the map's own. `starts`: the classes a player starts at (a mod profile's `starts`; Half-Life's two
  * unless given).
  */
-export function portMapToSbox(file, { name, folder = PORT_FOLDER, folders = [], starts = SPAWNS } = {}) {
+export function portMapToSbox(file, { name, folder = PORT_FOLDER, folders = [], starts = SPAWNS, lighting = "lightmaps" } = {}) {
+  if (lighting !== "lightmaps" && lighting !== "lights") throw new Error(`lighting: "lightmaps" or "lights", not ${lighting}`);
   const startClasses = new Set(starts);
   const mapName = (name ?? basename(file).replace(/\.bsp$/i, "")).toLowerCase();
   const warnings = [];
@@ -274,6 +313,7 @@ export function portMapToSbox(file, { name, folder = PORT_FOLDER, folders = [], 
       texture = found.texture;
       base = `materials/${folder}/${materialName(found.wad.replace(/\.wad$/i, ""))}/${materialName(entry.name)}`;
     }
+    const original = texture;
     let image = textureRgba(texture);
     const sum = [0, 0, 0];
     for (let p = 0; p < image.rgba.length; p += 4) for (let c = 0; c < 3; c++) sum[c] += image.rgba[p + c];
@@ -301,7 +341,22 @@ export function portMapToSbox(file, { name, folder = PORT_FOLDER, folders = [], 
     const illum = flags & FULLBRIGHT ? `materials/${folder}/tools/white.png` : undefined;
     if (illum && !files.some((f) => f.path === illum)) put(illum, WHITE_PNG);
     put(`${base}.vmat`, vmatOf({ color: `${base}.png`, mask, illum, flags }));
-    made.set(`${base}.vmat`, { base, mask });
+    // its holes filled (the palette's last colour in them, as the game draws them out of render mode 4), made
+    // when a face wears it so
+    const filled = () => {
+      const picture = powerOfTwo(textureRgba({ ...original, holes: false }));
+      put(`${base}_filled.png`, png(picture.width, picture.height, picture.rgba));
+      return `${base}_filled.png`;
+    };
+    // a power of two each way, for a variant drawn translucent: complex.shader's translucent mipmaps fail on a picture
+    // whose sides are not (ts_parking's ts_wall19, 96 by 128, added, 2026-10-28)
+    const even = () => {
+      const picture = powerOfTwo(image);
+      if (picture.rgba === image.rgba) return `${base}.png`;
+      put(`${base}_pot.png`, png(picture.width, picture.height, picture.rgba));
+      return `${base}_pot.png`;
+    };
+    made.set(`${base}.vmat`, { base, mask, illum, flags, filled, even });
     return `${base}.vmat`;
   });
   // a brush entity drawn added to what is behind it (rendermode 5, kRenderTransAdd), as bright as its renderamt
@@ -309,13 +364,81 @@ export function portMapToSbox(file, { name, folder = PORT_FOLDER, folders = [], 
   // colours, s&box in linear light: its share in linear light (to the power 2.2), or a dark room behind it comes out
   // washed in its colour (test_scripts' shield, renderamt 100: s&box's view of the room all purple, 2026-10-27)
   const additiveOf = (material, amount) => {
-    const { base, mask } = made.get(material);
+    const { base } = made.get(material);
     const variant = `${base}_add${amount}.vmat`;
     const illum = `materials/${folder}/tools/white.png`;
     const share = (amount / 255) ** 2.2;
     if (!files.some((f) => f.path === illum)) put(illum, WHITE_PNG);
     if (!files.some((f) => f.path === variant))
-      put(variant, vmatOf({ color: `${base}.png`, mask, illum, flags: ADDITIVE | FULLBRIGHT, tint: [share, share, share] })); // prettier-ignore
+      put(variant, vmatOf({ color: translucentPictureOf(material), illum, flags: ADDITIVE | FULLBRIGHT, tint: [share, share, share] })); // prettier-ignore
+    return variant;
+  };
+  // a brush entity seen through (rendermode 1 to 3: kRenderTransColor, Texture, Glow) at its renderamt out of 255:
+  // glass, mostly (ts_lobby's skylights at 150, drawn opaque before 2026-10-28). GoldSrc draws it with no lightmap,
+  // at full light (Xash R_HasLightmap), so lit by itself
+  const seenThroughOf = (material, amount) => {
+    const { base } = made.get(material);
+    const variant = `${base}_see${amount}.vmat`;
+    const see = `materials/${folder}/tools/white.png`;
+    if (!files.some((f) => f.path === see)) put(see, WHITE_PNG);
+    if (!files.some((f) => f.path === variant)) put(variant, vmatOf({ color: translucentPictureOf(material), illum: see, flags: FULLBRIGHT, opacity: amount / 255, see })); // prettier-ignore
+    return variant;
+  };
+  // a `{` texture's holes are open only on a brush entity in render mode 4 (kRenderTransAlpha, "Solid"); on the world
+  // and in any other mode the game draws them filled with the palette's last colour (draw.mjs lookOf), blue as a rule
+  const filledPictures = new Map();
+  const pictureOf = (material) => {
+    const { base, mask, filled } = made.get(material);
+    if (!mask) return `${base}.png`;
+    if (!filledPictures.has(material)) filledPictures.set(material, filled());
+    return filledPictures.get(material);
+  };
+  // the picture as a translucent variant wears it: a power of two each way (`even`; a filled one is already)
+  const evenPictures = new Map();
+  const translucentPictureOf = (material) => {
+    const { mask, even } = made.get(material);
+    if (mask) return pictureOf(material);
+    if (!evenPictures.has(material)) evenPictures.set(material, even());
+    return evenPictures.get(material);
+  };
+  const filledOf = (material) => {
+    const { base, illum, flags } = made.get(material);
+    const variant = `${base}_filled.vmat`;
+    if (!files.some((f) => f.path === variant)) put(variant, vmatOf({ color: pictureOf(material), illum, flags: flags & ~MASKED }));
+    return variant;
+  };
+  // ── its light, when GoldSrc's own (lighting "lightmaps", lightmap.mjs): every face's lightmap in one picture of the
+  // map's, the light as the map starts, its styles that change played by the shader, each texture's material made
+  // the map's own to read it ──
+  const atlasPath = `materials/${folder}/maps/${mapName}/lightmap.png`;
+  const stylesPath = `materials/${folder}/maps/${mapName}/lightstyles.png`;
+  let atlas = null;
+  if (lighting === "lightmaps") {
+    atlas = lightmapAtlas(bsp, bsp.models.flatMap((_, m) => modelFaces(bsp, m)));
+    put(atlasPath, png(atlas.width, atlas.height, atlas.rgba));
+    if (atlas.styles) put(stylesPath, png(atlas.styles.width, atlas.styles.height, atlas.styles.rgba));
+    put(LIGHTMAP_SHADER, lightmapShader());
+  }
+  // the texture as a lightmapped face wears it: `light` "lit" (its lightmap's), "full" (a liquid's: no lightmap, full
+  // light) or "dark" (a face the compiler left unlit, which GoldSrc draws black); its holes open or filled; `size`
+  // the texture's in pixels, which its face's coordinates are fractions of
+  const litOf = (material, light, holesOpen, size) => {
+    const { base, mask } = made.get(material);
+    const open = Boolean(mask) && holesOpen;
+    const own = base.slice(`materials/${folder}/`.length).replace(/\//g, "_");
+    const variant = `materials/${folder}/maps/${mapName}/lit/${own}${light === "lit" ? "" : `_${light}`}${open ? "_holes" : ""}.vmat`; // prettier-ignore
+    if (!files.some((f) => f.path === variant)) {
+      const lines = ["// Made by SMAK (sbox-map): a GoldSrc texture lit by its map's lightmaps (lightmap.mjs).", "", "Layer0", "{", `\tshader "${LIGHTMAP_SHADER}"`]; // prettier-ignore
+      if (open) lines.push("\tF_ALPHA_TEST 1");
+      if (light !== "lit") lines.push("\tF_FULL_LIGHT 1");
+      lines.push(`\tTextureColor "${open ? `${base}.png` : pictureOf(material)}"`);
+      if (open) lines.push(`\tTextureTranslucency "${mask}"`, '\tg_flAlphaTestReference "0.500"');
+      lines.push(`\tTextureLightmap "${atlasPath}"`, `\tg_vLightmapSize "[${atlas.width}.000000 ${atlas.height}.000000]"`, `\tg_vTextureSize "[${size[0]}.000000 ${size[1]}.000000]"`); // prettier-ignore
+      if (light === "lit" && atlas.styles) lines.push(`\tg_flStyleLayers "${atlas.layers}.000"`, `\tg_flFirstLayer "${atlas.firstLayer}.000"`, `\tg_flLayerHeight "${atlas.layerHeight}.000"`, `\tTextureStyles "${stylesPath}"`); // prettier-ignore
+      if (light === "dark") lines.push('\tg_flLightScale "0.000"');
+      lines.push("}", "");
+      put(variant, lines.join("\n"));
+    }
     return variant;
   };
 
@@ -352,23 +475,36 @@ export function portMapToSbox(file, { name, folder = PORT_FOLDER, folders = [], 
   for (const { model, keys } of brushModels) {
     const classname = keys.get("classname") ?? "worldspawn";
     const at = numbersOf(keys.get("origin")).length === 3 ? numbersOf(keys.get("origin")) : [0, 0, 0];
-    const additive = model && keys.get("rendermode") === "5" ? Math.round(Number(keys.get("renderamt") ?? 0)) : null;
+    // how GoldSrc draws it (draw.mjs lookOf, from Xash3D's renderer): render modes 1, 2, 3 and 5 fade it by its
+    // renderamt, and at 0 it is not drawn (still solid as its class is); some classes are never drawn
+    const mode = model ? Number(keys.get("rendermode") ?? 0) || 0 : 0;
+    const amount = Math.round(Number(keys.get("renderamt") ?? 0) || 0);
+    const fades = FADING_MODES.includes(mode);
+    const hidden = model > 0 && (NEVER_DRAWN.test(classname) || (fades && amount <= 0));
+    const additive = fades && mode === ADDITIVE_MODE ? amount : null;
+    const seenThrough = fades && mode !== ADDITIVE_MODE && amount < 255 ? amount : null;
+    const holesOpen = model > 0 && mode === HOLES_MODE;
     const used = [];
     const polygons = [];
-    for (const face of modelFaces(bsp, model)) {
+    for (const face of hidden ? [] : modelFaces(bsp, model)) {
       const texture = faceTexture(bsp, face);
-      const material = materials[texture.index] && additive !== null ? additiveOf(materials[texture.index], additive) : materials[texture.index]; // prettier-ignore
+      const base = materials[texture.index];
+      // drawn with its lightmap, as the game draws it unless faded or added (lighting "lightmaps")
+      const place = atlas && additive === null && seenThrough === null ? atlas.offsetOf(face) : null;
+      const lit = atlas && additive === null && seenThrough === null;
+      const material = !base ? base : additive !== null ? additiveOf(base, additive) : seenThrough !== null ? seenThroughOf(base, seenThrough) : lit ? litOf(base, place ? "lit" : atlas.fullOf(face) ? "full" : "dark", holesOpen, [texture.width, texture.height]) : made.get(base).mask && !holesOpen ? filledOf(base) : base; // prettier-ignore
       if (!material) continue;
       if (!used.includes(material)) used.push(material);
       const corners = facePolygon(bsp, face);
-      polygons.push({ corners: [...corners].reverse(), uvs: faceUvs(bsp, face).reverse(), material: used.indexOf(material) }); // prettier-ignore
-      const light = shining.get(texture.name.toLowerCase());
+      polygons.push({ corners: [...corners].reverse(), uvs: faceUvs(bsp, face).reverse(), material: used.indexOf(material), ...(place ? { color: place } : {}) }); // prettier-ignore
+      // the faces that shine, lights of s&box's before them (lighting "lights")
+      const light = !atlas && shining.get(texture.name.toLowerCase());
       if (light) emitters.push({ texture: texture.name, light, reflect: reflects[texture.index], corners: corners.map((p) => p.map((v, k) => v + at[k])), normal: faceNormal(bsp, face) }); // prettier-ignore
     }
-    if (!polygons.length) continue;
+    if (!polygons.length && !(hidden && !notSolid(classname))) continue;
     const objectName = model ? `${classname} *${model}` : "worldspawn";
-    const collision = NOT_SOLID.has(classname) ? "None" : "Mesh";
-    meshes.push({ name: objectName, model, at, faces: polygons.length, materials: used, collision });
+    const collision = notSolid(classname) ? "None" : "Mesh";
+    if (polygons.length) meshes.push({ name: objectName, model, at, faces: polygons.length, materials: used, collision }); // prettier-ignore
     // a solid brush entity blocks with its every brush, as GoldSrc's hull has them: the drawn faces miss a side
     // the mapper textured NULL (test_scripts' shield, a cage whose lid is never drawn)
     const solids = model && collision !== "None" ? entityBrushesOf(bsp, model).map((b) => regionOf(b.planes.filter((p) => !p.bevel))).filter(Boolean) : []; // prettier-ignore
@@ -377,32 +513,42 @@ export function portMapToSbox(file, { name, folder = PORT_FOLDER, folders = [], 
       ...gameObject(`${mapName} ${objectName}`, objectName, {
         position: at,
         tags: model ? (collision === "None" ? "" : BRUSH_TAG) : WORLD_TAG,
-        components: [
-          {
-            __type: "Sandbox.MeshComponent",
-            Collision: collision,
-            Static: true,
-            SmoothingAngle: 0,
-            Mesh: { Data: meshBlob(polygons), Materials: used },
-          },
-        ],
+        // one not drawn keeps only its solids
+        components: polygons.length
+          ? [
+              {
+                __type: "Sandbox.MeshComponent",
+                Collision: collision,
+                Static: true,
+                SmoothingAngle: 0,
+                Mesh: { Data: meshBlob(polygons), Materials: used },
+              },
+            ]
+          : [],
       }),
       ...(solidChildren.length ? { Children: solidChildren } : {}),
     });
   }
 
   // ── its clip brushes: rebuilt from the player's hulls, each solid all through, seen in the editor only ──
-  const clips = clipBrushesOf(bsp)
+  const clips = clipBrushesOf(bsp, { skySolid: true })
     .map((b) => regionOf(b.planes.filter((p) => !p.bevel)))
     .filter(Boolean);
-  if (clips.length) {
-    const children = clips.map((region, k) => {
-      const objectName = `clip ${k}`;
-      meshes.push({ name: objectName, faces: region.windings.length, materials: [clipMaterialUsed()], collision: "Hull" });
-      return gameObject(`${mapName} ${objectName}`, objectName, { tags: `${WORLD_TAG},${CLIP_TAG}`, components: [hullMesh(region)] });
-    });
-    objects.push({ ...gameObject(`${mapName} clip`, "clip", { tags: CLIP_TAG }), Children: children });
+  const children = clips.map((region, k) => {
+    const objectName = `clip ${k}`;
+    meshes.push({ name: objectName, faces: region.windings.length, materials: [clipMaterialUsed()], collision: "Hull" });
+    return gameObject(`${mapName} ${objectName}`, objectName, { tags: `${WORLD_TAG},${CLIP_TAG}`, components: [hullMesh(region)] });
+  });
+  // and the world's sky faces, never drawn, solid as GoldSrc's player hulls have the sky: a sky face that closes the
+  // map has the void behind it, a region of the hull the clip brushes' samples miss its growth in (ts_parking's
+  // sky, 93 spots of 5000 blocked only in GoldSrc, 2026-10-28)
+  const skyFaces = modelFaces(bsp, 0).filter((face) => textureKind(faceTexture(bsp, face).name).sky);
+  if (skyFaces.length) {
+    const polygons = skyFaces.map((face) => ({ corners: [...facePolygon(bsp, face)].reverse(), uvs: faceUvs(bsp, face).reverse(), material: 0 })); // prettier-ignore
+    meshes.push({ name: "sky clip", faces: polygons.length, materials: [clipMaterialUsed()], collision: "Mesh" });
+    children.push(gameObject(`${mapName} sky clip`, "sky clip", { tags: `${WORLD_TAG},${CLIP_TAG}`, components: [{ __type: "Sandbox.MeshComponent", Collision: "Mesh", Static: true, HideInGame: true, SmoothingAngle: 0, Mesh: { Data: meshBlob(polygons), Materials: [clipMaterialUsed()] } }] })); // prettier-ignore
   }
+  if (children.length) objects.push({ ...gameObject(`${mapName} clip`, "clip", { tags: CLIP_TAG }), Children: children });
 
   // ── its sky ──
   const skyName = (entities[0]?.get("skyname") || "desert").toLowerCase();
@@ -414,7 +560,7 @@ export function portMapToSbox(file, { name, folder = PORT_FOLDER, folders = [], 
     put(`${base}.png`, png(picture.width, picture.height, picture.rgba));
     put(`${base}.vmat`, `// Made by SMAK (sbox-map) from GoldSrc's sky ${skyName}.\n\nLayer0\n{\n\tshader "shaders/sky.shader"\n\tSkyTexture "${base}.png"\n}\n`); // prettier-ignore
     skyMaterial = `${base}.vmat`;
-    objects.push(gameObject(`${mapName} sky`, "sky", { components: [{ __type: "Sandbox.SkyBox2D", SkyMaterial: skyMaterial, Tint: "1,1,1,1", SkyIndirectLighting: true }] })); // prettier-ignore
+    objects.push(gameObject(`${mapName} sky`, "sky", { components: [{ __type: "Sandbox.SkyBox2D", SkyMaterial: skyMaterial, Tint: "1,1,1,1", SkyIndirectLighting: !atlas }] })); // prettier-ignore
   } else warnings.push(`sky ${skyName}: ${sky.why}; none drawn`);
 
   // ── its spawn points and lights ──
@@ -477,7 +623,7 @@ export function portMapToSbox(file, { name, folder = PORT_FOLDER, folders = [], 
   // and test_scripts' crystal room came out an eighth as bright. s&box's own indirect light (DDGI) over the whole
   // world stands in, baked in the editor (sbox-map-check bakes it); the clip brushes kept out of it
   const world = worldBounds(bsp);
-  objects.push(gameObject(`${mapName} indirect light`, INDIRECT_LIGHT, { components: [{ __type: "Sandbox.IndirectLightVolume", Bounds: { Mins: vector(world.mins.map((v) => v - 16)), Maxs: vector(world.maxs.map((v) => v + 16)) }, ProbeDensity: INDIRECT_LIGHT_DENSITY, RenderExcludeTags: CLIP_TAG }] })); // prettier-ignore
+  if (!atlas) objects.push(gameObject(`${mapName} indirect light`, INDIRECT_LIGHT, { components: [{ __type: "Sandbox.IndirectLightVolume", Bounds: { Mins: vector(world.mins.map((v) => v - 16)), Maxs: vector(world.maxs.map((v) => v + 16)) }, ProbeDensity: INDIRECT_LIGHT_DENSITY, RenderExcludeTags: CLIP_TAG }] })); // prettier-ignore
 
   const scene = `scenes/${folder}/${mapName}.scene`;
   put(
@@ -505,11 +651,27 @@ export function portMapToSbox(file, { name, folder = PORT_FOLDER, folders = [], 
     lights: lights.length,
     sky: skyMaterial ? skyName : null,
   };
-  return { name: mapName, scene, files, meshes, spawns, lights, sky: skyMaterial, warnings, facts };
+  return { name: mapName, scene, files, meshes, spawns, lights, sky: skyMaterial, lighting, warnings, facts };
 }
 
-/** The port's files written under `out` (a project's Assets folder). Returns their paths. */
+/** The port's files written under `out` (a project's Assets folder). Returns their paths. The bake of the scene's
+ * indirect light kept, when its record (BAKE_RECORD) has the port's key and its textures are there; `port.baked` says. */
 export function writeSboxMap(port, out) {
+  port.bakeKey = bakeKeyOf(port);
+  port.baked = false;
+  const record = join(out, sceneDataOf(port.scene), BAKE_RECORD);
+  const kept = existsSync(record) ? JSON.parse(readFileSync(record, "utf8")) : null;
+  if (kept?.key === port.bakeKey && BAKED_FIELDS.every((f) => kept.textures?.[f] && existsSync(join(out, `${kept.textures[f]}_c`)))) {
+    const file = port.files.find((f) => f.path === port.scene);
+    const scene = JSON.parse(file.data);
+    const volume = scene.GameObjects.find((o) => o.Name === INDIRECT_LIGHT)?.Components.find((c) => c.__type === "Sandbox.IndirectLightVolume"); // prettier-ignore
+    if (volume) {
+      Object.assign(volume, kept.textures);
+      file.data = `${JSON.stringify(scene, null, 2)}
+`;
+      port.baked = true;
+    }
+  }
   return port.files.map(({ path, data }) => {
     const target = join(out, path);
     mkdirSync(dirname(target), { recursive: true });
@@ -522,5 +684,6 @@ export function writeSboxMap(port, out) {
 export function portMapToSboxFile(file, { out, ...options } = {}) {
   if (!out) throw new Error("portMapToSboxFile: `out` is a project's Assets folder");
   const port = portMapToSbox(file, options);
-  return { ...port, written: writeSboxMap(port, out) };
+  const written = writeSboxMap(port, out);
+  return { ...port, written };
 }

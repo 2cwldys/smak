@@ -343,14 +343,47 @@ What it makes, under `-o`:
   with nothing.
 - **Its clip brushes**, rebuilt from the player's hulls as `gmod-map` rebuilds them (`clipBrushesOf`): GoldSrc keeps
   no clip brush but in the hulls. Each a mesh of its own that collides as its hull (solid all through: a mesh
-  collides only at its faces) and is seen in the editor only (`HideInGame`), under a game object `clip`.
+  collides only at its faces) and is seen in the editor only (`HideInGame`), under a game object `clip`. With them,
+  `sky clip`: the world's sky faces, never drawn, colliding as a mesh, as GoldSrc's player hulls have the sky solid.
+  A sky face that closes the map has the void behind it, and the hull's region there runs out into the void, where
+  `clipBrushesOf`'s samples miss its growth in front of the face (ts_parking: 93 spots of 5000 by its sky blocked only
+  in GoldSrc; with the sky's faces, 6).
 - **Its textures** as PNG and `.vmat`, as a model's. A holed one (`{`) is alpha-tested on a mask, its picture
   opaque and both made a power of two each way: s&box's texture compiler makes no mipmaps of a mask whose sides are
-  not, and the material fails (stalkyard's `{duct_vnt2`, 64 by 48).
+  not, and the material fails (stalkyard's `{duct_vnt2`, 64 by 48). A texture drawn translucent (render mode 1 to 3
+  or 5) wears a copy made a power of two each way when its sides are not (`<texture>_pot.png`): complex.shader's
+  translucent mipmaps fail on it the same way (ts_parking's `ts_wall19`, 96 by 128, added).
 - **Its starts** (`info_player_start`, `info_player_deathmatch`, or a mod's: `--mod msc` reads Master Sword's
   `ms_player_begin` and `ms_player_spawn`) as `SpawnPoint`s, at their feet (GoldSrc's player
   origin is the middle of its box, 36 above them), turned their way.
-- **Its lights**, as s&box's: GoldSrc's own light is baked in the lightmaps, which a mesh has no place for. `light`
+- **Its light**, GoldSrc's own (`lighting: "lightmaps"`, the default; `src/sbox/lightmap.mjs`), as the GMod port
+  keeps it: every face's lightmap in one picture of the map's (`materials/<folder>/maps/<map>/lightmap.png`, 1024
+  samples across), each face's samples with a border of its edge's round them. A PolygonMesh has one set of texture coordinates, the texture's: the face's place in the picture
+  rides in its corners' vertex colour (two numbers of 16 bits, the same at every corner), and SMAK's shader
+  (`shaders/smak_lightmapped.shader`, written into the project) finds a point's sample from its texture pixel / 16
+  plus that place, mixed between samples as GoldSrc mixes them. Each texture gets a material of the map's own
+  (`maps/<map>/lit/`) on that shader. The colour is GoldSrc's: the texture as the screen shows it times sample / 255
+  times 1.55, cut off at white (`drawMap`'s `BRIGHTNESS`), the sRGB curve undone round it, drawn as emission and
+  nothing else: s&box's lights put no shine on it (ts_parking's 131 lights had, with the standard shading, made
+  patches of gloss). A liquid's face (no lightmap) is at full light, a face the compiler left unlit dark; a brush
+  entity in render mode 1 to 3 or 5 has no lightmap in GoldSrc and is drawn lit by itself. The light entities are
+  s&box's lights as below (for what moves), the shining textures make none, and there is no indirect light to bake.
+  **Its styles**: each style a pattern of letters the game plays at ten a second (`stylePatterns`: Half-Life's
+  `GOLDSRC_STYLES` under 32, a switched light's as `CLight::Spawn` sets it: "a" when every light of it starts dark,
+  else its `pattern` or "m"). A style whose pattern is one letter is added into the picture at that letter's share
+  ("m" whole, "a" not at all). One that changes (Half-Life's flickers, a light's own pattern) is kept apart, in a
+  layer of the picture below the faces (`g_flFirstLayer` down, then `g_flLayerHeight` apart; the faces whose styles
+  change are packed first, so a layer is only as tall as their shelves), its alpha the style's row in
+  `lightstyles.png` (its letters in red, (letter - "a") x 10, its length in green), and the shader plays it by its
+  clock (`g_flTime`), in the editor too. Of TS's 29 maps, four have one: ts_heresy, ts_parking and ts_urbannights
+  Half-Life's flickers on 3 to 109 faces, ts_supertimor a light flashing once in two seconds (`aaaaaaaaaaaaaaaaaaaz`)
+  over 4110. A light switched by its name stays as the map starts it: no entity of any stock TS map switches one,
+  and a switch needs code of the game's. In play s&box streams textures in, coarse mipmaps first, and a coarse
+  mipmap of the picture mixes neighbouring faces' light: for the first frames after a place comes into view its
+  light can be patchy (`sbox-map-check` pictures each start twice for it). ts_lobby (2026-10-28): a 1024 by 512 picture, 340 KB, its 17 starts 1.00 to
+  1.04 times as bright as GoldSrc draws them, correlated 1.00; s&box's lights and a baked indirect light had it 0.12
+  times as bright (TS's own lamps are in no lights.rad) after a bake of one to three hours.
+- **Or s&box's lights** (`lighting: "lights"`, `--lighting lights`): `light`
   a `PointLight`, `light_spot` a `SpotLight` (`_cone` and `_cone2` its inner and outer half angles), `light_environment`
   a `DirectionalLight`, its colour also the sky's light (`SkyColor`). A light's colour is its `_light` in linear light
   times brightness / 255, as the GMod port's world lights; it reaches 32 units per the root of its brightness. A face
@@ -363,10 +396,13 @@ What it makes, under `-o`:
   reflectivity and pi: Valve's list was calibrated under SDHLT, an `info_texlights` belongs to the ZHLT years. The sun is 4 times its colour and the sky's light 0.75 of it: GoldSrc's light compiler bounced light and
   spread the sky's, s&box's lights do neither, and these two were fitted so that stalkyard looks as bright as GoldSrc
   draws it (below).
-- **Its bounced light**: GoldSrc's light compiler bounced every light round the map into its lightmaps, and s&box's
-  lights are direct only. An `IndirectLightVolume` (s&box's DDGI: a grid of probes, 8 per 1024 units) over the
-  world, 16 units past it each way, the clip brushes left out of it, bounces them; it lights moving models too.
-  It is baked in the editor (its button, or `sbox-map-check`), into `scenes/<folder>/<map>_scene_data/ddgi/`.
+  With them, the bounced light: GoldSrc's light compiler bounced every light round the map into its lightmaps, and
+  s&box's lights are direct only. An `IndirectLightVolume` (s&box's DDGI: a grid of probes, 4 per 1024 units, half
+  s&box's default: ts_lobby's 66096 probes at 8 baked at 6 to 26 a second) over the world, 16 units past it each way,
+  the clip brushes left out of it, bounces them; it lights moving models too. It is baked in the editor (its button,
+  or `sbox-map-check`), into `scenes/<folder>/<map>_scene_data/ddgi/`, and recorded beside it
+  (`smak_bake.json`: a hash of every file the port wrote, and the bake's three textures): a port that writes the same
+  again keeps the bake, and the files of the bakes before it are removed.
 - **A self-lit texture** (a model's fullbright one too) has a white picture as its self-illumination mask: given as
   a colour, `complex.shader` makes it a texture s&box does not have, and the face is drawn red.
 
@@ -391,9 +427,13 @@ it closed first: a tab shows the scene as it was when opened), then holds it to 
   hundred, standing and ducked;
 - **each start's floor**: a ray down from where GoldSrc's player stands, meeting the floor where GoldSrc's hull 0 has
   it, within half a unit, and the player's box standing on it not stuck;
-- **its light** (`--no-light` leaves it out): its indirect light baked (the scene saved, as s&box bakes only a saved
-  scene), then from each start's eye (64 above its feet), a picture of s&box's, by a
-  camera of the check's own with no tonemapping (the clip brushes hidden), beside GoldSrc's, drawn with its
+- **its light** (`--no-light` leaves it out): with s&box's lights, its indirect light baked unless the port kept its
+  bake (the scene saved, as s&box bakes only a saved scene; the editor's minimized windows shown meanwhile, without
+  the focus), and with lightmaps SMAK's shader compiled first; then from each start's eye (64 above its feet), a
+  picture of s&box's, by a
+  camera of the check's own with no tonemapping (the clip brushes hidden; each start pictured twice, the first only
+  to stream its textures in: with one, ts_parking's coarse mipmaps put three starts 1.14 to 1.18 and its likeness at
+  0.96), beside GoldSrc's, drawn with its
   lightmaps as the game draws them (`drawMap`), the same size and field of view (640 by 360, 80 degrees). Each cut in
   16 by 9 regions: the whole as bright as GoldSrc's (the views' ratios' geometric mean 0.8 to 1.25), and lit in the
   same places (each view's regions correlated with GoldSrc's, 0.7 or more on average). `-o`: the first start's two
