@@ -70,8 +70,14 @@ test("readDemo: each network message's view of the player (where, how fast, on t
   sure(demo.frames.length === 2, `${demo.frames.length} frames`);
   const [a, b] = demo.frames;
   sure(a.onGround && !b.onGround && b.origin.join() === "11.5,19.25,40" && b.velocity.join() === "100,-50,268", JSON.stringify(b)); // prettier-ignore
-  sure(b.viewHeight[2] === 12 && b.cmd.msec === 14 && b.cmd.forward === 400 && b.cmd.buttons === 6, JSON.stringify(b.cmd));
-  sure(b.movevars.maxspeed === 320 && b.movevars.gravity === 800 && b.movevars.friction === 4, JSON.stringify(b.movevars));
+  sure(
+    b.viewHeight[2] === 12 && b.cmd.msec === 14 && b.cmd.forward === 400 && b.cmd.buttons === 6,
+    JSON.stringify(b.cmd),
+  );
+  sure(
+    b.movevars.maxspeed === 320 && b.movevars.gravity === 800 && b.movevars.friction === 4,
+    JSON.stringify(b.movevars),
+  );
   sure(demo.commands.length === 1 && demo.commands[0].command === "+forward", JSON.stringify(demo.commands));
   let refused = null;
   try {

@@ -37,7 +37,11 @@ export function readDemo(bytes) {
   const segments = [];
   for (let k = 0; k < entries; k++) {
     const at = directory + 4 + k * ENTRY;
-    segments.push({ type: b.readInt32LE(at), offset: b.readInt32LE(at + 84), length: b.readInt32LE(at + 88) });
+    segments.push({
+      type: b.readInt32LE(at),
+      offset: b.readInt32LE(at + 84),
+      length: b.readInt32LE(at + 88),
+    });
   }
   const frames = [];
   const commands = [];
@@ -98,7 +102,8 @@ export function readDemo(bytes) {
         at += 4;
         at += 4 + b.readInt32LE(at) + 16;
       } else if (type === 9) at += 4 + b.readInt32LE(at);
-      else throw new Error(`readDemo: a frame of type ${type} at byte ${at - 9}, which GoldSrc does not write`);
+      else
+        throw new Error(`readDemo: a frame of type ${type} at byte ${at - 9}, which GoldSrc does not write`);
     }
   }
   return { map, gameDir, demoProtocol, netProtocol, frames, commands };
