@@ -333,7 +333,8 @@ What it makes, under `-o`:
   edits s&box's meshes. Each face of the BSP, as compiled, is a polygon of its own: the world's in one mesh, each
   brush entity's (`model` `*N`) in its own at its `origin`, solid with every one of its brushes, faces never drawn
   too (MSC's test_scripts has a shield round its start, a cage whose lid is never drawn), as hidden solids under it
-  tagged `brush`; one in render mode 5 drawn additive at its `renderamt`. The kit writes the mesh as s&box saves it (a half-edge
+  tagged `brush`; one in render mode 5 drawn additive at its `renderamt` (that share to the power 2.2: GoldSrc adds on
+  the screen's colours, s&box in linear light). The kit writes the mesh as s&box saves it (a half-edge
   mesh in a blob: `PolygonMesh.Serialize.cs`): each side of a polygon an edge inside it and its twin outside, each
   half-edge with the texture coordinate of the corner it points to. No corner is shared, so no edge is shared by three
   faces, which a BSP's T-junctions would make (stalkyard's 2502 faces, none refused). GoldSrc walks a face clockwise,
@@ -354,8 +355,12 @@ What it makes, under `-o`:
   a `DirectionalLight`, its colour also the sky's light (`SkyColor`). A light's colour is its `_light` in linear light
   times brightness / 255, as the GMod port's world lights; it reaches 32 units per the root of its brightness. A face
   whose texture shines (Valve's maps were lit by a lights.rad that never shipped; `texlights.mjs` has it as
-  stevenlafl calibrated it) is drawn lit by itself and has a `SpotLight` before it, of its value times its area over
-  16384 (a map's `info_texlights` says which of its textures shine, and how). The sun is 4 times its colour and the sky's light 0.75 of it: GoldSrc's light compiler bounced light and
+  stevenlafl calibrated it; a map's `info_texlights` says which of its own textures shine, and how) is drawn lit by
+  itself and has a `SpotLight` before it, as strong as hlrad made it: its value times its colour, its area and its
+  texture's reflectivity (0.7 of its mean colour) over pi, as SDHLT counts it, `TEXLIGHT_SCALE` times that to the
+  power 1.21 (hlrad stores light to the power 0.55, s&box shows it to the power 1 / 2.2), reaching where hlrad's light
+  falls to one level in 255. A map's own `info_texlights` is counted as the compilers before VHLT did, without the
+  reflectivity and pi: Valve's list was calibrated under SDHLT, an `info_texlights` belongs to the ZHLT years. The sun is 4 times its colour and the sky's light 0.75 of it: GoldSrc's light compiler bounced light and
   spread the sky's, s&box's lights do neither, and these two were fitted so that stalkyard looks as bright as GoldSrc
   draws it (below).
 - **Its bounced light**: GoldSrc's light compiler bounced every light round the map into its lightmaps, and s&box's
@@ -406,6 +411,14 @@ a hundred disagree; its light 0.97 times as bright, 9 of 21 starts within a thir
 test_scripts (a closed room lit by its glowing crystals alone, `--mod msc`): 0.32 and 0.24 in a hundred; its light
 0.13 times as bright without the indirect light and 0.23 with it, correlated 0.99: a FAIL. The bounce is there, the
 crystals' own light is too weak; a shining texture's light has no fitted number yet, as the sun has.
+
+The shining textures as hlrad counts them (0.36.0): the shield added in linear light (its purple had covered s&box's
+view, and passed for light), each face's light reaching as far as hlrad's, a map's own `info_texlights` in the older
+compilers' measure. `TEXLIGHT_SCALE` fitted on stalkyard alone (8e-8: 0.96 times as bright, 9 of 21 starts within
+a third) had test_scripts 0.73 times as bright, where it had been 0.38 with the shield fixed; 1e-7, the number
+kept, has both through: test_scripts 0.82 (all 3 starts within a third), stalkyard 1.02 (5 of 21 within a third: its
+starts by its lamps brighter, from 1.2 to 1.5). test_scripts' likeness (0.99) is mostly its crystals' frame, in
+front of every view; its floor is darker than GoldSrc's, lit by the bounce alone.
 
 ## Not yet
 

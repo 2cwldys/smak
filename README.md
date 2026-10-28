@@ -6,7 +6,7 @@ short scripts with it, draws what it made to check its own work, and plays the r
 also takes them to **Source**: a GoldSrc model ported to Garry's Mod, with physics and a ragdoll, and since 0.30 a
 GoldSrc map, held to the original in the running game. Since 0.31 a GoldSrc model goes to **s&box** (Source 2) too.
 
-![version](https://img.shields.io/badge/version-0.35.0-blue)
+![version](https://img.shields.io/badge/version-0.36.0-blue)
 ![tests](https://img.shields.io/badge/tests-969%20passing-brightgreen)
 ![node](https://img.shields.io/badge/node-18%2B-339933)
 ![dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)

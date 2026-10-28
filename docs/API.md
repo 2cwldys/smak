@@ -879,7 +879,7 @@ map's monsters come: `spawnsOf`, `spawnsTable`; its character in numbers: `chara
   with every brush, textures, sky, starts (`starts`: a mod's start classes), lights and an indirect light volume); `writeSboxMap(port, out)`; `portMapToSboxFile(file, { out, ... })`. `meshBlob(polygons)` → a
   PolygonMesh's saved blob (base64) of `[{ corners, uvs, material }]`, each polygon its own corners, anticlockwise;
   `rotationOf([pitch, yaw, roll])` → Source's angles as s&box's quaternion text. `WORLD_TAG`, `CLIP_TAG`, `BRUSH_TAG`,
-  `INDIRECT_LIGHT`, `SUN_SCALE`, `SKY_LIGHT_SHARE`, `LIGHT_REACH`, `TEXLIGHT_AREA`.
+  `INDIRECT_LIGHT`, `SUN_SCALE`, `SKY_LIGHT_SHARE`, `LIGHT_REACH`, `TEXLIGHT_SCALE`, `TEXLIGHT_POWER`, `TEXLIGHT_REACH`.
 - `checkSboxMap(file, { project, name, folder, folders, starts, count, seed, allow, light, sbox, shot })` → `{ passed, faults,
   said, collision, light, port, shot }`: the map ported and held to the original in the editor. Its parts:
   `expectedMapOf(file, port, { count, seed })`, `mapProbeCode(scene, spots, floors)`, `compareSboxMap(expected, read,

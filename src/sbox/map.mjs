@@ -32,8 +32,8 @@
 // inner and outer half angles), `light_environment` a DirectionalLight, its colour also the sky's light
 // (SkyColor). A light's colour is GoldSrc's `_light` in linear light times brightness / 255 (lightOf, as the GMod
 // port's WORLDLIGHTS), and it reaches LIGHT_REACH units per the root of its brightness. A face whose texture
-// shines (Valve's maps' lights.rad, texlights.mjs) is drawn lit by itself and has a SpotLight before it, of its
-// value times its area over TEXLIGHT_AREA. The sun is SUN_SCALE times its colour, the sky's light SKY_LIGHT_SHARE
+// shines (Valve's maps' lights.rad, texlights.mjs, or the map's own info_texlights) is drawn lit by itself and has a
+// SpotLight before it, as strong as hlrad made it (TEXLIGHT_SCALE). The sun is SUN_SCALE times its colour, the sky's light SKY_LIGHT_SHARE
 // of it: GoldSrc's light compiler bounced the light and spread the sky's, which s&box's lights do not, and these
 // were fitted so that stalkyard's 21 starts look as bright as GoldSrc draws them with its lightmaps (mapcheck.mjs).
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -76,8 +76,23 @@ const INDIRECT_LIGHT_DENSITY = 8;
 const MASKED = 64;
 const ADDITIVE = 32;
 const FULLBRIGHT = 4;
-/** A texture light's face as a light of GoldSrc's brightness: its value times its area over this. */
-export const TEXLIGHT_AREA = 16384;
+/** A texture light's face as hlrad lights with it (lightmap.cpp CreateDirectLights, emit_surface): its value times its
+ * colour out of 255, its area, its texture's reflectivity (TEXLIGHT_REFLECT of its mean colour) over pi, falling off
+ * as the square of the distance; and hlrad stores a sample of that, doubled, to the power 0.55 (its colour gamma),
+ * where s&box shows light to the power 1 / 2.2. So s&box's light is TEXLIGHT_SCALE times hlrad's to the power
+ * TEXLIGHT_POWER (0.55 times 2.2), and reaches TEXLIGHT_REACH times the root of hlrad's: where hlrad's sample falls
+ * to one level in 255 (so a face's light no longer ends where a small face's brightness said: test_scripts' crystals
+ * stopped 35 to 192 units out, its walls 600 away black).
+ * A map's own info_texlights is taken as the compilers before VHLT's counted it, without the reflectivity and pi
+ * (their DLIGHT_SCALE 2 and LIGHTSCALE 1 where SDHLT's are 1 and 2): Valve's list (texlights.mjs) was calibrated
+ * under SDHLT, an info_texlights belongs to the ZHLT years. Measured (2026-10-27): with TEXLIGHT_SCALE fitted on
+ * stalkyard alone (8e-8: 0.96 as bright, 9 of 21 starts within a third), test_scripts came out 0.73 as bright, where
+ * the old face-as-a-lamp texlight left it 0.38 (0.44 with this reach); 1e-7 has both through: test_scripts 0.82,
+ * stalkyard 1.02 (5 of 21 within a third, its starts by its lamps brighter). */
+export const TEXLIGHT_SCALE = 1e-7;
+export const TEXLIGHT_POWER = 0.55 * 2.2;
+export const TEXLIGHT_REACH = Math.sqrt(2 * 256 ** (1 / 0.55 - 1));
+const TEXLIGHT_REFLECT = 0.7;
 /** A texture light shines from this far in front of its face, so that its face's own plane does not shadow it. */
 const TEXLIGHT_OFF = 2;
 /** And into this half angle, in degrees: all its side of the face, as GoldSrc's, short of the face's plane. */
@@ -240,13 +255,14 @@ export function portMapToSbox(file, { name, folder = PORT_FOLDER, folders = [], 
     for (const [key, value] of keys) {
       const [r, g, b, brightness] = numbersOf(value);
       if (key !== "classname" && key !== "origin" && brightness !== undefined)
-        shining.set(key.toLowerCase(), { name: key, rgb: [r, g, b], value: brightness });
+        shining.set(key.toLowerCase(), { name: key, rgb: [r, g, b], value: brightness, own: true });
     }
 
   // ── its textures ──
   const fromWads = texturesFor(bsp, searched, { pixels: true });
   if (fromWads.missing.length) warnings.push(`textures in no wad found, not drawn: ${fromWads.missing.slice(0, 8).join(" ")}${fromWads.missing.length > 8 ? ` and ${fromWads.missing.length - 8} more` : ""}`); // prettier-ignore
   const made = new Map(); // each material's inputs: an entity drawn otherwise makes its own variant of them
+  const reflects = []; // each texture's reflectivity, as hlrad has it
   const materials = bsp.textures.map((entry, index) => {
     const kind = textureKind(entry.name);
     if (entry.absent || kind.sky || kind.tool) return null;
@@ -259,6 +275,9 @@ export function portMapToSbox(file, { name, folder = PORT_FOLDER, folders = [], 
       base = `materials/${folder}/${materialName(found.wad.replace(/\.wad$/i, ""))}/${materialName(entry.name)}`;
     }
     let image = textureRgba(texture);
+    const sum = [0, 0, 0];
+    for (let p = 0; p < image.rgba.length; p += 4) for (let c = 0; c < 3; c++) sum[c] += image.rgba[p + c];
+    reflects[index] = sum.map((c) => ((c / (image.rgba.length / 4) / 255) * TEXLIGHT_REFLECT));
     let mask = null;
     if (kind.holes) {
       // a power of two each way: s&box's texture compiler makes no mipmaps of a mask whose sides are not
@@ -286,14 +305,17 @@ export function portMapToSbox(file, { name, folder = PORT_FOLDER, folders = [], 
     return `${base}.vmat`;
   });
   // a brush entity drawn added to what is behind it (rendermode 5, kRenderTransAdd), as bright as its renderamt
-  // says out of 255 and lit by nothing: its own variant of each material, made once
+  // says out of 255 and lit by nothing: its own variant of each material, made once. GoldSrc adds it on the screen's
+  // colours, s&box in linear light: its share in linear light (to the power 2.2), or a dark room behind it comes out
+  // washed in its colour (test_scripts' shield, renderamt 100: s&box's view of the room all purple, 2026-10-27)
   const additiveOf = (material, amount) => {
     const { base, mask } = made.get(material);
     const variant = `${base}_add${amount}.vmat`;
     const illum = `materials/${folder}/tools/white.png`;
+    const share = (amount / 255) ** 2.2;
     if (!files.some((f) => f.path === illum)) put(illum, WHITE_PNG);
     if (!files.some((f) => f.path === variant))
-      put(variant, vmatOf({ color: `${base}.png`, mask, illum, flags: ADDITIVE | FULLBRIGHT, tint: [amount / 255, amount / 255, amount / 255] })); // prettier-ignore
+      put(variant, vmatOf({ color: `${base}.png`, mask, illum, flags: ADDITIVE | FULLBRIGHT, tint: [share, share, share] })); // prettier-ignore
     return variant;
   };
 
@@ -341,7 +363,7 @@ export function portMapToSbox(file, { name, folder = PORT_FOLDER, folders = [], 
       const corners = facePolygon(bsp, face);
       polygons.push({ corners: [...corners].reverse(), uvs: faceUvs(bsp, face).reverse(), material: used.indexOf(material) }); // prettier-ignore
       const light = shining.get(texture.name.toLowerCase());
-      if (light) emitters.push({ texture: texture.name, light, corners: corners.map((p) => p.map((v, k) => v + at[k])), normal: faceNormal(bsp, face) }); // prettier-ignore
+      if (light) emitters.push({ texture: texture.name, light, reflect: reflects[texture.index], corners: corners.map((p) => p.map((v, k) => v + at[k])), normal: faceNormal(bsp, face) }); // prettier-ignore
     }
     if (!polygons.length) continue;
     const objectName = model ? `${classname} *${model}` : "worldspawn";
@@ -435,13 +457,16 @@ export function portMapToSbox(file, { name, folder = PORT_FOLDER, folders = [], 
     objects.push(gameObject(id, classname, { position: origin, rotation: rotationAlong(direction), components: [{ __type: "Sandbox.DirectionalLight", LightColor: `${vector(sun)},1`, SkyColor: `${vector(colour.map((c) => c * SKY_LIGHT_SHARE))},1`, Shadows: true }] })); // prettier-ignore
   });
   // the faces that shine, each a light before it, shining out of it
-  emitters.forEach(({ texture, light, corners, normal }, k) => {
+  const bounds = worldBounds(bsp);
+  const across = Math.hypot(...[0, 1, 2].map((c) => bounds.maxs[c] - bounds.mins[c]));
+  emitters.forEach(({ texture, light, reflect, corners, normal }, k) => {
     const area = polygonArea(corners);
     const middle = [0, 1, 2].map((c) => corners.reduce((sum, p) => sum + p[c], 0) / corners.length);
     const origin = middle.map((v, c) => v + normal[c] * TEXLIGHT_OFF);
-    const brightness = (light.value * area) / TEXLIGHT_AREA;
-    const colour = lightOf(new Map([["_light", `${light.rgb.join(" ")} ${brightness}`]]));
-    const reach = Math.sqrt(brightness) * LIGHT_REACH;
+    const hlrad = light.rgb.map((c, i) => light.value * (c / 255) * area * (light.own ? 1 : (reflect?.[i] ?? 0.5) / Math.PI)); // prettier-ignore
+    const colour = hlrad.map((c) => TEXLIGHT_SCALE * c ** TEXLIGHT_POWER);
+    // no farther than across the world: a bright lamp's sample is still one level across a whole map
+    const reach = Math.min(across, TEXLIGHT_REACH * Math.sqrt(Math.max(...hlrad)));
     lights.push({ classname: "texlight", texture, origin, colour, reach, direction: normal, inner: TEXLIGHT_CONE[0], outer: TEXLIGHT_CONE[1] }); // prettier-ignore
     objects.push(gameObject(`${mapName} texlight ${k}`, `texlight ${texture}`, { position: origin, rotation: rotationAlong(normal), components: [{ __type: "Sandbox.SpotLight", LightColor: `${vector(colour)},1`, Radius: +reach.toFixed(1), ConeInner: TEXLIGHT_CONE[0], ConeOuter: TEXLIGHT_CONE[1], Attenuation: 1, Shadows: true }] })); // prettier-ignore
   });

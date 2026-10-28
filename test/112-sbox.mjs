@@ -1231,11 +1231,20 @@ test("portMapToSbox: a brush entity blocks with its every brush, unseen; starts 
   const port = sbox.portMapToSbox(msc, { starts: ["ms_player_begin", "ms_player_spawn"] });
   const scene = JSON.parse(port.files.find((f) => f.path === port.scene).data);
   sure(scene.GameObjects.some((g) => g.Name === "ms_player_begin" && g.Components[0].__type === "Sandbox.SpawnPoint"), "ms_player_begin a start");
-  sure(port.lights.some((l) => l.classname === "texlight" && /smakgrate/i.test(l.texture)), "the grate shines, as its info_texlights says");
+  const grate = port.lights.find((l) => l.classname === "texlight" && /smakgrate/i.test(l.texture));
+  sure(grate, "the grate shines, as its info_texlights says");
+  // in the old compilers' measure: its colour as given, no reflectivity of the texture's; reaching as far as hlrad's
+  const [r, g] = grate.colour;
+  sure(Math.abs(g / r - (128 / 255) ** sbox.TEXLIGHT_POWER) < 1e-6, `its colour: ${grate.colour}`);
+  const world = smak.maps.worldBounds(smak.maps.readBsp(readFileSync(msc)));
+  const across = Math.hypot(...[0, 1, 2].map((c) => world.maxs[c] - world.mins[c]));
+  const hlrad = (r / sbox.TEXLIGHT_SCALE) ** (1 / sbox.TEXLIGHT_POWER);
+  sure(Math.abs(grate.reach - Math.min(across, sbox.TEXLIGHT_REACH * Math.sqrt(hlrad))) < 1e-6, `reach ${grate.reach}, red ${r}, across ${across}`); // prettier-ignore
   const drawn = scene.GameObjects.find((g) => g.Name === "func_wall *1").Components[0].Mesh.Materials[0];
   sure(drawn === "materials/smak/maps/tworooms_msc/mask_smakgrate_add100.vmat", drawn);
+  // its share added in linear light: (100 / 255) to the power 2.2
   const vmat = port.files.find((f) => f.path === drawn).data;
-  sure(/F_ADDITIVE_BLEND 1/.test(vmat) && /F_SELF_ILLUM 1/.test(vmat) && /g_vColorTint "\[0\.392157 0\.392157 0\.392157 0\.000000\]"/.test(vmat), vmat); // prettier-ignore
+  sure(/F_ADDITIVE_BLEND 1/.test(vmat) && /F_SELF_ILLUM 1/.test(vmat) && /g_vColorTint "\[0\.127530 0\.127530 0\.127530 0\.000000\]"/.test(vmat), vmat); // prettier-ignore
 });
 
 test("rotationOf: Source's angles as s&box's quaternion: yaw turns left about up, pitch looks down", () => {

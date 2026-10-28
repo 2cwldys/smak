@@ -3,6 +3,19 @@
 The newest first. A version that changes what a model's file looks like, or that a model made before needs
 mending for, says so under **Mind**.
 
+## 0.36.0 (2026-10-27)
+
+s&box, a map's light (`docs/SBOX.md`, "A map, as a scene"):
+- A brush entity in render mode 5 is added in linear light: its `renderamt` share to the power 2.2. test_scripts'
+  shield had washed s&box's whole view purple, and the check had counted that as the room's light (0.84, a false PASS).
+- A shining texture's light as hlrad counts it: its value times its colour, area and reflectivity over pi, made
+  s&box's light by `TEXLIGHT_SCALE` (1e-7) to the power 1.21, reaching where hlrad's falls to one level in 255 (it
+  had ended where a small face's brightness said: test_scripts' crystals 35 to 192 units out, its walls black). A
+  map's own `info_texlights` in the older compilers' measure, without the reflectivity and pi. `TEXLIGHT_AREA` is
+  gone; `TEXLIGHT_SCALE`, `TEXLIGHT_POWER` and `TEXLIGHT_REACH` are exported.
+- Measured: test_scripts' light 0.82 times as bright as GoldSrc's (PASS; it was 0.38 with the shield fixed),
+  stalkyard's 1.02 (PASS, 5 of 21 starts within a third where it had 9).
+
 ## 0.35.0 (2026-10-27)
 
 s&box: a map, as a scene (`docs/SBOX.md`, "A map, as a scene"; `src/sbox/map.mjs`, `mapcheck.mjs`):
