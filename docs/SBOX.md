@@ -1,4 +1,4 @@
-# s&box (Source 2): a GoldSrc model in s&box
+# s&box (Source 2): a GoldSrc model, and a map, in s&box
 
 A GoldSrc model (`.mdl`, version 10) is ported to s&box in one command:
 
@@ -73,7 +73,11 @@ animation's fps, looping and activity, a loop's travel, chrome worked out once),
 - **Attachments** on their bones; a view model's first, unnamed, `muzzle`.
 - **Textures** as `complex.shader`'s materials: the picture as the colour, no shine (GoldSrc lit a model by its
   normals alone), and the texture's flags as its features. Masked (64) is alpha-tested on a mask of its holes,
-  additive (32) is added to what is behind it, and fullbright (4) lights itself.
+  additive (32) is added to what is behind it, and fullbright (4) lights itself (its self-illumination mask a white
+  picture: given as a colour, `complex.shader` makes it a texture s&box does not have, and draws it red). A masked
+  texture is made a power of two each way, its picture opaque and a hole its neighbours' colour: s&box's texture
+  compiler makes no mipmaps of a mask whose sides are not, and the material fails while the model compiles
+  (Counter-Strike's four trees, Master Sword's two; none of Half-Life's has holes).
 
 ## Blends, in an animation graph
 
@@ -210,9 +214,14 @@ Measured on Half-Life's barney in s&box's editor, its bones read back while it p
 
 ## How a port is checked
 
-The compile is the first check: it ends in an error, or in a `.vmdl_c` with nothing it could not resolve. A model
-can still compile wrong, though (turned, its animations moving nothing), so the port is then held to its
-original in s&box's own editor:
+The compile is the first check: it ends in an error, or in a `.vmdl_c` with nothing it could not resolve and
+every material compiled. The compiler is given each material by name with the model: it compiles the first skin's
+with the model and another skin's not at all (s&box compiles it when it is first worn), and a material that fails
+leaves the model compiled and says so only in a texture's line. A compiled file counts only when this run wrote
+it. Where a project's folder is deep, the compiler's names for a material's generated textures run past Windows'
+260 characters ("Path Overflow", "Failed to write"), and the error says so: a project in a shorter folder compiles
+them. A model can still compile wrong (turned, its animations moving nothing, a texture lost), so the port is then
+held to its original in s&box's own editor:
 
 ```
 node bin/smak.mjs sbox-check <model.mdl> --project <project folder> [-o shot.png]
@@ -252,10 +261,27 @@ compiled model back in the editor and holds it to what the original says:
   other: s&box fires an event at the last frame of an animation held at its end not at all, and a looping one's each
   time round, as GoldSrc did.
 
+- **its materials**, each compiled by the editor (its `asset_compile` asked for every one): s&box draws one that did
+  not compile red, and says so nowhere else;
+- **how it looks** (`--no-look` leaves it out): drawn by s&box in a scene of its own (no light but a white ambient
+  one, so a texture shows as it is; ticked by the check, or the model stays in its rest pose), in its first
+  animation's first frame, from four views round it (its front, left and back, and its right from above, 256 pixels
+  square, 60 degrees across), and by the kit's own renderer (`render.mjs`, its texture as it is) from the same eyes.
+  Its silhouette must be the original's (95% of the model's pixels in either picture in the other, a pixel apart
+  at most) and its colours too, region by region in 16 by 16 (no more than 12% of the regions more than 80 apart, a
+  channel's mean). A chrome texture's pixels are left out of the colours: the kit draws chrome as GoldSrc does, from
+  where the eye is, and the port has it worked out once. A material not compiled, a texture lost or wrong, holes
+  filled, a large part missing or one too many, a model turned: none of these moves a bone, and each shows here.
+  Measured on Half-Life's 205 models: the least silhouette 97.6% (uplant2, a blade of grass), the most regions
+  apart 8.7% (ventgibs, a fine black and white texture seen edge on, which s&box's mipmaps make grey). Each of
+  their materials drawn red by the kit, as s&box draws one not compiled: 349 of the 480 that are a twentieth of the
+  model or more are caught, 213 of 241 of a fifth or more; an orange or red one drawn red (the HEV suit's
+  sleeves, flesh, blood) is the most often missed, and the editor's compile answer says it all the same.
+
 It talks to the editor through `sbox-cli` (which comes with s&box: `sbox/bin/managed/sbox-cli.exe`), over a local
 pipe, never the network. It uses the editor open on the project, or opens one and closes it after (a minute). Its
 probe object is made in the scene being edited, far below it, and removed before the check ends; nothing is saved.
-`-o`: the editor's picture of the model in its first animation. Ends in `PASS` or `FAIL`.
+`-o`: the kit's four pictures of the original above s&box's of the port. Ends in `PASS` or `FAIL`.
 
 Measured so: barney, houndeye, scientist and hgrunt (918 poses) are within 0.025 units of GoldSrc's places at every
 bone, walks and runs included (their travel taken out by s&box gives GoldSrc's pose exactly). s&box wraps a looping
@@ -278,6 +304,109 @@ events (agrunt, barney, bullsquid, garg, gman, hgrunt, islave, loader, scientist
 zombie); every sound as loud as its original 10 ms by 10 ms correlated 0.993 or more (all but v_357 0.998 or more), every event
 heard. holo.mdl's sounds are not in Steam's Half-Life, and its events stay generic.
 
+## A map, as a scene
+
+A GoldSrc map (`.bsp`, version 30) is made an s&box scene in one command, and held to the original in the editor in
+another:
+
+```
+node bin/smak.mjs sbox-map <map.bsp> -o <project>/Assets [--mod msc]
+node bin/smak.mjs sbox-map-check <map.bsp> --project <project folder> [--mod msc] [-o shot.png]
+```
+
+A scene, not a Hammer map (`.vmap`): a `.vmap` is Hammer's own DMX (half a megabyte for s&box's flat test map), lit
+by s&box's compiler, and would look like an s&box map; a loader that reads the BSP when it loads, as s&box's Quake
+mount does, is engine code that reaches others only by a pull request to Facepunch. A scene is JSON that the kit
+writes, the editor opens and edits, and a game loads.
+
+What it makes, under `-o`:
+
+| | |
+| --- | --- |
+| `scenes/smak/<map>.scene` | the map: a game object for the world, one for each brush entity, the clip brushes, each start and light, the sky |
+| `materials/smak/<wad>/<texture>.png`, `.vmat` | a wad's textures, shared by the maps that wear them (a holed one's holes in `_mask.png`) |
+| `materials/smak/maps/<map>/<texture>.png`, `.vmat` | a texture the map carries inside itself |
+| `materials/smak/sky/<skyname>.png`, `.vmat` | its sky: the six sides one picture round the world (s&box's `sky.shader` reads it so) |
+| `materials/smak/tools/` | the clip brushes' material; a white picture, a self-lit texture's mask |
+
+- **Its faces** as the scene editor's own meshes (`MeshComponent`): drawn, collided with, and editable as a mapper
+  edits s&box's meshes. Each face of the BSP, as compiled, is a polygon of its own: the world's in one mesh, each
+  brush entity's (`model` `*N`) in its own at its `origin`, solid with every one of its brushes, faces never drawn
+  too (MSC's test_scripts has a shield round its start, a cage whose lid is never drawn), as hidden solids under it
+  tagged `brush`; one in render mode 5 drawn additive at its `renderamt`. The kit writes the mesh as s&box saves it (a half-edge
+  mesh in a blob: `PolygonMesh.Serialize.cs`): each side of a polygon an edge inside it and its twin outside, each
+  half-edge with the texture coordinate of the corner it points to. No corner is shared, so no edge is shared by three
+  faces, which a BSP's T-junctions would make (stalkyard's 2502 faces, none refused). GoldSrc walks a face clockwise,
+  s&box anticlockwise: the corners are turned round. Units and axes are the same in both. Sky faces and the
+  compilers' tool textures (clip, origin, null, hint, skip, aaatrigger) are not drawn; `func_illusionary` collides
+  with nothing.
+- **Its clip brushes**, rebuilt from the player's hulls as `gmod-map` rebuilds them (`clipBrushesOf`): GoldSrc keeps
+  no clip brush but in the hulls. Each a mesh of its own that collides as its hull (solid all through: a mesh
+  collides only at its faces) and is seen in the editor only (`HideInGame`), under a game object `clip`.
+- **Its textures** as PNG and `.vmat`, as a model's. A holed one (`{`) is alpha-tested on a mask, its picture
+  opaque and both made a power of two each way: s&box's texture compiler makes no mipmaps of a mask whose sides are
+  not, and the material fails (stalkyard's `{duct_vnt2`, 64 by 48).
+- **Its starts** (`info_player_start`, `info_player_deathmatch`, or a mod's: `--mod msc` reads Master Sword's
+  `ms_player_begin` and `ms_player_spawn`) as `SpawnPoint`s, at their feet (GoldSrc's player
+  origin is the middle of its box, 36 above them), turned their way.
+- **Its lights**, as s&box's: GoldSrc's own light is baked in the lightmaps, which a mesh has no place for. `light`
+  a `PointLight`, `light_spot` a `SpotLight` (`_cone` and `_cone2` its inner and outer half angles), `light_environment`
+  a `DirectionalLight`, its colour also the sky's light (`SkyColor`). A light's colour is its `_light` in linear light
+  times brightness / 255, as the GMod port's world lights; it reaches 32 units per the root of its brightness. A face
+  whose texture shines (Valve's maps were lit by a lights.rad that never shipped; `texlights.mjs` has it as
+  stevenlafl calibrated it) is drawn lit by itself and has a `SpotLight` before it, of its value times its area over
+  16384 (a map's `info_texlights` says which of its textures shine, and how). The sun is 4 times its colour and the sky's light 0.75 of it: GoldSrc's light compiler bounced light and
+  spread the sky's, s&box's lights do neither, and these two were fitted so that stalkyard looks as bright as GoldSrc
+  draws it (below).
+- **Its bounced light**: GoldSrc's light compiler bounced every light round the map into its lightmaps, and s&box's
+  lights are direct only. An `IndirectLightVolume` (s&box's DDGI: a grid of probes, 8 per 1024 units) over the
+  world, 16 units past it each way, the clip brushes left out of it, bounces them; it lights moving models too.
+  It is baked in the editor (its button, or `sbox-map-check`), into `scenes/<folder>/<map>_scene_data/ddgi/`.
+- **A self-lit texture** (a model's fullbright one too) has a white picture as its self-illumination mask: given as
+  a colour, `complex.shader` makes it a texture s&box does not have, and the face is drawn red.
+
+Not yet: doors, buttons, trains and other brushes that move (drawn and solid where they start), triggers and
+ladders (not drawn, so not there), items and weapons, `ambient_generic` and the other sounds a map plays, water,
+animated and scrolling textures, a brush entity's render modes other than 5, decals.
+
+### How a map's port is checked
+
+`sbox-map-check` ports the map into the project and opens the scene in the project's editor (a tab already open on
+it closed first: a tab shows the scene as it was when opened), then holds it to the GoldSrc map:
+
+- **its meshes**: every one the port wrote, with its faces (none refused as bad), its materials, each compiled (the
+  editor's `asset_compile` asked for every one: a failure is a fault), and what it collides as; the sky, the starts
+  and the lights where they were put, each light shining its way;
+- **where a player is blocked**, as `gmod-collision` holds a GMod port (`source/collision.mjs`): `--count` spots inside
+  the map (5000, the same each run for a `--seed`), each asked of GoldSrc's hull 1 (standing) and hull 3 (ducked)
+  and of s&box's physics: the player's box (32 by 32 by 72, 36 ducked) traced where it stands, against the world, its clip
+  brushes and the solid brush entities (tagged `world` and `brush`; GoldSrc's side counts a brush entity's brushes as
+  blocking too). A spot blocked only in s&box where the drawn world is inside the box is
+  GoldSrc's compiled hull being loose, and not counted. PASS when the rest disagree on no more than `--allow` (0.5) in a
+  hundred, standing and ducked;
+- **each start's floor**: a ray down from where GoldSrc's player stands, meeting the floor where GoldSrc's hull 0 has
+  it, within half a unit, and the player's box standing on it not stuck;
+- **its light** (`--no-light` leaves it out): its indirect light baked (the scene saved, as s&box bakes only a saved
+  scene), then from each start's eye (64 above its feet), a picture of s&box's, by a
+  camera of the check's own with no tonemapping (the clip brushes hidden), beside GoldSrc's, drawn with its
+  lightmaps as the game draws them (`drawMap`), the same size and field of view (640 by 360, 80 degrees). Each cut in
+  16 by 9 regions: the whole as bright as GoldSrc's (the views' ratios' geometric mean 0.8 to 1.25), and lit in the
+  same places (each view's regions correlated with GoldSrc's, 0.7 or more on average). `-o`: the first start's two
+  pictures side by side.
+
+Measured (2026-10-27), Half-Life's stalkyard: 52 meshes (the world, 20 brush entities and 31 clip brushes), 2687
+faces, 78 materials, its night sky, 21 starts and 86 lights (44 of the map's, 42 of its shining faces). Where a player
+is blocked: 0.20 in a hundred disagree standing, 0.22 ducked (its GMod port, 0.10 and 0.18); without the clip
+brushes, 2.90 and 1.96, nearly all spots high over the walls, where clip keeps players in. Every start's floor where
+GoldSrc's is. Its light 1.04 times as bright as GoldSrc's, 17 of 21 starts within a third either way, lit in the same
+places correlated 0.85. The light's two fitted numbers come from this one map; another map may want them otherwise.
+
+Again with the brush entities' every brush and the indirect light (0.35.0): 71 meshes, 2800 faces; 0.16 and 0.18 in
+a hundred disagree; its light 0.97 times as bright, 9 of 21 starts within a third either way, correlated 0.82. MSC's
+test_scripts (a closed room lit by its glowing crystals alone, `--mod msc`): 0.32 and 0.24 in a hundred; its light
+0.13 times as bright without the indirect light and 0.23 with it, correlated 0.99: a FAIL. The bounce is there, the
+crystals' own light is too weak; a shining texture's light has no fitted number yet, as the sun has.
+
 ## Not yet
 
-- Maps (and with them, the sounds a map plays: `ambient_generic`, sentences, a texture's steps).
+- A map's moving brushes, items and sounds (above).

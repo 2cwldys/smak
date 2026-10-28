@@ -3,6 +3,51 @@
 The newest first. A version that changes what a model's file looks like, or that a model made before needs
 mending for, says so under **Mind**.
 
+## 0.35.0 (2026-10-27)
+
+s&box: a map, as a scene (`docs/SBOX.md`, "A map, as a scene"; `src/sbox/map.mjs`, `mapcheck.mjs`):
+- `sbox-map` makes a GoldSrc map an s&box scene: each face of the BSP a polygon of the scene editor's own meshes
+  (MeshComponent, written as s&box saves one: drawn, collided with, editable), the world's in one, each brush
+  entity's in its own; its clip brushes rebuilt from the player's hulls (`clipBrushesOf`, now shared with
+  `gmod-map`, whose maps come out byte for byte as before), solid and seen in the editor only; its textures, its sky
+  as one picture round the world, its starts as SpawnPoints, its lights as s&box's, and a face whose texture shines
+  lit by itself with a light before it.
+- `sbox-map-check` opens it in the editor and holds it to the GoldSrc map: its meshes and materials (each compiled),
+  where a player is blocked at 5000 spots standing and ducked, each start's floor, and its light pictured from each
+  start beside GoldSrc's lightmaps.
+- Its bounced light: GoldSrc's light compiler bounced every light round the map into its lightmaps, and s&box's
+  lights are direct only (MSC's test_scripts, a closed room lit by glowing crystals, came out an eighth as bright).
+  Each map gets an `IndirectLightVolume` (s&box's DDGI) over the world, the clip brushes out of it, and
+  `sbox-map-check` bakes it before picturing the light.
+- A mod's own starts (`--mod msc`: `ms_player_begin`, `ms_player_spawn`), for both commands; a map's
+  `info_texlights` read as its shining textures.
+- A brush entity is solid with every one of its brushes, faces never drawn too (test_scripts' shield, a cage with an
+  undrawn lid: the player walked through its top), as hidden solids under it tagged `brush`; render mode 5 drawn
+  additive at its `renderamt`.
+- The check: a brush entity's brushes count as blocking on GoldSrc's side as on s&box's, the traces ask for the world
+  and the brush entities, and a tab already open on the scene is closed first (it showed the scene as it was when
+  opened, not the new port).
+- Measured on stalkyard: blocked otherwise than in GoldSrc at 0.16 and 0.18 in a hundred of the spots (GMod: 0.10,
+  0.18); its light 0.97 times as bright, correlated 0.82 (without the indirect light, 1.04 and 0.85; 9 starts of
+  21 within a third either way, where 17 were). On test_scripts: 0.32 and 0.24 in a hundred; its light 0.23 times as
+  bright, a FAIL: the bounce now there, its glowing textures' own light is too weak, and not yet fitted.
+- A fullbright texture's material (a model's too) has a white picture as its self-illumination mask: as a colour,
+  s&box drew it red.
+
+s&box: a port's materials, and how it looks (`docs/SBOX.md`, "How a port is checked"):
+- A masked texture whose sides are not powers of two is made so (its picture opaque, its holes in its mask): s&box
+  made no mipmaps of it and the material failed, the model compiling all the same (Counter-Strike's four trees,
+  Master Sword's two).
+- `sbox-port`'s compile names every material, and fails, saying which, when one is not compiled by the run: the
+  compiler left a model's other skins' materials uncompiled (Half-Life's can, chumtoad, hgrunt, houndeye, icky,
+  scientist and bullsquid), and a deep project folder runs the generated textures' paths past Windows' 260
+  characters, which the error now says.
+- `sbox-check` asks the editor to compile each material, and pictures the model: s&box's drawing in a scene of its
+  own beside the kit's renderer, from four views, its silhouette and colours held region by region (`--no-look`).
+  Its limits measured on Half-Life's 205 models, all of which pass (`-o` writes the pictures side by side); each of
+  their materials drawn red, as s&box draws one not compiled, is caught 349 times in 480 where it is a twentieth of
+  the model or more.
+
 ## 0.34.0 (2026-10-26)
 
 s&box: a model's sounds, as `.sound` assets (`docs/SBOX.md`, "Its sounds"; `src/sbox/sound.mjs`):

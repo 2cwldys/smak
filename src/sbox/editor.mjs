@@ -4,6 +4,8 @@
 //   sboxCall(project, tool, args, { sbox, timeout })   -> what the tool answered (JSON read, else its text)
 //   runCsharp(project, code, { sbox, timeout })         -> what the code returned
 //   editorFor(project, { sbox, wait })                  -> { opened, close() }: the project's editor, opened if none is
+//   compileAssets(project, paths, { sbox })             -> the paths the editor's asset_compile could not compile
+//   compileFailures(answered, paths)                     the same, read from call_tools' answers
 //
 // sbox-cli talks to an editor over a local named pipe, never the network. `--call` connects, calls one tool and
 // disconnects; the editor keeps running. It finds the editor by the project the call is made from (`cwd`), so a
@@ -112,4 +114,19 @@ export async function editorFor(project, { sbox, wait = OPEN_TIMEOUT } = {}) {
   }
   await close();
   throw new Error(`the s&box editor did not answer within ${Math.round(wait / 1000)} s for ${folder}`);
+}
+
+/** Which of `paths` the editor's asset_compile answers (call_tools', in order) say did not compile. */
+export function compileFailures(answered, paths) {
+  const text = typeof answered === "string" ? answered : JSON.stringify(answered);
+  const said = [...text.matchAll(/\\?"Success\\?"\s*:\s*(true|false)/g)].map((m) => m[1] === "true");
+  if (said.length !== paths.length) return paths.filter((p) => !text.includes(p)).concat(said.length < paths.length ? [`(${paths.length - said.length} not answered)`] : []); // prettier-ignore
+  return paths.filter((_, k) => !said[k]);
+}
+
+/** `paths` (assets of the project) compiled by the editor in one call; returns those it could not compile. */
+export function compileAssets(project, paths, options) {
+  if (!paths.length) return [];
+  const answered = sboxCall(project, "call_tools", { calls: paths.map((path) => ({ name: "asset_compile", arguments: { path } })) }, options); // prettier-ignore
+  return compileFailures(answered, paths);
 }

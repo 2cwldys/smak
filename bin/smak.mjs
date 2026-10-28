@@ -3693,6 +3693,7 @@ async function sboxCheck({ command, file, flags }) {
       ...sboxPortOptions(command, flags),
       perSequence: numberOf(flags, "frames"),
       tolerance: numberOf(flags, "tolerance"),
+      look: flags.look !== false,
       shot: flags.o,
     }),
   );
@@ -3702,7 +3703,65 @@ async function sboxCheck({ command, file, flags }) {
     passed: result.passed,
     said: result.passed ? `whole in s&box: ${result.said.join("; ")}` : `${faults.length} things not as the original has them`,
     shown: faults,
-    look: result.shot ? `look at ${result.shot}: the model in s&box's editor, in its first animation` : undefined,
+    look: result.shot ? `look at ${result.shot}: the original drawn by the kit (above) and the port by s&box (below), four views` : undefined,
+  });
+  process.exit(result.passed ? 0 : 1);
+}
+
+/**
+ * sbox-map: a GoldSrc map made an s&box scene (src/sbox/map.mjs): its faces as the scene editor's meshes, its
+ * textures, sky, clip brushes, starts and lights, under -o (a project's Assets folder).
+ */
+async function sboxMap({ command, file, flags, listed }) {
+  const out = need(command, flags.o, "-o <folder>: an s&box project's Assets folder (scenes/ and materials/ under it)");
+  // --mod: the game's own start classes (MSC's ms_player_spawn and ms_player_begin)
+  const mod = await profileOf(flags, listed);
+  const result = smak.sbox.portMapToSboxFile(
+    existing(file),
+    defined({ out, name: flags.name, folder: flags.folder, folders: flags.game ? [existingFolder(flags.game)] : undefined, starts: mod?.starts }),
+  );
+  const f = result.facts;
+  const warnings = result.warnings.map((warning) => `WARN  ${warning}`);
+  const clips = result.meshes.filter((m) => m.collision === "Hull").length;
+  const made = `${f.faces} faces in ${f.meshes - clips} meshes, ${clips} clip brushes, ${f.materials} materials, sky ${f.sky ?? "none"}, ${f.spawns} ${f.spawns === 1 ? "start" : "starts"}, ${f.lights} ${f.lights === 1 ? "light" : "lights"}`; // prettier-ignore
+  answered(command, file, flags, {
+    detail: [`      ${made}`, `      the scene: ${join(out, result.scene)}`, ...warnings],
+    passed: true,
+    said: `written: ${result.scene} (${made})${warnings.length ? `; ${warnings.length} ${warnings.length === 1 ? "warning" : "warnings"}` : ""}`, // prettier-ignore
+    shown: warnings,
+  });
+}
+
+/**
+ * sbox-map-check: a map's port opened in s&box's editor and held to the GoldSrc map (src/sbox/mapcheck.mjs): its
+ * meshes and materials, where a player is blocked, its starts' floors, and its light pictured beside GoldSrc's.
+ */
+async function sboxMapCheck({ command, file, flags, listed }) {
+  const project = need(command, flags.project, "--project <folder>: the s&box project the port goes in (its .sbproj's folder)");
+  const mod = await profileOf(flags, listed);
+  const result = await smak.sbox.checkSboxMap(
+    existing(file),
+    defined({
+      project,
+      name: flags.name,
+      folder: flags.folder,
+      folders: flags.game ? [existingFolder(flags.game)] : undefined,
+      starts: mod?.starts,
+      count: numberOf(flags, "count"),
+      seed: numberOf(flags, "seed"),
+      allow: numberOf(flags, "allow"),
+      light: flags.light !== false,
+      sbox: flags.sbox,
+      shot: flags.o,
+    }),
+  );
+  const faults = result.faults.map((fault) => `ERROR ${fault}`);
+  answered(command, file, flags, {
+    detail: [...result.said.map((line) => `      ${line}`), `      the editor: ${result.opened ? "opened for the check, and closed" : "the one open on the project"}`, ...faults], // prettier-ignore
+    passed: result.passed,
+    said: result.passed ? `whole in s&box: ${result.said.join("; ")}` : `${faults.length} things not as the GoldSrc map has them`,
+    shown: faults,
+    look: result.shot ? `look at ${result.shot}: GoldSrc's view from the first start (left) beside s&box's (right)` : undefined,
   });
   process.exit(result.passed ? 0 : 1);
 }
@@ -4825,7 +4884,7 @@ const COMMANDS = {
     run: sboxCheck,
     own: true,
     help: `  sbox-check <mdl> --project <folder> [-o shot.png] [--name n] [--folder smak] [--kind ...] [--collision ...] [--surfaceprop s] [--mass kg]
-                              [--frames 2] [--tolerance 0.1] [--sbox <folder>]
+                              [--frames 2] [--tolerance 0.1] [--no-look] [--sbox <folder>]
                                             a model's port (sbox-port's, in the project's Assets) read back in s&box's own editor
                                             and held to the original: every bone under its parent, every animation of its length,
                                             the bodygroups, skins, attachments and hit boxes, and each animation stopped at
@@ -4837,10 +4896,44 @@ const COMMANDS = {
                                             the poses inside its joints' limits, and dropped onto a floor (it comes to rest, its
                                             joints together). Its sounds: each .sound as the editor compiled it, as long, as far
                                             heard and as loud, 10 ms by 10 ms, as the original; played, a loop still playing
-                                            after its length; and each animation played through, its sound events heard. Give it
-                                            the port's options (--name, --collision...). Uses the
-                                            editor open on the project, else opens one (sbox-cli, which comes with s&box) and
-                                            closes it after. -o: the editor's picture of it. Ends in PASS or FAIL.`,
+                                            after its length; and each animation played through, its sound events heard. Every
+                                            material compiled by the editor (one that is not, s&box draws red). How it looks
+                                            (--no-look: not pictured): drawn by s&box from four views round it in a scene of its
+                                            own, and by the kit's own renderer from the same eyes: its silhouette and its colours,
+                                            region by region, the original's. Give it the port's options (--name, --collision...).
+                                            Uses the editor open on the project, else opens one (sbox-cli, which comes with s&box)
+                                            and closes it after. -o: the two rows of pictures. Ends in PASS or FAIL.`,
+  },
+  "sbox-map": {
+    run: sboxMap,
+    own: true,
+    help: `  sbox-map <bsp> -o <Assets folder> [--name n] [--folder smak] [--game <mod folder>] [--mod msc]
+                                            a GoldSrc map made an s&box scene (scenes/<folder>/<name>.scene), under -o, an s&box
+                                            project's Assets folder: each face of the BSP a polygon of the scene editor's own
+                                            meshes (MeshComponent: drawn, collided with, editable), the world's in one, each
+                                            brush entity's in its own at its origin; its clip brushes rebuilt from the player's
+                                            hulls (as gmod-map's), solid, seen in the editor only; its textures as PNG and .vmat
+                                            (a wad's under materials/<folder>/<wad>/, shared), its sky one picture round the world;
+                                            its starts as SpawnPoints at their feet; its lights as s&box's (light, light_spot,
+                                            light_environment), and a face whose texture shines (Valve's lights.rad) lit by
+                                            itself with a light before it. --game: the mod's folder, for its wads and sky. --mod: a
+                                            profile (msc, ts, or a file), whose start classes the starts are. Not yet:
+                                            doors, buttons and other moving brushes (drawn where they start), items, sounds.`,
+  },
+  "sbox-map-check": {
+    run: sboxMapCheck,
+    own: true,
+    help: `  sbox-map-check <bsp> --project <folder> [-o shot.png] [--name n] [--folder smak] [--game <mod folder>] [--mod msc]
+                              [--count 5000] [--seed 1] [--allow 0.5] [--no-light] [--sbox <folder>]
+                                            the map ported (sbox-map's, into the project's Assets) and held to the GoldSrc map in
+                                            s&box's own editor: every mesh with its faces and its materials compiled, the sky, the
+                                            starts and lights where they were; where a player is blocked, at --count spots
+                                            standing and ducked (GoldSrc's hulls against s&box's physics; within --allow in a
+                                            hundred, as gmod-collision); each start's floor where GoldSrc's is; and its light,
+                                            pictured from each start beside GoldSrc's lightmaps as the game draws them, as bright
+                                            and lit in the same places. Uses the editor open on the project, else opens one and
+                                            closes it after. -o: GoldSrc's view from the first start beside s&box's. Ends in PASS
+                                            or FAIL.`,
   },
   "gmod-rcon": {
     run: gmodRcon,

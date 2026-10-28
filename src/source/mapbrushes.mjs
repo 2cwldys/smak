@@ -6,6 +6,7 @@
 //   brushesOfClipHull(bsp, head, half, mins, maxs)     the brushes of a clip hull, shrunk back to the drawn shape
 //   clipContents(bsp, head, point)                     GoldSrc's contents at a point of a clip hull
 //   clipOutsideHull(bsp, brush, head, half)            how much of a rebuilt clip brush, grown, leaves a hull
+//   clipBrushesOf(bsp)                                 the world's clip brushes: those of hulls 1 and 3 open in hull 0
 //
 // THE DRAWN TREE (hull 0). Each of its solid or liquid leaves is the convex region the planes on the way down to it
 // cut out, so each becomes one brush: those planes facing out of it, less the ones that do not touch it, plus
@@ -16,10 +17,17 @@
 // them into the player's hulls only, each brush first grown by the player's box. Each solid region of a hull, its
 // sides that face open space moved back in by the box's reach along them, is the brush again.
 
+import { leafAt } from "../maps/bsp.mjs";
+
 const ON_EPSILON = 0.01;
 const BIG = 65536;
 const BOUNDS_MARGIN = 64;
 const GS_SOLID = -2;
+// GoldSrc's contents (bspfile.h) a drawn leaf has, other than open
+const GS_FILLED = new Set([-2, -3, -4, -5, -6]);
+// half the player's standing and ducked boxes, which qcsg grew hulls 1 and 3's brushes by
+const PLAYER_HALF = [16, 16, 36];
+const DUCKED_HALF = [16, 16, 18];
 
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
@@ -345,4 +353,47 @@ function withBevels(sides, mins, maxs, windings = []) {
         }
     }
   return out;
+}
+
+/**
+ * The clip brushes of a map's world, rebuilt from hulls 1 and 3 (brushesOfClipHull): those open in hull 0, where
+ * the drawn world is not; the rest are the world's own, already solid. Returns brushesOfClipHull's.
+ */
+/**
+ * A brush entity's solids (model `model`, 1 and up) as the mapper drew them, from its standing hull: every one,
+ * the faces it never draws too (a NULL-textured lid on a cage, solid in GoldSrc whatever is drawn). Returns
+ * `[{ planes, points, mins, maxs }]` as `brushesOfClipHull`, in the model's own space.
+ */
+export function entityBrushesOf(bsp, model) {
+  const { headNodes, mins, maxs } = bsp.models[model];
+  return headNodes[1] >= 0 ? brushesOfClipHull(bsp, headNodes[1], PLAYER_HALF, mins, maxs) : [];
+}
+
+export function clipBrushesOf(bsp) {
+  const world = bsp.models[0];
+  const openInDrawn = (p) => {
+    const leaf = leafAt(bsp, p);
+    return leaf !== 0 && !GS_FILLED.has(bsp.leaves[leaf].contents);
+  };
+  const SAMPLES = [0.1, 0.3, 0.5, 0.7, 0.9];
+  // from both the standing and the ducked hull: a clip brush on the floor merges into the floor's growth in hull 1
+  // for 36 units up, where hull 3 loses only 18 (a balcony's fence came out of hull 1 a 4 unit sliver a ducked
+  // player passed under)
+  return [
+    ...brushesOfClipHull(bsp, world.headNodes[1], PLAYER_HALF, world.mins, world.maxs),
+    ...brushesOfClipHull(bsp, world.headNodes[3], DUCKED_HALF, world.mins, world.maxs),
+  ].filter((b) => {
+    for (const x of SAMPLES)
+      for (const y of SAMPLES)
+        for (const z of SAMPLES) {
+          const p = [x, y, z].map((f, k) => b.mins[k] + (b.maxs[k] - b.mins[k]) * f);
+          if (b.planes.every((pl) => dot(pl.normal, p) - pl.dist < -0.25) && openInDrawn(p)) return true;
+        }
+    return false;
+  })
+    // a true clip brush grown by either player's box lies inside that player's hull; a piece of a wall's growth
+    // that one hull's rebuild kept does not. 10% let by, for the trees' rounding: at 2% clip of TS's bikini was
+    // lost (32 spots blocked only in GoldSrc where no filter leaves 24), at none one of c1a0's; at 10% none
+    // measured on Half-Life's eight maps or bikini
+    .filter((b) => clipOutsideHull(bsp, b, world.headNodes[1], PLAYER_HALF) <= 0.1 && clipOutsideHull(bsp, b, world.headNodes[3], DUCKED_HALF) <= 0.1); // prettier-ignore
 }

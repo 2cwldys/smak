@@ -25,6 +25,10 @@ const COMPILER = ["bin", "win64", "resourcecompiler.exe"];
 /** How long a compile may take, in milliseconds. */
 const TIMEOUT = 300_000;
 /** The compiler's summary: "OK: 1 compiled, 0 failed, 0 skipped" or "ERROR: 0 compiled, 1 failed...". */
+/** A path this long, or longer, in what the compiler said is near Windows' limit of 260 with the name it adds. */
+const LONG_PATH = 230;
+/** A compiled file written up to this long before the run began (in ms) is the run's: file times are coarse. */
+const FRESH_SLACK = 2000;
 const SUMMARY = /^\s*(OK|WARNING|ERROR):\s*(\d+) compiled, (\d+) failed/;
 /** The lines of the vulkan layers and the like a run prints whatever it compiles. */
 const NOISE = /^(Layer |VK_EXT|Writing Vulkan|Unable to rename|CDataModel|Leaking )/;
@@ -78,18 +82,45 @@ function runCompiler(engine, assets, sources, timeout) {
 /**
  * The .vmdl at `vmdl` (a path under `assets`, as the model names its files: models/smak/barney.vmdl) compiled.
  * Returns { compiled (the .vmdl_c's path), said (every line the compiler printed, but its noise), notes (what it
- * said of the model), took (ms) }; throws, with the compiler's words, when the compile failed.
+ * said of the model), took (ms) }; throws, with the compiler's words, when the compile failed. `materials`: the
+ * .vmat files the model wears (paths under `assets`), each of which must be compiled beside it too: the compiler
+ * compiles them with the model, and one that fails leaves the model compiled and says so only in a texture's line
+ * (Counter-Strike's pi_tree1, its branches' masks 256 by 206: "Cannot filter non-power-of-two texture").
  */
-export function compileVmdl(assets, vmdl, { sbox, timeout = TIMEOUT } = {}) {
+export function compileVmdl(assets, vmdl, { sbox, timeout = TIMEOUT, materials = [] } = {}) {
   const engine = sbox ?? findSbox();
   const source = join(resolve(assets), vmdl);
   if (!isFile(source)) throw new Error(`compileVmdl: no ${source}`);
-  const { result, said, took } = runCompiler(engine, assets, [source], timeout);
+  // its materials named too: the compiler compiles the model's first skin's with it, and another skin's not at all
+  // (the tests' portable thing's skin_two), which s&box then compiles when it is first worn
+  const named = materials.map((material) => join(resolve(assets), material)).filter(isFile);
+  const since = Date.now() - FRESH_SLACK;
+  const { result, said, took } = runCompiler(engine, assets, [source, ...named], timeout);
+  // a compiled file this run wrote: one of an earlier run may be there, and a failed compile leaves it
+  const fresh = (file) => {
+    try {
+      return statSync(file).mtimeMs >= since;
+    } catch {
+      return false;
+    }
+  };
   const notes = said.filter((line) => /^\s*models\/.*:\s/.test(line)).map((line) => line.trim());
   const summary = said.map((line) => line.match(SUMMARY)).find(Boolean);
   const compiled = `${source}_c`;
-  if (result.status !== 0 || !summary || Number(summary[3]) > 0 || !isFile(compiled))
+  const uncompiled = materials.filter((material) => !fresh(`${join(resolve(assets), material)}_c`));
+  // the run fails when a material does (exit code 1, its generated textures counted as failed too): the model's
+  // own failure is its .vmdl_c not written, or a failure with every material written
+  if (!summary || !fresh(compiled) || (!uncompiled.length && (result.status !== 0 || Number(summary[3]) > 0)))
     throw new Error(`resourcecompiler did not compile ${vmdl} (exit code ${result.status})${notes.length ? `: ${notes.slice(0, 8).join("; ")}` : `; its last lines: ${said.slice(-5).join(" | ")}`}`); // prettier-ignore
+  if (uncompiled.length) {
+    const why = said.filter((line) => /error|cannot|failed/i.test(line)).map((line) => line.trim());
+    // the compiler names a material's generated textures after it, under the project: a deep project folder runs
+    // past Windows' 260 characters ("Path Overflow", "Failed to write": pi_tree3's japanese_tree_round_02 and
+    // v_9mmhandgun's rubberglovechrome under a temp folder's project)
+    const long = why.some((line) => /Path Overflow/i.test(line) || (line.match(/[A-Za-z]:[\\/][^\s"']+/g) ?? []).some((path) => path.length >= LONG_PATH)); // prettier-ignore
+    const deep = long ? ` (a path ran past Windows' 260 characters: a project in a shorter folder compiles them)` : "";
+    throw new Error(`resourcecompiler compiled ${vmdl} but not ${uncompiled.length} of its materials${deep}: ${uncompiled.slice(0, 6).join(", ")}${why.length ? `; it said: ${[...new Set(why)].slice(0, 4).join(" | ")}` : ""}`); // prettier-ignore
+  }
   return { compiled, said, notes, took };
 }
 

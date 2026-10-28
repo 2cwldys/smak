@@ -417,8 +417,41 @@ editor open on the project is used, else one is opened and closed. All 210 of Ha
 shapes and joints, held in its physics by sbox-check, `docs/SBOX.md`); blends as an animation graph: done (a
 selector on `sequence`, a blend node on `blend_xr` and the like, held to GoldSrc's slerped blends by sbox-check);
 sounds as `.sound` assets: done (a model's event sounds,
-heard as GoldSrc heard them, their loops in a `.meta`; read back, played and heard by sbox-check); then the kit's own models built
-for s&box, then maps (a runtime GoldSrc map mount, as s&box's Quake mount, or a conversion to `.vmap`).
+heard as GoldSrc heard them, their loops in a `.meta`; read back, played and heard by sbox-check); a whole map, as the
+test (the person's choice, before the kit's own models): started 2026-10-27 with stalkyard, as a scene the kit writes
+(the person chose it over a `.vmap` and over a runtime mount like s&box's Quake one): `sbox-map`, its faces as
+MeshComponents, its clip, textures, sky, starts and lights; `sbox-map-check`, collision at 5000 spots, floors, light
+pictured beside GoldSrc's. Next its doors and buttons, items, sounds; then crossfire; then the kit's own models built
+for s&box.
+
+**7d. What the first map taught (2026-10-27), for SMAK as a whole.** Two faults had shipped since 0.31.0 with every
+check passing, found only when the map's light was pictured; the rest is cost:
+- *Error detection.* (1) A material can fail to compile with nothing said: a holed texture whose sides are not powers
+  of two (s&box makes no mipmaps of its mask), and `sbox-check` never asked; the model port should make them powers
+  of two as the map port does, and the check should ask the editor which materials compiled (`compileFailures`), not
+  trust `Material.IsError`. (2) Nothing checked how a port looks: a fullbright texture drew red from 0.31.0 to 0.34.0.
+  The map check's way (a picture in s&box beside the kit's own GoldSrc renderer, region by region) should hold every
+  model too. (3) The same picture held to `drawMap` would check the GMod map port's light.
+- *Fidelity.* The two light numbers (SUN_SCALE, SKY_LIGHT_SHARE) are fitted on stalkyard alone: crossfire and datacore
+  next. GoldSrc's own lightmaps are possible (the world as a model with a second coordinate and a shader of the
+  kit's, as s&box's Quake mount draws Quake's), the meshes kept for collision and editing. stalkyard's 7 spots
+  blocked only in s&box with no reason found (0.20 in a hundred to GMod's 0.10).
+- *Speed.* Every `run_csharp` compiles (1 to 2 s) and every `sbox-cli` call starts a process: batch them (the light
+  check takes its 21 pictures in one `call_tools`; the model check's 210 still call per model, 90 minutes). Change a
+  value live in the open editor rather than port again (the light's calibration did); a general sweep tool. One
+  editor kept open across checks.
+- *Tokens.* Inline scripts with backslashes and quotes broke three times in one session: a `smak sbox-cs <file.cs>`
+  that runs a C# file in the editor. The editor's console filtered to its errors, its known noise left out.
+- *Playing a port.* `sbox-map --player`: the editor's Player Controller and a camera at the first start, facing its
+  way. Objects made by code do not mark a scene changed, so Play loads the file on disk (a black screen): such a
+  helper saves, and removes its own earlier objects first.
+
+Done (2026-10-27): (1) and (2), unreleased. The model port makes holed textures powers of two; its compile names
+every material and fails, saying which, when one is not compiled (that found two more: another skin's materials
+never compiled, Half-Life's can, chumtoad, hgrunt, houndeye, icky, scientist and bullsquid, and a deep project
+folder running the textures' paths past 260 characters). `sbox-check` asks the editor which materials compiled and
+pictures the model beside the kit's renderer; its limits measured on Half-Life's 205 models, all passing. Left: (3);
+a hue-aware colour check would catch an orange material drawn red, which the regions' distance misses.
 
 ## Which model does the work (measured 2026-10-25)
 

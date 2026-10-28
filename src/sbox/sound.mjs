@@ -36,8 +36,9 @@ export const ENVELOPE_WINDOW = 0.01;
 /** How far a sound of `attenuation` is heard, in units: where its gain comes to 0. */
 export const distanceOf = (attenuation) => SOUND_CLIP / attenuation;
 
-/** A GUID made from a path, the same each time, for a .meta (s&box's asset system keeps one in each). */
-const guidOf = (path) => {
+/** A GUID made from a path, the same each time, for a .meta (s&box's asset system keeps one in each) or a scene's
+ * object. */
+export const guidOf = (path) => {
   const h = createHash("sha1").update(path).digest("hex");
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
 };

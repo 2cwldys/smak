@@ -37,17 +37,20 @@ import { join, dirname, resolve } from "node:path";
 import { readStudio, sequenceFilesOf } from "../studio-file.mjs";
 import { sequenceGroups } from "../mdl.mjs";
 import { png } from "../image.mjs";
+import { bleedHoles, powerOfTwo } from "../source/vtf.mjs";
 import { portToSource, sourceName, PORT_FOLDER, SOUND_EVENTS } from "../source/port.mjs";
 import { soundFoldersOf } from "../source/gmod.mjs";
 import { sboxSound, distanceOf, ATTENUATION, SOUND_FOLDER } from "./sound.mjs";
 import { dmxOf, boneNameOf } from "./dmx.mjs";
-import { vmdlOf, vmatOf } from "./vmdl.mjs";
+import { vmdlOf, vmatOf, WHITE_PNG } from "./vmdl.mjs";
 import { compileVmdl, compileSounds } from "./compile.mjs";
 import { physicsOf } from "./physics.mjs";
 import { graphOf, GRAPH_SEQUENCE } from "./graph.mjs";
 
 /** GoldSrc's masked texture flag (STUDIO_NF_MASKED): its palette's last colour a hole. */
 const MASKED = 64;
+/** And its fullbright one (STUDIO_NF_FULLBRIGHT): drawn lit by itself. */
+const FULLBRIGHT = 4;
 /** A node's name as ModelDoc takes it: a hyphen in a mesh's name fails its compile, unsaid why. */
 const nodeName = (name) => String(name).replace(/[^A-Za-z0-9_]/g, "_");
 
@@ -109,16 +112,30 @@ export function portToSbox(
   const dmxData = (path) => ({ ...parts.smd.get(path), bones: sboxBones });
 
   // ── the textures: a PNG and a .vmat each ──
-  const materials = parts.textures.map((t) => {
-    const color = `materials/${base}/${t.name}.png`;
-    files.push({ path: color, data: png(t.width, t.height, t.rgba) });
+  const materials = parts.textures.map((texture) => {
+    let t = texture;
     let mask;
     if (t.flags & MASKED) {
+      // a power of two each way: s&box's texture compiler makes no mipmaps of a mask whose sides are not, and the
+      // material fails (Counter-Strike's trees, pi_tree1's branches 256 by 206); a model's coordinates are fractions
+      // of its picture. Its holes in the mask, and the picture opaque, a hole its neighbours' colour
+      t = { ...t, ...powerOfTwo(t, { alpha: true }) };
       mask = `materials/${base}/${t.name}_mask.png`;
       files.push({ path: mask, data: png(t.width, t.height, maskOf(t)) });
+      const rgba = Uint8Array.from(t.rgba);
+      bleedHoles(rgba, t.width, t.height);
+      for (let p = 3; p < rgba.length; p += 4) rgba[p] = 255;
+      t = { ...t, rgba };
+    }
+    const color = `materials/${base}/${t.name}.png`;
+    files.push({ path: color, data: png(t.width, t.height, t.rgba) });
+    let illum;
+    if (t.flags & FULLBRIGHT) {
+      illum = `materials/${base}/white.png`;
+      if (!files.some((f) => f.path === illum)) files.push({ path: illum, data: WHITE_PNG });
     }
     const path = `materials/${base}/${t.name}.vmat`;
-    files.push({ path, data: vmatOf({ color, mask, flags: t.flags }) });
+    files.push({ path, data: vmatOf({ color, mask, illum, flags: t.flags }) });
     return { name: t.name, path };
   });
   const pathOf = (material) => `materials/${base}/${material}.vmat`;
@@ -383,7 +400,8 @@ export function portToSboxFile(
     sounds: sounds ?? soundFoldersOf(file),
   });
   const written = writeSboxPort(port, resolve(out));
-  const compiled = compile ? compileVmdl(resolve(out), port.vmdl, { sbox }) : null;
+  const materials = port.files.map((f) => f.path).filter((path) => path.endsWith(".vmat"));
+  const compiled = compile ? compileVmdl(resolve(out), port.vmdl, { sbox, materials }) : null;
   // and its graph, which the model's compile names but does not make
   if (compile && port.graph) compiled.graph = compileVmdl(resolve(out), port.graph, { sbox });
   // and the sounds' files, in one run; their .sound assets the editor compiles

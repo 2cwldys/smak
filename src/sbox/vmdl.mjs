@@ -4,7 +4,7 @@
 //   kv3(value)                        a value as KV3 text (KV3_FLOAT and KV3_INT mark a number's kind)
 //   vmdlOf(model)                     the text of a .vmdl: { meshes, materials, skins, bones, bodygroups,
 //                                     sequences, attachments, hitboxes, physics } (sbox/port.mjs makes it)
-//   vmatOf({ color, mask, flags })    the text of a .vmat for a GoldSrc texture
+//   vmatOf({ color, mask, illum, flags })   the text of a .vmat for a GoldSrc texture
 //
 // THE DOCUMENT is a RootNode whose children are lists, each of its nodes as ModelDoc writes them (s&box's own
 // citizen*.vmdl and its prefabs; the classes and their fields in modeldoc_utils.dll):
@@ -26,6 +26,7 @@
 // THE MATERIAL is complex.shader's (the shader every s&box model's material names): the picture as its colour, no
 // shine (GoldSrc lit a model by its normals alone), and a texture's flags as its features: masked (64) alpha-tested
 // on a mask of its holes, additive (32) added to what is behind it, fullbright (4) lit by itself.
+import { png } from "../image.mjs";
 
 /** A number written as a float (1.0) or as an int (1): KV3 keeps the kind. */
 export const KV3_FLOAT = (v) => ({ kv3: "float", v });
@@ -316,11 +317,15 @@ export function vmdlOf({
 /** GoldSrc's texture flags (STUDIO_NF_ of studio.h). */
 const NF = { fullbright: 4, additive: 32, masked: 64 };
 
+/** A picture all white (4 by 4), for a fullbright texture's `illum`. */
+export const WHITE_PNG = png(4, 4, new Uint8Array(64).fill(255));
+
 /**
  * The text of a .vmat for a GoldSrc texture: `color` its picture, `mask` (a masked texture's) the picture of its
- * holes, black where the last colour of its palette was.
+ * holes, black where the last colour of its palette was, `illum` (a fullbright one's) a white picture (WHITE_PNG),
+ * where it lights itself.
  */
-export function vmatOf({ color, mask, flags = 0 }) {
+export function vmatOf({ color, mask, illum, flags = 0, tint }) {
   const lines = [
     "// Made by SMAK (sbox-port) from a GoldSrc texture.",
     "",
@@ -336,10 +341,14 @@ export function vmatOf({ color, mask, flags = 0 }) {
     '\tTextureRoughness "[1.000000 1.000000 1.000000 0.000000]"',
     '\tg_flMetalness "0.000"',
   );
+  // a colour the texture is multiplied by: a brush entity's renderamt drawn additive (GoldSrc's kRenderTransAdd)
+  if (tint !== undefined) lines.push(`\tg_vColorTint "[${tint.map((t) => t.toFixed(6)).join(" ")} 0.000000]"`);
   if (flags & NF.masked && mask)
     lines.push(`\tTextureTranslucency ${string(mask)}`, '\tg_flAlphaTestReference "0.500"');
   if (flags & NF.fullbright)
-    lines.push('\tTextureSelfIllumMask "[1.000000 1.000000 1.000000 0.000000]"', '\tg_flSelfIllumAlbedoFactor "1.000"', '\tg_flSelfIllumBrightness "0.000"', '\tg_flSelfIllumScale "1.000"'); // prettier-ignore
+    // its mask a picture: complex.shader's mask given as a colour ("[1 1 1 0]") is made a texture under
+    // materials/default/ that s&box does not have, and the face is drawn red (stalkyard's lamps, 2026-10-27)
+    lines.push(`\tTextureSelfIllumMask ${illum ? string(illum) : '"[1.000000 1.000000 1.000000 0.000000]"'}`, '\tg_vSelfIllumTint "[1.000000 1.000000 1.000000 0.000000]"', '\tg_flSelfIllumAlbedoFactor "1.000"', '\tg_flSelfIllumBrightness "0.000"', '\tg_flSelfIllumScale "1.000"'); // prettier-ignore
   lines.push("}", "");
   return lines.join("\n");
 }

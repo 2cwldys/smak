@@ -1103,3 +1103,281 @@ test("projectFolder: a folder with no .sbproj is no s&box project, and says how 
   }
   sure(/not an s&box project \(no \.sbproj in it\)/.test(said) && /sbox-cli --new/.test(said), said);
 });
+
+// ── a map (src/sbox/map.mjs, mapcheck.mjs), on the kit's own two rooms ──
+import { HERE } from "./helper.mjs";
+
+const twoRooms = join(HERE, "fixtures", "tworooms.bsp");
+const roomsBsp = smak.maps.readBsp(readFileSync(twoRooms));
+const roomsPort = sbox.portMapToSbox(twoRooms);
+const roomsScene = JSON.parse(roomsPort.files.find((f) => f.path === roomsPort.scene).data);
+
+/** A PolygonMesh's blob read back: its half-edges and its streams. */
+function readMeshBlob(base64) {
+  const b = Buffer.from(base64, "base64");
+  let at = 0;
+  const int = () => {
+    at += 4;
+    return b.readInt32LE(at - 4);
+  };
+  const sections = {};
+  sure(int() === 1, "the blob's version");
+  for (let n = int(); n > 0; n--) {
+    const length = int();
+    const name = b.toString("utf8", at, at + length);
+    at += length;
+    const size = int();
+    sections[name] = b.subarray(at, at + size);
+    at += size;
+  }
+  const ints = (buf) => Array.from({ length: buf.length / 4 }, (_, i) => buf.readInt32LE(i * 4));
+  const floats = (buf, k) => Array.from({ length: buf.length / 4 / k }, (_, i) => Array.from({ length: k }, (_, j) => buf.readFloatLE((i * k + j) * 4))); // prettier-ignore
+  const all = ints(sections.topology);
+  const [nv, ne, nf] = all;
+  const halfEdges = Array.from({ length: ne }, (_, i) => all.slice(3 + nv + i * 4, 7 + nv + i * 4));
+  const faceEdges = all.slice(3 + nv + ne * 4, 3 + nv + ne * 4 + nf);
+  return { nv, ne, nf, halfEdges, faceEdges, positions: floats(sections.positions, 3), uvs: floats(sections.texcoord, 2), materials: ints(sections.materialindex), sections }; // prettier-ignore
+}
+
+test("portMapToSbox: each face of the BSP a polygon of a MeshComponent, its half-edges whole, wound as s&box winds them, its texture where GoldSrc laid it", () => {
+  const world = roomsScene.GameObjects.find((g) => g.Name === "worldspawn");
+  const mesh = world.Components[0];
+  sure(mesh.__type === "Sandbox.MeshComponent" && mesh.Collision === "Mesh" && mesh.Static, JSON.stringify({ ...mesh, Mesh: undefined }));
+  const m = readMeshBlob(mesh.Mesh.Data);
+  const drawn = smak.maps.modelFaces(roomsBsp, 0).filter((f) => !smak.maps.textureKind(smak.maps.faceTexture(roomsBsp, f).name).sky);
+  sure(m.nf === drawn.length && m.nf === roomsPort.meshes[0].faces, `${m.nf} polygons, of ${drawn.length} faces`);
+  for (const name of ["blends", "colors", "edgeflags"]) sure(m.sections[name].length === m.ne * 4, `${name}: one for each half-edge`);
+  sure(m.uvs.length === m.ne && m.materials.length === m.nf, "a coordinate a half-edge, a material a face");
+  m.halfEdges.forEach(([, twin], h) => sure(m.halfEdges[twin][1] === h, `half-edge ${h}: its twin's twin is not itself`));
+  drawn.forEach((face, i) => {
+    // round the polygon from its face's edge by `next`: GoldSrc's corners, the other way round
+    const loop = [];
+    for (let h = m.faceEdges[i], n = 0; n === 0 || h !== m.faceEdges[i]; h = m.halfEdges[h][2], n++) {
+      sure(m.halfEdges[h][3] === i && n < 64, `polygon ${i}: an edge of another face, or no end`);
+      loop.push(h);
+    }
+    const corners = loop.map((h) => m.positions[m.halfEdges[h][0]]);
+    const goldsrc = smak.maps.facePolygon(roomsBsp, face);
+    sure(corners.length === goldsrc.length, `polygon ${i}: ${corners.length} corners of ${goldsrc.length}`);
+    // anticlockwise seen from the front, as s&box winds a face: its normal Newell's, summed round the polygon, as
+    // PolygonMesh.PlaneEquation sums it (a BSP face keeps corners on its straight edges; its first three may be in
+    // a line)
+    const n = [0, 0, 0];
+    corners.forEach((p, k) => {
+      const q = corners[(k + 1) % corners.length];
+      n[0] += p[1] * q[2] - p[2] * q[1];
+      n[1] += p[2] * q[0] - p[0] * q[2];
+      n[2] += p[0] * q[1] - p[1] * q[0];
+    });
+    const want = smak.maps.faceNormal(roomsBsp, face);
+    sure(n.reduce((s, v, k) => s + v * want[k], 0) > 0, `polygon ${i} faces away from its face`);
+    // each corner's coordinate GoldSrc's at that corner
+    const uvs = smak.maps.faceUvs(roomsBsp, face);
+    for (const h of loop) {
+      const at = m.positions[m.halfEdges[h][0]];
+      const k = goldsrc.findIndex((p) => p.every((v, j) => Math.abs(v - at[j]) < 1e-3));
+      sure(k >= 0 && m.uvs[h].every((v, j) => Math.abs(v - uvs[k][j]) < 1e-4), `polygon ${i}: a corner's coordinate ${m.uvs[h]}, GoldSrc's ${uvs[k]}`); // prettier-ignore
+    }
+  });
+});
+
+test("portMapToSbox: the world tagged for traces, the func_wall its own, the start at its feet, the lights and the indirect light over the world; the grate alpha-tested, opaque, a power of two", () => {
+  const byName = Object.fromEntries(roomsScene.GameObjects.map((g) => [g.Name, g]));
+  sure(byName.worldspawn.Tags === sbox.WORLD_TAG, `the world's tags: ${byName.worldspawn.Tags}`);
+  sure(byName["func_wall *1"].Components[0].Mesh.Materials[0] === "materials/smak/maps/tworooms/mask_smakgrate.vmat", "the grate's own material"); // prettier-ignore
+  const start = byName.info_player_start;
+  sure(start.Position === "96,96,4" && start.Components[0].__type === "Sandbox.SpawnPoint", `the start: ${start.Position}`);
+  sure(start.Rotation === sbox.rotationOf([0, 90, 0]), "turned to its angle");
+  const lights = roomsScene.GameObjects.filter((g) => g.Name === "light");
+  sure(lights.length === 2 && lights.every((g) => g.Components[0].__type === "Sandbox.PointLight" && g.Components[0].Radius > 0), "two point lights"); // prettier-ignore
+  const grate = roomsPort.files.find((f) => f.path.endsWith("mask_smakgrate.vmat")).data;
+  sure(/F_ALPHA_TEST 1/.test(grate) && /TextureTranslucency "materials\/smak\/maps\/tworooms\/mask_smakgrate_mask\.png"/.test(grate), grate); // prettier-ignore
+  const picture = smak.unpng(roomsPort.files.find((f) => f.path.endsWith("mask_smakgrate.png")).data);
+  const mask = smak.unpng(roomsPort.files.find((f) => f.path.endsWith("mask_smakgrate_mask.png")).data);
+  let opaque = true;
+  for (let p = 3; p < picture.rgba.length; p += 4) opaque &&= picture.rgba[p] === 255;
+  sure(opaque, "the grate's picture opaque, its holes in the mask");
+  sure(mask.rgba.some((v, i) => i % 4 === 0 && v === 0) && mask.rgba.some((v, i) => i % 4 === 0 && v === 255), "the mask has holes and solid");
+  sure(roomsScene.GameObjects.every((g) => /^[0-9a-f-]{36}$/.test(g.__guid)), "every object a GUID");
+  const again = sbox.portMapToSbox(twoRooms);
+  sure(again.files.find((f) => f.path === again.scene).data === roomsPort.files.find((f) => f.path === roomsPort.scene).data, "the same scene each time"); // prettier-ignore
+  sure(/sky desert/.test(roomsPort.warnings.join(" ")) && roomsPort.sky === null, "a sky not found is said");
+  const indirect = byName[sbox.INDIRECT_LIGHT]?.Components[0];
+  const world = smak.maps.worldBounds(smak.maps.readBsp(readFileSync(twoRooms)));
+  sure(indirect?.__type === "Sandbox.IndirectLightVolume" && indirect.RenderExcludeTags === "clip", "an indirect light volume, the clip brushes out of it"); // prettier-ignore
+  sure(indirect.Bounds.Mins === world.mins.map((v) => v - 16).join(",") && indirect.Bounds.Maxs === world.maxs.map((v) => v + 16).join(","), `over the world: ${JSON.stringify(indirect.Bounds)}`); // prettier-ignore
+});
+
+test("portMapToSbox: a brush entity blocks with its every brush, unseen; starts of a mod's classes; a map's info_texlights; rendermode 5 additive", () => {
+  const wall = roomsScene.GameObjects.find((g) => g.Name === "func_wall *1");
+  sure(wall.Tags === sbox.BRUSH_TAG, `the func_wall's tags: ${wall.Tags}`);
+  const solids = wall.Children ?? [];
+  sure(solids.length > 0 && solids.every((c) => c.Tags === `${sbox.BRUSH_TAG},${sbox.CLIP_TAG}` && c.Components[0].Collision === "Hull" && c.Components[0].HideInGame), `its solids: ${solids.length}`); // prettier-ignore
+  sure(roomsPort.meshes.find((m) => m.model === 1).at.join() === "0,0,0", "where the entity is, for the check");
+  const none = sbox.portMapToSbox(twoRooms, { starts: ["ms_player_spawn"] });
+  const noneScene = JSON.parse(none.files.find((f) => f.path === none.scene).data);
+  sure(!noneScene.GameObjects.some((g) => g.Components?.[0]?.__type === "Sandbox.SpawnPoint"), "info_player_start not a start of the mod's");
+  sure(/no spawn point \(ms_player_spawn\)/.test(none.warnings.join(" ")), none.warnings.join(" "));
+  // the same rooms, the start an MSC one, the grate's texture made to shine by the map, the func_wall drawn added
+  const entities = roomsBsp.entities.map((pairs) => {
+    const keys = Object.fromEntries(pairs);
+    if (keys.classname === "info_player_start") return pairs.map(([k, v]) => [k, k === "classname" ? "ms_player_begin" : v]);
+    if (keys.classname === "func_wall") return pairs.map(([k, v]) => [k, k === "rendermode" ? "5" : k === "renderamt" ? "100" : v]);
+    return pairs;
+  });
+  entities.push([["classname", "info_texlights"], ["origin", "0 0 0"], ["{smakgrate", "255 128 64 200"]]);
+  const msc = join(tmp, "tworooms_msc.bsp");
+  writeFileSync(msc, smak.maps.withEntities(readFileSync(twoRooms), entities));
+  const port = sbox.portMapToSbox(msc, { starts: ["ms_player_begin", "ms_player_spawn"] });
+  const scene = JSON.parse(port.files.find((f) => f.path === port.scene).data);
+  sure(scene.GameObjects.some((g) => g.Name === "ms_player_begin" && g.Components[0].__type === "Sandbox.SpawnPoint"), "ms_player_begin a start");
+  sure(port.lights.some((l) => l.classname === "texlight" && /smakgrate/i.test(l.texture)), "the grate shines, as its info_texlights says");
+  const drawn = scene.GameObjects.find((g) => g.Name === "func_wall *1").Components[0].Mesh.Materials[0];
+  sure(drawn === "materials/smak/maps/tworooms_msc/mask_smakgrate_add100.vmat", drawn);
+  const vmat = port.files.find((f) => f.path === drawn).data;
+  sure(/F_ADDITIVE_BLEND 1/.test(vmat) && /F_SELF_ILLUM 1/.test(vmat) && /g_vColorTint "\[0\.392157 0\.392157 0\.392157 0\.000000\]"/.test(vmat), vmat); // prettier-ignore
+});
+
+test("rotationOf: Source's angles as s&box's quaternion: yaw turns left about up, pitch looks down", () => {
+  const q = (s) => s.split(",").map(Number);
+  const yaw = q(sbox.rotationOf([0, 90, 0]));
+  sure(Math.abs(yaw[2] - Math.SQRT1_2) < 1e-4 && Math.abs(yaw[3] - Math.SQRT1_2) < 1e-4, `yaw 90: ${yaw}`);
+  // a quaternion's forward, its +X turned
+  const forward = ([x, y, z, w]) => [1 - 2 * (y * y + z * z), 2 * (x * y + w * z), 2 * (x * z - w * y)];
+  const down = forward(q(sbox.rotationOf([90, 0, 0])));
+  sure(Math.abs(down[2] + 1) < 1e-4, `pitch 90 looks ${down}`);
+  const left = forward(q(sbox.rotationOf([0, 90, 0])));
+  sure(Math.abs(left[1] - 1) < 1e-4, `yaw 90 looks ${left}`);
+});
+
+test("compareSboxMap: a scene read back whole passes; a mesh missing, faces lost, a spot blocked otherwise, a floor elsewhere are said", () => {
+  const expected = sbox.expectedMapOf(twoRooms, roomsPort, { count: 200 });
+  const read = {
+    meshes: roomsPort.meshes.map((m) => ({ name: m.name, faces: m.faces, bad: 0, materials: m.materials, collision: m.collision })), // prettier-ignore
+    sky: [],
+    spawns: roomsPort.spawns.map((s) => s.feet.join(",")),
+    lights: roomsPort.lights.map((l) => ({ at: l.origin.join(","), forward: "1,0,0" })),
+    standing: expected.standing.map((b) => (b ? "1" : "0")).join(""),
+    ducked: expected.ducked.map((b) => (b ? "1" : "0")).join(""),
+    under: expected.floors.map((f) => ({ hit: true, z: f.floor, stuck: false })),
+  };
+  const whole = sbox.compareSboxMap(expected, read);
+  sure(whole.passed, whole.faults.join("; "));
+  sure(/200 spots: standing, 0 disagree/.test(whole.said.join(" ")), whole.said.join(" | "));
+  const broken = sbox.compareSboxMap(expected, {
+    ...read,
+    meshes: [{ ...read.meshes[0], faces: read.meshes[0].faces - 1, collision: "None" }],
+    standing: read.standing.replace(/1/g, "0"),
+    under: [{ hit: true, z: 8, stuck: false }],
+  });
+  const said = broken.faults.join(" | ");
+  sure(!broken.passed, "a broken scene passes");
+  for (const want of [/func_wall \*1: no mesh/, /worldspawn: \d+ faces, of/, /worldspawn: collides as None, not Mesh/, /standing: \d+ of 200 spots blocked otherwise/, /its floor at 8\.00, GoldSrc's at 0/]) // prettier-ignore
+    sure(want.test(said), `${want} not in: ${said}`);
+});
+
+test("compareLight: s&box's pictures as bright as GoldSrc's and lit in the same places pass; too dark, or lit elsewhere, are said", () => {
+  const view = (k) => Array.from({ length: 144 }, (_, i) => 20 + ((i * 7 + k * 13) % 50));
+  const goldsrc = [0, 1, 2].map(view);
+  const same = sbox.compareLight(goldsrc, goldsrc.map((g) => g.map((v) => v * 1.1)));
+  sure(!same.faults.length && Math.abs(same.ratio - 1.1) < 1e-9 && same.likeness > 0.999, same.faults.join("; "));
+  const dark = sbox.compareLight(goldsrc, goldsrc.map((g) => g.map((v) => v * 0.5)));
+  sure(/0\.50 times as bright as GoldSrc's/.test(dark.faults.join(" ")), dark.faults.join("; "));
+  const elsewhere = sbox.compareLight(goldsrc, goldsrc.map((g) => [...g].reverse()));
+  sure(/in other places than GoldSrc's/.test(elsewhere.faults.join(" ")), elsewhere.faults.join("; "));
+  const grid = sbox.brightnessGrid({ width: 32, height: 18, rgba: new Uint8Array(32 * 18 * 4).fill(100) });
+  sure(grid.length === 144 && grid.every((v) => Math.abs(v - 100) < 1e-9), "a flat picture's regions all its brightness");
+});
+
+test("mapProbeCode, lightCamerasCode, bakeIndirectLightCode: the scene opened, the world alone asked at every spot and floor; a camera at each start; its indirect light baked", () => {
+  const code = sbox.mapProbeCode("scenes/smak/tworooms.scene", [[1, 2, 3], [4, 5, 6]], [[96, 96, 40]]);
+  sure(/OpenScene/.test(code) && /"scenes\/smak\/tworooms\.scene"/.test(code), "the scene");
+  sure(/new float\[\] \{ 1f, 2f, 3f, 4f, 5f, 6f \}/.test(code) && /new float\[\] \{ 96f, 96f, 40f \}/.test(code), "the spots and floors"); // prettier-ignore
+  sure((code.match(/WithAnyTags\( "world", "brush" \)/g) ?? []).length === 4, "the world and the solid brush entities, in every trace");
+  sure(/SceneEditorSession\.All\.Where\( x => x\.Scene\?\.Source\?\.ResourcePath == file\.ResourcePath \)/.test(code) && /open\.Destroy\(\)/.test(code), "a tab already open on the scene closed first"); // prettier-ignore
+  const cameras = sbox.lightCamerasCode(sbox.lightViewsOf(roomsPort));
+  sure(/new float\[\] \{ 96f, 96f, 68f, 90f \}/.test(cameras) && /FieldOfView = 80/.test(cameras), cameras);
+  sure(/Tags\.Has\( "clip" \)/.test(sbox.lightCamerasGoneCode()), "the clip brushes shown again after");
+  const bake = sbox.bakeIndirectLightCode();
+  sure(/GetAllComponents<IndirectLightVolume>/.test(bake) && /await v\.BakeProbes\(\)/.test(bake) && (bake.match(/Save\( false \)/g) ?? []).length === 2, "the volumes baked, the scene saved before and after"); // prettier-ignore
+});
+
+test("compileFailures: the materials asset_compile says it could not compile, in the order asked", () => {
+  const answered = JSON.stringify([{ Success: true, Path: "a.vmat" }, { Success: false, Path: "b.vmat" }]);
+  sure(sbox.compileFailures(answered, ["a.vmat", "b.vmat"]).join() === "b.vmat", "b failed");
+  sure(sbox.compileFailures(JSON.stringify(answered), ["a.vmat", "b.vmat"]).join() === "b.vmat", "said inside a string");
+});
+
+// ── a port's materials compiled, and how it looks (check.mjs) ──
+test("portToSbox: a holed texture whose sides are not powers of two made so, its picture opaque, its holes in its mask", () => {
+  const holed = { name: "net.bmp", width: 6, height: 4, pixels: Uint8Array.from({ length: 24 }, (_, i) => (i % 3 ? 1 : 255)), palette: new Uint8Array(768).fill(90), flags: 64 }; // prettier-ignore
+  const netted = sbox.portToSbox(
+    smak.buildMdl({ name: "net.mdl", bones: portBones, bodyparts: [{ name: "body", models: [{ name: "net", meshes: [{ tris: [tri(0)], texture: holed }] }] }], sequences: [{ name: "idle", fps: 10, frames: [still] }] }), // prettier-ignore
+    { name: "net" },
+  );
+  const pictureOf = (end) => smak.unpng(netted.files.find((f) => f.path.endsWith(end)).data);
+  const picture = pictureOf("/net.png");
+  const mask = pictureOf("/net_mask.png");
+  sure(picture.width === 8 && picture.height === 4 && mask.width === 8 && mask.height === 4, `${picture.width}x${picture.height}, its mask ${mask.width}x${mask.height}`); // prettier-ignore
+  let opaque = true;
+  for (let p = 3; p < picture.rgba.length; p += 4) opaque &&= picture.rgba[p] === 255;
+  sure(opaque, "the picture opaque");
+  sure(mask.rgba.some((v, i) => i % 4 === 0 && v === 0) && mask.rgba.some((v, i) => i % 4 === 0 && v === 255), "the mask has holes and solid");
+});
+
+testCompiled("compiled: every material of the port compiled with it; one that is not is said, with the model compiled", () => {
+  const assets = join(folder, "Assets");
+  sbox.writeSboxPort(port, assets);
+  const materials = port.files.map((f) => f.path).filter((p) => p.endsWith(".vmat"));
+  sbox.compileVmdl(assets, port.vmdl, { sbox: found, materials });
+  sure(materials.every((m) => existsSync(join(assets, `${m}_c`))), `${materials.join(", ")} each compiled`);
+  // a holed material whose mask is not a power of two each way, as the port made them before: the compiler makes no
+  // mipmaps of it, compiles the model all the same, and says so only in a texture's line
+  const holes = Uint8Array.from({ length: 6 * 4 * 4 }, (_, i) => (i % 4 === 3 ? (i % 8 === 3 ? 0 : 255) : 128));
+  writeFileSync(join(assets, "materials/models/smak/portable_thing/odd.png"), smak.png(6, 4, holes));
+  writeFileSync(join(assets, "materials/models/smak/portable_thing/odd.vmat"), sbox.vmatOf({ color: "materials/models/smak/portable_thing/odd.png", mask: "materials/models/smak/portable_thing/odd.png", flags: 64 })); // prettier-ignore
+  let said = "";
+  try {
+    sbox.compileVmdl(assets, port.vmdl, { sbox: found, materials: [...materials, "materials/models/smak/portable_thing/odd.vmat"] }); // prettier-ignore
+  } catch (error) {
+    said = error.message;
+  }
+  sure(/but not 1 of its materials: materials\/models\/smak\/portable_thing\/odd\.vmat/.test(said) && /non-power-of-two/.test(said), said); // prettier-ignore
+});
+
+test("compareLooks: s&box's pictures as the kit's pass; a material drawn red, holes filled, a part missing are said", () => {
+  const [w, h] = [64, 64];
+  const picture = (paint) => {
+    const rgba = new Uint8Array(w * h * 4);
+    for (let y = 0; y < h; y++)
+      for (let x = 0; x < w; x++) rgba.set([...(paint(x, y) ?? sbox.LOOK.background), 255], (y * w + x) * 4);
+    return { width: w, height: h, rgba };
+  };
+  // a body (grey) with a net in it (holes of 4 by 4 pixels) and an arm (brown)
+  const body = (x, y) => (x >= 16 && x < 48 && y >= 8 && y < 56 ? (x >= 24 && x < 40 && y >= 20 && y < 36 && ((x >> 2) + (y >> 2)) % 2 ? null : [120, 120, 120]) : x >= 48 && x < 64 && y >= 8 && y < 56 ? [110, 70, 40] : null); // prettier-ignore
+  const kit = [picture(body), picture(body)];
+  const same = sbox.compareLooks(kit, kit.map((p) => ({ ...p, rgba: p.rgba.map((v, i) => (i % 4 === 3 ? v : Math.min(255, v + 3))) })));
+  sure(!same.faults.length && same.shape === 1 && same.colour === 0, same.faults.join("; "));
+  // drawn a pixel over: the same silhouette
+  const over = sbox.compareLooks(kit, kit.map(() => picture((x, y) => body(x - 1, y))));
+  sure(!over.faults.length && over.shape === 1, `a pixel over: ${over.faults.join("; ")}`);
+  const red = sbox.compareLooks(kit, [picture(body), picture((x, y) => (body(x, y) ? [200, 20, 20] : null))]);
+  sure(red.faults.length === 1 && /view 2, its colours not the original's/.test(red.faults[0]), red.faults.join("; "));
+  // a chrome texture's pixels are not compared: the kit draws chrome from the eye, the port from one place
+  const chrome = sbox.compareLooks(kit, [picture(body), picture((x, y) => (body(x, y) ? [200, 20, 20] : null))], { skip: [[], new Uint8Array(64 * 64).fill(1)] }); // prettier-ignore
+  sure(!chrome.faults.length, chrome.faults.join("; "));
+  const filled = sbox.compareLooks(kit, [picture((x, y) => (x >= 16 && x < 48 && y >= 8 && y < 56 ? [120, 120, 120] : body(x, y))), kit[1]]); // prettier-ignore
+  const armless = sbox.compareLooks(kit, [kit[0], picture((x, y) => (x >= 48 ? null : body(x, y)))]);
+  sure(/view 1, its shape not the original's/.test(filled.faults.join(" ")) || filled.shape < 1, `holes filled: ${filled.shape}`);
+  sure(armless.faults.some((f) => /view 2, its shape not the original's/.test(f)), `an arm missing: ${armless.faults.join("; ")} (${armless.shape})`); // prettier-ignore
+});
+
+test("lookViewsOf, lookProbeCode: four eyes round the model at the distance that fits it; s&box's scene of its own, ticked, lit white", () => {
+  const { views, dist, mid } = sbox.lookViewsOf({ mid: [0, 0, 36], far: 40 });
+  sure(views.length === 4 && dist > 40, `${views.length} views at ${dist}`);
+  for (const v of views) near(Math.hypot(...v.eye.map((e, k) => e - mid[k])), dist, 1e-6, "each eye that far from the middle");
+  sure(views[0].eye[0] > 0 && views[0].angles[1] === 180, "the first from the front, looking back along -x");
+  const code = sbox.lookProbeCode("models/smak/x.vmdl", views);
+  sure(/new Scene\(\)/.test(code) && /GameTick/.test(code) && /AmbientLight>\(\)\.Color = Color\.White/.test(code) && /RenderToBitmap/.test(code), code); // prettier-ignore
+  sure((code.match(/new float\[\] \{/g) ?? []).length === 4, "four views");
+});

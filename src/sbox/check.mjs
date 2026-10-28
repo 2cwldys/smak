@@ -7,7 +7,10 @@
 //   compareSbox(expected, read, { tolerance })     -> { passed, faults, said, worst }
 //   physicsProbeCode(vmdl, poses), comparePhysics(expected, read)   its physics read back, and tried
 //   soundProbeCode(vmdl, sounds, soundEvents), compareSounds(expected, read)   its sounds read back, played, heard
-//   checkSboxPort(file, { project, name, folder, kind, collision, surfaceprop, mass, sbox, perSequence, shot })
+//   lookViewsOf(framed), lookKitOf(src, looks), lookProbeCode(vmdl, views), compareLooks(kit, sbox, { skip })
+//                                                  how it looks, beside the kit's own
+//                                                  picture of the original
+//   checkSboxPort(file, { project, name, folder, kind, collision, surfaceprop, mass, sbox, perSequence, look, shot })
 //                                                  -> the whole check, in the editor
 //
 // WHAT IS HELD. The compiled model must have every bone of the port, under its parent; every animation, of its
@@ -21,6 +24,18 @@
 // blends' start, middle and end, where GoldSrc's renderer would put it (blendedPoseAt: StudioSlerpBones, each bone's
 // turn slerped and its place mixed), within the same tolerance.
 //
+// ITS MATERIALS: each one the port wrote compiled by the editor (its asset_compile asked; s&box draws one that did not
+// compile red, and says so nowhere else: v_9mmhandgun's gloves, in a project whose folder ran their textures' paths
+// past 260 characters).
+//
+// HOW IT LOOKS (`look`, unless false): the model drawn by s&box in a scene of its own (a white ambient light its
+// only light, so a texture shows as it is), in its first animation's first frame, from four views round it
+// (LOOK), and by the kit's own renderer (render.mjs, `light: false`) from the same eyes. Its silhouette must be
+// the original's (LOOK_SHAPE of the model's pixels in either picture in the other) and its colours too, region by
+// region (no more than LOOK_COLOUR of the regions another colour; a chrome texture's pixels left out, the kit
+// drawing it from the eye and the port from one place). A material that did not compile, a texture lost or wrong,
+// holes filled, a part missing or one too many, a model turned all show here; the bones' check sees none of them.
+//
 // ITS SOUNDS (sound.mjs), when its events play any: each .sound read back as the editor compiled it, playing its
 // file, as long as the original (within SOUND_LENGTH), heard as far as GoldSrc heard it (its Distance, its falloff a
 // line from 1 to 0), with no occlusion or reverb, and as loud, window by window, as the original
@@ -32,7 +47,7 @@
 //
 // THE EDITOR. The check runs in the project's editor (editor.mjs: the one open, else one opened and closed
 // after). Its probe object is made in the scene being edited and removed before the check ends; the scene is not
-// saved. Its picture (`shot`) is the editor's camera on the model posed in its first animation.
+// saved. Its picture (`shot`): the kit's four views above s&box's.
 import { readStudio, sequenceFilesOf } from "../studio-file.mjs";
 import { sequenceGroups, poseAt, sequences as sequencesOf, readSequence, frameValues, boneParents, boneMatrices } from "../mdl.mjs"; // prettier-ignore
 import { qofAngles, qslerp, anglesOf } from "../animate.mjs";
@@ -40,13 +55,15 @@ import { GRAPH_SEQUENCE } from "./graph.mjs";
 import { portToSbox } from "./port.mjs";
 import { sourceName } from "../source/port.mjs";
 import { soundFoldersOf } from "../source/gmod.mjs";
-import { editorFor, runCsharp, sboxCall, projectFolder } from "./editor.mjs";
+import { editorFor, runCsharp, sboxCall, projectFolder, compileAssets } from "./editor.mjs";
+import { render, framing, posed } from "../render.mjs";
+import { png, unpng } from "../image.mjs";
 import { compileVmdl, findSbox } from "./compile.mjs";
 import { restOf, insideLimits, jointStretch, quaternionOfTurn } from "./physics.mjs";
 import { soundEnvelope, ENVELOPE_WINDOW } from "./sound.mjs";
 import { readWav } from "../audio/wav.mjs";
 import { compileSounds } from "./compile.mjs";
-import { copyFileSync, existsSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 /** How far a bone may be from GoldSrc's place, in units: s&box compresses its animations (Half-Life's barney,
@@ -412,6 +429,185 @@ export function compareSounds(expected, read) {
   return { faults, said };
 }
 
+// ── how it looks: s&box's picture beside the kit's own ──
+
+/** The pictures of how a port looks: their side, field of view (degrees across), the colour behind the model, and
+ * the views round it ([yaw, pitch]: from its front, left, back, and its right from above). */
+export const LOOK = { size: 256, fov: 60, background: [0, 160, 255], views: [[0, 10], [90, 10], [180, 10], [270, 30]] };
+/** A pixel is the model's when its colour is this far from the background's (the sum of the channels' distances). */
+const LOOK_EDGE = 60;
+/** Each picture is cut in this many regions each way to set its colours side by side. */
+const LOOK_GRID = 16;
+/** A region's colours are compared when this many of its pixels are the model's in both pictures. */
+const LOOK_REGION_LEAST = 16;
+/** A pixel of the model in one picture is in the other too when the other has the model this many pixels from it. */
+const LOOK_REACH = 1;
+/** A region's colours are another's when its mean colours are this far apart (255ths, the channels' mean). */
+export const LOOK_REGION_FAR = 80;
+/**
+ * How alike the two must be: the share of the model's pixels in either that the other has too (its silhouette), and
+ * the share of its regions whose colours may be another's. Measured on Half-Life's 205 models (2026-10-27): the
+ * least silhouette 97.6% (uplant2's blade of grass), the most regions apart 8.7% (ventgibs, a fine black and white
+ * texture seen edge on, which s&box's mipmaps make grey); each material of theirs drawn red by the kit, as s&box
+ * draws one not compiled, 366 of 480 caught that are a twentieth of the model or more (an orange or red one drawn
+ * red, the HEV suit's sleeves, flesh and blood, the most often missed).
+ */
+export const LOOK_SHAPE = 0.95;
+export const LOOK_COLOUR = 0.12;
+
+/** The views of a model for its pictures: each `{ yaw, pitch, eye, angles }`, all at the distance that fits the
+ * model's first animation's first frame (`mid`, `far`: framing's) in LOOK.fov, and `dist`. */
+export function lookViewsOf({ mid, far }, { fov = LOOK.fov, views = LOOK.views } = {}) {
+  const dist = (Math.max(far, 1) / Math.tan((fov * Math.PI) / 360)) * 1.15;
+  const d = Math.PI / 180;
+  return {
+    mid,
+    dist,
+    views: views.map(([yaw, pitch]) => {
+      const back = [Math.cos(pitch * d) * Math.cos(yaw * d), Math.cos(pitch * d) * Math.sin(yaw * d), Math.sin(pitch * d)];
+      // s&box's angles of a camera looking back at the middle: its pitch down
+      return { yaw, pitch, eye: mid.map((v, a) => v + back[a] * dist), angles: [pitch, yaw + 180] };
+    }),
+  };
+}
+
+/** A colour no texture is drawn in, to find a chrome texture's pixels by. */
+const CHROME_KEY = [255, 0, 255];
+const CHROME_EDGE = 2;
+
+/**
+ * The kit's pictures of the original (`src`) from `looks` (lookViewsOf's), its texture as it is, and for each the
+ * pixels of a chrome texture (`skip`, compareLooks'): the model drawn again with chrome in CHROME_KEY. -> { kit, skip }
+ */
+export function lookKitOf(src, { views, dist, mid }) {
+  const options = { dist, fov: LOOK.fov, target: mid, width: LOOK.size, height: LOOK.size, background: LOOK.background, light: false, seq: 0, frame: 0 }; // prettier-ignore
+  const kit = views.map((v) => render(src, { ...options, yaw: v.yaw, pitch: v.pitch }));
+  const { tris } = posed(src, options);
+  if (!tris.some((t) => (t.tex?.flags ?? 0) & 2)) return { kit, skip: [] };
+  const key = { name: "chrome", flags: 0, width: 1, height: 1, rgba: Uint8Array.of(...CHROME_KEY, 255) };
+  const keyed = tris.map((t) => ((t.tex?.flags ?? 0) & 2 ? { ...t, tex: key } : t));
+  const S = LOOK.size;
+  const skip = views.map((v) => {
+    const { rgba } = render(src, { ...options, yaw: v.yaw, pitch: v.pitch, tris: keyed });
+    const keyedAt = Uint8Array.from({ length: S * S }, (_, k) => (CHROME_KEY.every((c, j) => Math.abs(rgba[k * 4 + j] - c) < 8) ? 1 : 0)); // prettier-ignore
+    // and CHROME_EDGE pixels round it: its edges, the key blended with what is beside it
+    const grown = new Uint8Array(S * S);
+    for (let y = 0; y < S; y++)
+      for (let x = 0; x < S; x++)
+        if (keyedAt[y * S + x])
+          for (let dy = -CHROME_EDGE; dy <= CHROME_EDGE; dy++)
+            for (let dx = -CHROME_EDGE; dx <= CHROME_EDGE; dx++)
+              if (x + dx >= 0 && y + dy >= 0 && x + dx < S && y + dy < S) grown[(y + dy) * S + x + dx] = 1;
+    return grown;
+  });
+  return { kit, skip };
+}
+
+/**
+ * The C# that draws the compiled model in a scene of its own (nothing of the project's: its only light a white
+ * ambient one, so a texture shows as it is, as the kit's renderer draws it with `light: false`), posed in its first
+ * animation's first frame, from each view: the pictures as PNG, base64.
+ */
+export function lookProbeCode(vmdl, views, { size = LOOK.size, fov = LOOK.fov, background = LOOK.background } = {}) {
+  return `
+var model = Model.Load( ${csString(vmdl)} );
+if ( model is null || model.IsError ) return new { error = "the model did not load: " + ${csString(vmdl)} };
+var scene = new Scene();
+var pictures = new System.Collections.Generic.List<string>();
+using ( scene.Push() )
+{
+	var go = new GameObject( true, "model" );
+	var r = go.AddComponent<SkinnedModelRenderer>();
+	r.Model = model;
+	r.UseAnimGraph = false;
+	if ( model.AnimationCount > 0 ) r.Sequence.Name = model.GetAnimationName( 0 );
+	r.Sequence.Time = 0;
+	r.Sequence.PlaybackRate = 0;
+	new GameObject( true, "ambient" ).AddComponent<AmbientLight>().Color = Color.White;
+	var cg = new GameObject( true, "camera" );
+	var cc = cg.AddComponent<CameraComponent>();
+	cc.BackgroundColor = new Color( ${background.map((c) => `${c / 255}f`).join(", ")}, 1 );
+	cc.FieldOfView = ${fov};
+	cc.ZNear = 1;
+	cc.ZFar = 100000;
+	// a scene of its own is ticked by no one: ticked here, or the model is drawn in its rest pose
+	r.Sequence.Looping = false;
+	for ( int tick = 0; tick < 3; tick++ )
+	{
+		r.Sequence.Time = 0;
+		scene.GameTick( 0.001 );
+	}
+	foreach ( var v in new[] { ${views.map((v) => `new float[] { ${[...v.eye, ...v.angles].map((x) => `${+x.toFixed(4)}f`).join(", ")} }`).join(", ")} } )
+	{
+		cg.WorldPosition = new Vector3( v[0], v[1], v[2] );
+		cg.WorldRotation = Rotation.From( v[3], v[4], 0 );
+		using var bitmap = new Bitmap( ${size}, ${size} );
+		cc.RenderToBitmap( bitmap, false );
+		pictures.Add( System.Convert.ToBase64String( bitmap.ToPng() ) );
+	}
+}
+scene.Destroy();
+return new { pictures };
+`;
+}
+
+/**
+ * The kit's pictures and s&box's held side by side, view by view: `{ views: [{ shape, colour, regions }], shape (the
+ * least), colour (the most), faults }`. `shape`: the share of the model's pixels in either picture that the other
+ * has too, LOOK_REACH pixels away at most (a blade of grass a pixel wide drawn half a pixel over is the same blade);
+ * `colour`: the share of the regions both draw whose mean colours are more than LOOK_REGION_FAR apart, and
+ * `distances`, each region's (255ths, the channels' mean). `skip`:
+ * for each view, the pixels (1 in a width by height array) whose colour is not compared: a chrome texture's, which
+ * the kit draws as GoldSrc does, from where the eye is, and the port worked out once (port.mjs).
+ */
+export function compareLooks(kit, sbox, { background = LOOK.background, shapeLeast = LOOK_SHAPE, colourMost = LOOK_COLOUR, skip = [], grid = LOOK_GRID } = {}) {
+  const views = kit.map((a, v) => {
+    const b = sbox[v];
+    const { width, height } = a;
+    const isModel = (p, i) => Math.abs(p.rgba[i] - background[0]) + Math.abs(p.rgba[i + 1] - background[1]) + Math.abs(p.rgba[i + 2] - background[2]) > LOOK_EDGE; // prettier-ignore
+    const sized = b.width === width && b.height === height;
+    const masks = [a, b].map((p) => Uint8Array.from({ length: width * height }, (_, k) => (p === b && !sized ? 0 : isModel(p, k * 4) ? 1 : 0))); // prettier-ignore
+    const near = (mask, x, y) => {
+      for (let dy = -LOOK_REACH; dy <= LOOK_REACH; dy++)
+        for (let dx = -LOOK_REACH; dx <= LOOK_REACH; dx++) {
+          const [nx, ny] = [x + dx, y + dy];
+          if (nx >= 0 && ny >= 0 && nx < width && ny < height && mask[ny * width + nx]) return true;
+        }
+      return false;
+    };
+    let both = 0;
+    let either = 0;
+    const sums = Array.from({ length: grid * grid }, () => ({ n: 0, a: [0, 0, 0], b: [0, 0, 0] }));
+    for (let y = 0; y < height; y++)
+      for (let x = 0; x < width; x++) {
+        const k = y * width + x;
+        const i = k * 4;
+        const [inA, inB] = [masks[0][k], masks[1][k]];
+        either += inA + inB;
+        both += (inA && near(masks[1], x, y) ? 1 : 0) + (inB && near(masks[0], x, y) ? 1 : 0);
+        if (!(inA && inB) || skip[v]?.[k]) continue;
+        const cell = sums[Math.floor((y * grid) / height) * grid + Math.floor((x * grid) / width)];
+        cell.n++;
+        for (let c = 0; c < 3; c++) {
+          cell.a[c] += a.rgba[i + c];
+          cell.b[c] += b.rgba[i + c];
+        }
+      }
+    const regions = sums.filter((cell) => cell.n >= LOOK_REGION_LEAST);
+    const distances = regions.map((cell) => [0, 1, 2].reduce((d, c) => d + Math.abs(cell.a[c] - cell.b[c]) / cell.n, 0) / 3); // prettier-ignore
+    const apart = distances.length ? distances.filter((d) => d > LOOK_REGION_FAR).length / distances.length : 0;
+    return { shape: either ? both / either : 1, colour: apart, regions: regions.length, distances };
+  });
+  const shape = Math.min(...views.map((v) => v.shape));
+  const colour = Math.max(...views.map((v) => v.colour));
+  const faults = [];
+  views.forEach((v, k) => {
+    if (v.shape < shapeLeast) faults.push(`seen from view ${k + 1}, its shape not the original's: ${(v.shape * 100).toFixed(0)}% of its pixels in both pictures (${shapeLeast * 100}% wanted)`); // prettier-ignore
+    if (v.colour > colourMost) faults.push(`seen from view ${k + 1}, its colours not the original's: ${(v.colour * 100).toFixed(0)}% of its regions more than ${LOOK_REGION_FAR} apart (${colourMost * 100}% at most)`); // prettier-ignore
+  });
+  return { views, shape, colour, faults };
+}
+
 /** The C# that removes the probe object. */
 export const removeProbeCode = () =>
   `var scene = Editor.SceneEditorSession.Active?.Scene ?? Game.ActiveScene;
@@ -731,14 +927,29 @@ export function compareSbox(expected, read, { tolerance = POSE_TOLERANCE } = {})
   return { passed: !faults.length, faults, said, worst };
 }
 
+/** The kit's pictures in a row above s&box's, each LOOK.size square. */
+function looksSideBySide(kit, sbox) {
+  const side = LOOK.size;
+  const width = side * kit.length;
+  const rgba = new Uint8Array(width * side * 2 * 4);
+  [kit, sbox].forEach((row, r) =>
+    row.forEach((p, c) => {
+      for (let y = 0; y < Math.min(side, p.height); y++)
+        rgba.set(p.rgba.subarray(y * p.width * 4, (y * p.width + Math.min(side, p.width)) * 4), ((r * side + y) * width + c * side) * 4); // prettier-ignore
+    }),
+  );
+  return png(width, side * 2, rgba);
+}
+
 /**
  * The whole check of a model's port in s&box: the port made again (as sbox-port made it: same name, folder and
  * kind), compiled if its .vmdl_c is not there, read back and posed in the project's editor, and held to the
- * original. `shot`: a file to save the editor's picture of it to. Returns { passed, faults, said, worst, shot }.
+ * original. `look: false` leaves how it looks unpictured. `shot`: a file to save the kit's pictures of it and
+ * s&box's to. Returns { passed, faults, said, worst, looks, shot }.
  */
 export async function checkSboxPort(
   file,
-  { project, name, folder, kind, collision, surfaceprop, mass, sounds, sbox, perSequence = 2, shot, tolerance } = {},
+  { project, name, folder, kind, collision, surfaceprop, mass, sounds, sbox, perSequence = 2, look = true, shot, tolerance } = {},
 ) {
   const engine = sbox ?? findSbox();
   const root = projectFolder(project);
@@ -760,7 +971,8 @@ export async function checkSboxPort(
     throw new Error(
       `${port.vmdl} is not in ${assets}: port it there first (smak sbox-port ${own} -o ${assets})`,
     );
-  if (!existsSync(join(assets, `${port.vmdl}_c`))) compileVmdl(assets, port.vmdl, { sbox: engine });
+  const materials = port.files.map((f) => f.path).filter((path) => path.endsWith(".vmat"));
+  if (!existsSync(join(assets, `${port.vmdl}_c`))) compileVmdl(assets, port.vmdl, { sbox: engine, materials });
   if (port.graph && !existsSync(join(assets, `${port.graph}_c`))) compileVmdl(assets, port.graph, { sbox: engine });
   const lacking = port.sounds.filter((s) => !existsSync(join(assets, s.wav)));
   if (lacking.length) throw new Error(`${lacking[0].wav} is not in ${assets}: port the model there again (smak sbox-port ${own} -o ${assets})`); // prettier-ignore
@@ -781,21 +993,28 @@ export async function checkSboxPort(
     if (expected.sounds.length && !read.error)
       read.sounds = runCsharp(root, soundProbeCode(port.vmdl, expected.sounds, expected.soundEvents), { sbox: engine }); // prettier-ignore
     const result = compareSbox(expected, read, { tolerance });
-    if (shot && !read.error) {
-      const size = Math.max(16, ...expected.poses[0].bones.map((p) => Math.hypot(...p))) * 2.2;
-      const at = PROBE_AT;
-      const pictured = sboxCall(root, "call_tools", { calls: [
-        { name: "set_editor_camera", arguments: { position: `${at[0] + size},${at[1] - size * 0.6},${at[2] + size * 0.45}`, angles: "18,150,0" } },
-        { name: "editor_camera_screenshot", arguments: { width: 960, height: 720 } },
-      ] }, { sbox: engine }); // prettier-ignore
-      const made = String(typeof pictured === "string" ? pictured : JSON.stringify(pictured)).match(
-        /[A-Za-z]:\\[^\r\n"]+\.png/,
-      );
-      if (made) {
-        copyFileSync(made[0], shot);
-        result.shot = shot;
+    // its materials, each compiled by the editor
+    const failed = compileAssets(root, materials, { sbox: engine });
+    if (failed.length) result.faults.push(`${failed.length} of its ${materials.length} materials not compiled (s&box draws them red): ${failed.slice(0, 6).join(", ")}`); // prettier-ignore
+    // how it looks, beside the kit's own picture of the original
+    if (look && !read.error) {
+      const views = lookViewsOf(framing(src, [{ seq: 0, frame: 0 }]));
+      const { kit, skip } = lookKitOf(src, views);
+      const drawn = runCsharp(root, lookProbeCode(port.vmdl, views.views), { sbox: engine });
+      if (drawn.error) result.faults.push(`not pictured: ${drawn.error}`);
+      else {
+        const pictures = drawn.pictures.map((b) => unpng(Buffer.from(b, "base64")));
+        const looks = compareLooks(kit, pictures, { skip });
+        result.faults.push(...looks.faults);
+        result.said.push(`it looks as the original from ${looks.views.length} views: ${(looks.shape * 100).toFixed(0)}% of its silhouette shared at the least, ${(looks.colour * 100).toFixed(0)}% of its regions another colour at the most`); // prettier-ignore
+        result.looks = looks;
+        if (shot) {
+          writeFileSync(shot, looksSideBySide(kit, pictures));
+          result.shot = shot;
+        }
       }
     }
+    result.passed = !result.faults.length;
     runCsharp(root, removeProbeCode(), { sbox: engine });
     return { ...result, opened: editor.opened };
   } finally {

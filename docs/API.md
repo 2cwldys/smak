@@ -874,13 +874,25 @@ map's monsters come: `spawnsOf`, `spawnsTable`; its character in numbers: `chara
   the sounds its events play, returned as `sounds` and `soundEvents` (`[{ sequence, sounds }]`).
 - `compileSounds(assets, wavs, { sbox })` → `{ compiled, said, took }`: sound files compiled in one run, each to its
   `.vsnd_c`.
+- `portMapToSbox(file, { name, folder, folders, starts })` → a GoldSrc map as an s&box scene: `{ name, scene, files, meshes,
+  spawns, lights, sky, warnings, facts }` (its faces as MeshComponents, its clip brushes, each brush entity solid
+  with every brush, textures, sky, starts (`starts`: a mod's start classes), lights and an indirect light volume); `writeSboxMap(port, out)`; `portMapToSboxFile(file, { out, ... })`. `meshBlob(polygons)` → a
+  PolygonMesh's saved blob (base64) of `[{ corners, uvs, material }]`, each polygon its own corners, anticlockwise;
+  `rotationOf([pitch, yaw, roll])` → Source's angles as s&box's quaternion text. `WORLD_TAG`, `CLIP_TAG`, `BRUSH_TAG`,
+  `INDIRECT_LIGHT`, `SUN_SCALE`, `SKY_LIGHT_SHARE`, `LIGHT_REACH`, `TEXLIGHT_AREA`.
+- `checkSboxMap(file, { project, name, folder, folders, starts, count, seed, allow, light, sbox, shot })` → `{ passed, faults,
+  said, collision, light, port, shot }`: the map ported and held to the original in the editor. Its parts:
+  `expectedMapOf(file, port, { count, seed })`, `mapProbeCode(scene, spots, floors)`, `compareSboxMap(expected, read,
+  { allow })`; `lightViewsOf(port)`, `lightCamerasCode(views)`, `lightCamerasGoneCode()`, `bakeIndirectLightCode()`, `brightnessGrid(picture)`,
+  `compareLight(goldsrc, sbox, { ratio, likeness })`; `compileFailures(answered, paths)`.
 - `findSbox({ folder, env })` → s&box's folder (`SMAK_SBOX`, `FACEPUNCH_ENGINE`, a Steam library);
-  `compileVmdl(assets, vmdl, { sbox, timeout })` → `{ compiled, said, notes, took }`, throwing what the compiler said.
+  `compileVmdl(assets, vmdl, { sbox, timeout, materials })` → `{ compiled, said, notes, took }`, throwing what the
+  compiler said, or which of `materials` (the .vmat files it wears, named in the same run) it did not compile.
 - `portToSource(...)` also returns `parts`: its SMDs as data by path (`smd`), its `bones`, `bodygroups`, `skins`,
   `textures` (pixels and flags), `sequences` (each with its `index` in the original), `attachments`, `hitboxes` and
   `eyes`, which the s&box port writes from; `portToSbox` hands them on as its `parts`.
 - `checkSboxPort(file, { project, name, folder, kind, collision, surfaceprop, mass, sbox, perSequence = 2, tolerance =
-  0.1, shot })` → `{ passed, faults, said, worst, shot, opened }` (async): the port read back and posed in the
+  0.1, look = true, shot })` → `{ passed, faults, said, worst, looks, shot, opened }` (async): the port read back and posed in the
   project's editor and held to the original. Its parts: `expectedOf(src, port, { groups, perSequence })` (the bones,
   animations' lengths, parts, skins, attachments, hit boxes, GoldSrc's poses at the sampled frames, each blend's too, and `physics`:
   the hulls, masses and joints written, and the poses to hold the ragdoll in; and `graph`, `graphParameters`,
@@ -894,9 +906,14 @@ map's monsters come: `spawnsOf`, `spawnsTable`; its character in numbers: `chara
   `physicsProbeCode(vmdl, poses)` (the C# that reads its physics and tries it in worlds of its own: at rest, posed,
   dropped), `comparePhysics(expected, read)` → `{ faults, said }`, `REST_HOLD` (0.1 units), `POSE_HOLD` (1),
   `LIMIT_MARGIN` (5 degrees), `STRETCH_MOST` (0.5 units), `HULL_TOLERANCE` (0.5 units), `DROP_TOLERANCE` (dropped,
-  through the floor or a joint apart: 1 unit or 0.01 of its size, whichever is more).
+  through the floor or a joint apart: 1 unit or 0.01 of its size, whichever is more). How it looks:
+  `lookViewsOf({ mid, far })` → `{ mid, dist, views }` (LOOK's four eyes), `lookKitOf(src, looks)` → `{ kit, skip }`
+  (the kit's pictures, and each one's chrome pixels), `lookProbeCode(vmdl, views)` (the C# that draws it in a scene
+  of its own), `compareLooks(kit, sbox, { skip })` → `{ views, shape, colour, faults }`; `LOOK`, `LOOK_SHAPE` (0.95),
+  `LOOK_COLOUR` (0.12 of the regions), `LOOK_REGION_FAR` (80).
 - The editor, through sbox-cli: `editorFor(project, { sbox, wait })` → `{ opened, close() }` (async: the one open, or
   one opened that close() closes), `sboxCall(project, tool, args)`, `runCsharp(project, code)`, `projectFolder(project)`,
+  `compileAssets(project, paths)` (the editor's asset_compile, the paths it could not compile),
   `sboxCli(sbox)`.
 
 ## Playing a map in the game (`src/play.mjs`, exported as `play`)

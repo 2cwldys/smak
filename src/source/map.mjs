@@ -33,7 +33,7 @@ import { readStudio } from "../studio-file.mjs";
 import { sequences } from "../mdl.mjs";
 import { writeVtf, bleedHoles, powerOfTwo, VTF_FLAG } from "./vtf.mjs";
 import { CONTENTS, SOURCE_LUMP as LUMP, Packer, SURF, colorRgbExp, storedZip, visibilityLump, writeSourceBsp } from "./bsp.mjs";
-import { brushesOfClipHull, brushesOfTree, clipOutsideHull, regionOf } from "./mapbrushes.mjs";
+import { brushesOfTree, clipBrushesOf, regionOf } from "./mapbrushes.mjs";
 
 // GoldSrc's contents (bspfile.h)
 const GS = { EMPTY: -1, SOLID: -2, WATER: -3, SLIME: -4, LAVA: -5, SKY: -6 };
@@ -48,9 +48,6 @@ const LEAF_FLAGS_SKY2D = 0x4;
 // one ambient sample a leaf, a third of its faces' light: about what vrad's own room had
 const AMBIENT_SHARE = 1 / 3;
 const AREA_WORLD = 1;
-// half the player's standing and ducked boxes, which qcsg grew hulls 1 and 3's brushes by
-const PLAYER_HALF = [16, 16, 36];
-const DUCKED_HALF = [16, 16, 18];
 // GoldSrc's player origin is the middle of its 72 high hull, Source's its feet
 const HULL_HALF_HEIGHT = 36;
 const PLAYER_STARTS = new Set(["info_player_start", "info_player_deathmatch", "info_player_coop", "info_player_team1", "info_player_team2"]); // prettier-ignore
@@ -388,31 +385,7 @@ export function portMapToSource(file, { name, folder = "smak", folders = [], val
   // already solid. Each is carved into the world's tree as vbsp does: the leaves it reaches split by its sides, the
   // piece inside it a leaf of player and NPC clip holding it (a trace tests a leaf's brushes only when the leaf's
   // contents are in its mask)
-  const openInDrawn = (p) => {
-    const leaf = leafAt(bsp, p);
-    return leaf !== 0 && leafContents(leaf) === null;
-  };
-  const SAMPLES = [0.1, 0.3, 0.5, 0.7, 0.9];
-  // from both the standing and the ducked hull: a clip brush on the floor merges into the floor's growth in hull 1
-  // for 36 units up, where hull 3 loses only 18 (a balcony's fence came out of hull 1 a 4 unit sliver a ducked
-  // player passed under)
-  const clips = [
-    ...brushesOfClipHull(bsp, world.headNodes[1], PLAYER_HALF, world.mins, world.maxs),
-    ...brushesOfClipHull(bsp, world.headNodes[3], DUCKED_HALF, world.mins, world.maxs),
-  ].filter((b) => {
-    for (const x of SAMPLES)
-      for (const y of SAMPLES)
-        for (const z of SAMPLES) {
-          const p = [x, y, z].map((f, k) => b.mins[k] + (b.maxs[k] - b.mins[k]) * f);
-          if (b.planes.every((pl) => dot3(pl.normal, p) - pl.dist < -0.25) && openInDrawn(p)) return true;
-        }
-    return false;
-  })
-    // a true clip brush grown by either player's box lies inside that player's hull; a piece of a wall's growth
-    // that one hull's rebuild kept does not. 10% let by, for the trees' rounding: at 2% clip of TS's bikini was
-    // lost (32 spots blocked only in GoldSrc where no filter leaves 24), at none one of c1a0's; at 10% none
-    // measured on Half-Life's eight maps or bikini
-    .filter((b) => clipOutsideHull(bsp, b, world.headNodes[1], PLAYER_HALF) <= 0.1 && clipOutsideHull(bsp, b, world.headNodes[3], DUCKED_HALF) <= 0.1); // prettier-ignore
+  const clips = clipBrushesOf(bsp);
   const CLIP = CONTENTS.PLAYERCLIP | CONTENTS.MONSTERCLIP;
   const worldBox = [0, 1, 2].flatMap((k) => [
     { normal: [0, 1, 2].map((c) => (c === k ? 1 : 0)), dist: world.maxs[k] + 64 },
@@ -947,16 +920,17 @@ export function textureTypes(folders) {
 const EMIT = { point: 1, spotlight: 2, skylight: 3 };
 const ATTENUATION_REFERENCE = 100;
 
-// `_light` as r g b and brightness: "r g b brightness", or "r g b" with 200 (hlrad's default)
-function lightOf(keys) {
+/** `_light` as r g b and brightness: "r g b brightness", or "r g b" with 200 (hlrad's default); in linear light
+ * times brightness / 255. `keys` a Map of the entity's. */
+export function lightOf(keys) {
   const v = numbersOf(keys.get("_light"));
   const [r = 255, g = 255, b = 255] = v;
   const brightness = v[3] ?? 200;
   return [r, g, b].map((c) => (c / 255) ** 2.2 * (brightness / 255));
 }
 
-// where a light shines: its angles, with `pitch` over theirs; pitch -90 is straight down (hlrad)
-function directionOf(keys) {
+/** Where a light shines, a unit vector: its angles, with `pitch` over theirs; pitch -90 is straight down (hlrad). */
+export function directionOf(keys) {
   const angles = numbersOf(keys.get("angles"));
   let pitch = angles[0] ?? 0;
   const yaw = angles[1] ?? Number(keys.get("angle") ?? 0);
