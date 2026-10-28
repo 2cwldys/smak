@@ -62,6 +62,7 @@ import { ASIDE, CENSUS_RADIUS, LOOSED, aimOf, besideOf, censusOf, censusTable, f
 export { SOFTWARE_GL, HARDWARE_GL, playwrightFrom, browserDriver } from "./play-browser.mjs";
 export { nativeDriver, pngOfTga, NATIVE_LOADED } from "./play-native.mjs";
 export { sheetOf, smallerPng } from "./play-sheet.mjs";
+export { readDemo } from "./play-demo.mjs";
 export { serveSession, attachSession, sessionState, closeSession, SESSION_PORT } from "./play-session.mjs";
 
 /** What a step may do: one of these, or nothing but a wait and a picture. */

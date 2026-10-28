@@ -5,6 +5,12 @@ mending for, says so under **Mind**.
 
 ## Unreleased
 
+Play (`docs/PLAY.md`, "A demo, read"):
+- `play.readDemo`: a GoldSrc demo (.dem, the console's `record`) read, every frame the client drew: where it had the
+  player, how fast, on the ground or not, the eye's height, the command sent and the server's movement settings.
+  Momentum Break's walk test held s&box's port of TS's movement to a demo of TS played by hand on ts_lobby: top
+  speed, acceleration, the stop, the jump, the duck, all within 1%.
+
 s&box, a map's light (`docs/SBOX.md`, "A map, as a scene"):
 - A map is lit by its own lightmaps (`lighting: "lightmaps"`, the default; `src/sbox/lightmap.mjs`): every face's
   lightmap in one picture of the map's, each face's place there in its corners' vertex colour, and SMAK's shader

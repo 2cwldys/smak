@@ -77,6 +77,25 @@ the start and over in 4 to 9 (Neuropolis in TS, 2026-10-24).
 - Two starts of `ts_lobbyduel` in seven ended by themselves as the player connected (code 0, no line): the run
   stops and says the game ended; run it again.
 
+## A demo, read: `play.readDemo`
+
+```js
+const demo = smak.play.readDemo(readFileSync("Half-Life/ts/walk.dem"));
+demo.frames[0]; // { time, frametime, origin, velocity, onGround, waterLevel, viewHeight, viewAngles, cmd, movevars }
+```
+
+A GoldSrc demo (the console's `record <name>`, ended by `stop`) keeps, with every network message, the view the
+client drew that frame with: the player where the client predicted them (`origin`, `velocity`, `onGround`, the eye's
+`viewHeight`), the command it sent (`cmd`: `msec`, `forward`, `side`, `up`, `buttons`, `viewAngles`) and the
+server's movement settings (`movevars`: gravity, maxspeed, friction, accelerate...). `commands` are the console
+commands it kept. So a demo of a run is the player's own movement frame by frame, as exact as the game had it,
+whether the run was played by the person or by `smak play native` (whose console moves need no `--input`). A
+spectator's `viewHeight` is 0. The layout is Xash3D's cl_demo.c's (demo protocol 5).
+
+In The Specialists a run of `smak play native` did not get the player in (2026-10-28): the buy menu, a VGUI menu,
+stays open over `slot7`, takes real clicks, and the server let no `respawn` from the console through, with an empty
+loadout either. The walk was played by the person and recorded.
+
 ## The commands
 
 ```
