@@ -47,11 +47,11 @@ import { textureKind, textureRgba } from "../maps/miptex.mjs";
 import { mapOwnFolders, texturesFor } from "../maps/wad.mjs";
 import { skyOf, skyColour } from "../maps/sky.mjs";
 import { png } from "../image.mjs";
-import { materialName, lightOf, directionOf } from "../source/map.mjs";
+import { materialName, lightOf, directionOf, textureTypes } from "../source/map.mjs";
 import { bleedHoles, powerOfTwo } from "../source/vtf.mjs";
 import { PORT_FOLDER } from "../source/port.mjs";
 import { clipBrushesOf, entityBrushesOf, regionOf } from "../source/mapbrushes.mjs";
-import { vmatOf, WHITE_PNG } from "./vmdl.mjs";
+import { vmatOf, surfaceLines, WHITE_PNG } from "./vmdl.mjs";
 import { lightmapAtlas, lightmapShader, LIGHTMAP_SHADER } from "./lightmap.mjs";
 import { lightTree, lightTreeBytes } from "../maps/model-light.mjs";
 import { guidOf } from "./sound.mjs";
@@ -68,6 +68,22 @@ export const SUN_SCALE = 4;
 export const SKY_LIGHT_SHARE = 0.75;
 /** The sky's picture round the world: twice as wide as high (s&box's sky shader reads it longitude by latitude). */
 export const SKY_WIDTH = 2048;
+/**
+ * GoldSrc gives a texture its type in the game's sound/materials.txt (concrete when not listed), which picks its
+ * steps' and bullets' sounds and, in TS, an impact's particles. A map's material carries it as a physics surface of
+ * SMAK's own, `goldsrc_<type>` (surfaces/goldsrc_<type>.surface), which a trace that hits the face reports: one for
+ * each type, as s&box's own surfaces have no vent, grate, tile, computer or slosh; each made on the nearest of
+ * s&box's for what s&box does with a surface itself (its physics, its default sounds).
+ */
+export const SURFACE_OF_TYPE = { C: "concrete", M: "metal", D: "dirt", V: "vent", G: "grate", T: "tile", S: "slosh", W: "wood", P: "computer", Y: "glass", F: "flesh", N: "snow" }; // prettier-ignore
+const SBOX_SURFACE_OF_TYPE = { C: "default", M: "metal", D: "dirt", V: "metal.sheet", G: "metal", T: "ceramic", S: "water", W: "wood", P: "plastic", Y: "glass", F: "flesh", N: "dirt" }; // prettier-ignore
+/** A GoldSrc texture type's surface: its name, and its file under a project's Assets. */
+export const surfaceOfType = (type) => {
+  const known = SURFACE_OF_TYPE[type] ? type : "C";
+  const name = `goldsrc_${SURFACE_OF_TYPE[known]}`;
+  const data = `${JSON.stringify({ BaseSurface: `surfaces/${SBOX_SURFACE_OF_TYPE[known]}.surface`, Description: `GoldSrc's texture type ${known} (${SURFACE_OF_TYPE[known]}, sound/materials.txt), made by SMAK` }, null, 2)}\n`; // prettier-ignore
+  return { name, path: `surfaces/${name}.surface`, data };
+};
 /** The world's own game object's tag, which a trace asks for to hit the world alone. */
 export const WORLD_TAG = "world";
 /** The clip brushes' tag. */
@@ -304,6 +320,13 @@ export function portMapToSbox(file, { name, folder = PORT_FOLDER, folders = [], 
   const fromWads = texturesFor(bsp, searched, { pixels: true });
   if (fromWads.missing.length) warnings.push(`textures in no wad found, not drawn: ${fromWads.missing.slice(0, 8).join(" ")}${fromWads.missing.length > 8 ? ` and ${fromWads.missing.length - 8} more` : ""}`); // prettier-ignore
   const made = new Map(); // each material's inputs: an entity drawn otherwise makes its own variant of them
+  // each texture's type (materials.txt) as its surface, the surfaces written once each
+  const typeOf = textureTypes(searched);
+  const surfaceOf = (textureName) => {
+    const surface = surfaceOfType(typeOf(textureName));
+    if (!files.some((f) => f.path === surface.path)) put(surface.path, surface.data);
+    return surface.name;
+  };
   const reflects = []; // each texture's reflectivity, as hlrad has it
   const materials = bsp.textures.map((entry, index) => {
     const kind = textureKind(entry.name);
@@ -343,7 +366,8 @@ export function portMapToSbox(file, { name, folder = PORT_FOLDER, folders = [], 
     const flags = (mask ? MASKED : 0) | (shining.has(entry.name.toLowerCase()) ? FULLBRIGHT : 0);
     const illum = flags & FULLBRIGHT ? `materials/${folder}/tools/white.png` : undefined;
     if (illum && !files.some((f) => f.path === illum)) put(illum, WHITE_PNG);
-    put(`${base}.vmat`, vmatOf({ color: `${base}.png`, mask, illum, flags }));
+    const surface = surfaceOf(entry.name);
+    put(`${base}.vmat`, vmatOf({ color: `${base}.png`, mask, illum, flags, surface }));
     // its holes filled (the palette's last colour in them, as the game draws them out of render mode 4), made
     // when a face wears it so
     const filled = () => {
@@ -359,7 +383,7 @@ export function portMapToSbox(file, { name, folder = PORT_FOLDER, folders = [], 
       put(`${base}_pot.png`, png(picture.width, picture.height, picture.rgba));
       return `${base}_pot.png`;
     };
-    made.set(`${base}.vmat`, { base, mask, illum, flags, filled, even });
+    made.set(`${base}.vmat`, { base, mask, illum, flags, filled, even, surface });
     return `${base}.vmat`;
   });
   // a brush entity drawn added to what is behind it (rendermode 5, kRenderTransAdd), as bright as its renderamt
@@ -367,24 +391,24 @@ export function portMapToSbox(file, { name, folder = PORT_FOLDER, folders = [], 
   // colours, s&box in linear light: its share in linear light (to the power 2.2), or a dark room behind it comes out
   // washed in its colour (test_scripts' shield, renderamt 100: s&box's view of the room all purple, 2026-10-27)
   const additiveOf = (material, amount) => {
-    const { base } = made.get(material);
+    const { base, surface } = made.get(material);
     const variant = `${base}_add${amount}.vmat`;
     const illum = `materials/${folder}/tools/white.png`;
     const share = (amount / 255) ** 2.2;
     if (!files.some((f) => f.path === illum)) put(illum, WHITE_PNG);
     if (!files.some((f) => f.path === variant))
-      put(variant, vmatOf({ color: translucentPictureOf(material), illum, flags: ADDITIVE | FULLBRIGHT, tint: [share, share, share] })); // prettier-ignore
+      put(variant, vmatOf({ color: translucentPictureOf(material), illum, flags: ADDITIVE | FULLBRIGHT, tint: [share, share, share], surface })); // prettier-ignore
     return variant;
   };
   // a brush entity seen through (rendermode 1 to 3: kRenderTransColor, Texture, Glow) at its renderamt out of 255:
   // glass, mostly (ts_lobby's skylights at 150, drawn opaque before 2026-10-28). GoldSrc draws it with no lightmap,
   // at full light (Xash R_HasLightmap), so lit by itself
   const seenThroughOf = (material, amount) => {
-    const { base } = made.get(material);
+    const { base, surface } = made.get(material);
     const variant = `${base}_see${amount}.vmat`;
     const see = `materials/${folder}/tools/white.png`;
     if (!files.some((f) => f.path === see)) put(see, WHITE_PNG);
-    if (!files.some((f) => f.path === variant)) put(variant, vmatOf({ color: translucentPictureOf(material), illum: see, flags: FULLBRIGHT, opacity: amount / 255, see })); // prettier-ignore
+    if (!files.some((f) => f.path === variant)) put(variant, vmatOf({ color: translucentPictureOf(material), illum: see, flags: FULLBRIGHT, opacity: amount / 255, see, surface })); // prettier-ignore
     return variant;
   };
   // a `{` texture's holes are open only on a brush entity in render mode 4 (kRenderTransAlpha, "Solid"); on the world
@@ -405,9 +429,9 @@ export function portMapToSbox(file, { name, folder = PORT_FOLDER, folders = [], 
     return evenPictures.get(material);
   };
   const filledOf = (material) => {
-    const { base, illum, flags } = made.get(material);
+    const { base, illum, flags, surface } = made.get(material);
     const variant = `${base}_filled.vmat`;
-    if (!files.some((f) => f.path === variant)) put(variant, vmatOf({ color: pictureOf(material), illum, flags: flags & ~MASKED }));
+    if (!files.some((f) => f.path === variant)) put(variant, vmatOf({ color: pictureOf(material), illum, flags: flags & ~MASKED, surface })); // prettier-ignore
     return variant;
   };
   // ── its light, when GoldSrc's own (lighting "lightmaps", lightmap.mjs): every face's lightmap in one picture of the
@@ -429,7 +453,7 @@ export function portMapToSbox(file, { name, folder = PORT_FOLDER, folders = [], 
   // light) or "dark" (a face the compiler left unlit, which GoldSrc draws black); its holes open or filled; `size`
   // the texture's in pixels, which its face's coordinates are fractions of
   const litOf = (material, light, holesOpen, size) => {
-    const { base, mask } = made.get(material);
+    const { base, mask, surface } = made.get(material);
     const open = Boolean(mask) && holesOpen;
     const own = base.slice(`materials/${folder}/`.length).replace(/\//g, "_");
     const variant = `materials/${folder}/maps/${mapName}/lit/${own}${light === "lit" ? "" : `_${light}`}${open ? "_holes" : ""}.vmat`; // prettier-ignore
@@ -442,7 +466,7 @@ export function portMapToSbox(file, { name, folder = PORT_FOLDER, folders = [], 
       lines.push(`\tTextureLightmap "${atlasPath}"`, `\tg_vLightmapSize "[${atlas.width}.000000 ${atlas.height}.000000]"`, `\tg_vTextureSize "[${size[0]}.000000 ${size[1]}.000000]"`); // prettier-ignore
       if (light === "lit" && atlas.styles) lines.push(`\tg_flStyleLayers "${atlas.layers}.000"`, `\tg_flFirstLayer "${atlas.firstLayer}.000"`, `\tg_flLayerHeight "${atlas.layerHeight}.000"`, `\tTextureStyles "${stylesPath}"`); // prettier-ignore
       if (light === "dark") lines.push('\tg_flLightScale "0.000"');
-      lines.push("}", "");
+      lines.push(...surfaceLines(surface), "}", "");
       put(variant, lines.join("\n"));
     }
     return variant;

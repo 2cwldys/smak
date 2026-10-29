@@ -5,6 +5,17 @@ mending for, says so under **Mind**.
 
 ## Unreleased
 
+s&box, a map's surfaces (`docs/SBOX.md`, "A map, as a scene"):
+- Each material of a ported map names its texture's type (the game's `sound/materials.txt`) as a physics surface of
+  the kit's own, `goldsrc_<type>` (`surfaces/goldsrc_<type>.surface`, made on the nearest of s&box's), which a trace
+  that hits the face reports: what a game picks a step's or an impact's sound and particles by. `surfaceOfType`,
+  `SURFACE_OF_TYPE`; `vmatOf`'s `surface`.
+- `sboxDecal` (`src/sbox/decal.mjs`): a decals.wad texture (a bullet's hole, blood) as an s&box decal definition and
+  its picture, read as the engine reads it (`maps.decalRgba`: masked when the palette's last colour is pure blue, else
+  a gradient of that colour), at its texture's size in units. The lightmapped shader lays s&box's decals on the
+  texture before its light (`Decals::Apply`), so a hole is lit by its face's lightmap as GoldSrc lights a decal;
+  Momentum Break's {shot} holes on ts_lobby measured so.
+
 Play (`docs/PLAY.md`, "A demo, read"):
 - `play.readDemo`: a GoldSrc demo (.dem, the console's `record`) read, every frame the client drew: where it had the
   player, how fast, on the ground or not, the eye's height, the command sent and the server's movement settings.

@@ -364,6 +364,7 @@ What it makes, under `-o`:
 | `materials/smak/sky/<skyname>.png`, `.vmat` | its sky: the six sides one picture round the world (s&box's `sky.shader` reads it so) |
 | `materials/smak/tools/` | the clip brushes' material; a white picture, a self-lit texture's mask |
 | `materials/smak/maps/<map>/lighttree.bin` | with lightmaps: what a game lights a model by as GoldSrc does (below) |
+| `surfaces/goldsrc_<type>.surface` | a surface for each texture type the map's textures have (below) |
 
 - **Its faces** as the scene editor's own meshes (`MeshComponent`): drawn, collided with, and editable as a mapper
   edits s&box's meshes. Each face of the BSP, as compiled, is a polygon of its own: the world's in one mesh, each
@@ -377,6 +378,19 @@ What it makes, under `-o`:
   s&box anticlockwise: the corners are turned round. Units and axes are the same in both. Sky faces and the
   compilers' tool textures (clip, origin, null, hint, skip, aaatrigger) are not drawn; `func_illusionary` collides
   with nothing.
+- **What its faces are made of**: GoldSrc gives a texture a type in the game's `sound/materials.txt` (`M` metal, `V`
+  vent, `G` grate and so on; concrete when not listed, read as the engine reads it: `textureTypes`), which picks its
+  steps' and bullets' sounds and, in TS, an impact's particles. Each material names its type's surface
+  (`PhysicsSurfaceProperties` under `SystemAttributes`), one of the kit's own, `goldsrc_concrete`, `goldsrc_vent`...
+  (`SURFACE_OF_TYPE`, `surfaceOfType`), each made on the nearest of s&box's (a vent on `metal.sheet`): s&box's own
+  surfaces have no vent, grate, tile, computer or slosh. A trace that hits a face reports it (`SceneTraceResult.Surface`,
+  measured on ts_lobby), so a game tells the type by the surface's name.
+- **Decals** (a bullet's hole, blood): `sboxDecal(texture, { picture })` makes a decals.wad texture an s&box decal
+  definition (`.decal`) and its picture, read as the engine reads it (`maps.decalRgba`: masked when the palette's last
+  colour is pure blue, each pixel its colour and 255 a hole; else every pixel that colour with its index as alpha),
+  at its texture's size in units, a pixel a unit. The lightmapped shader lays s&box's decals on the texture before
+  its light, as GoldSrc lights a decal by its face's lightmap. A game lays one with a `Decal` component: leave its
+  `Size` at 1 (it multiplies the definition's) and set its `Rotation` (a Decal turns itself at random by default).
 - **Its clip brushes**, rebuilt from the player's hulls as `gmod-map` rebuilds them (`clipBrushesOf`): GoldSrc keeps
   no clip brush but in the hulls. Each a mesh of its own that collides as its hull (solid all through: a mesh
   collides only at its faces) and is seen in the editor only (`HideInGame`), under a game object `clip`. With them,

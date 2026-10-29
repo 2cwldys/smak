@@ -860,7 +860,7 @@ map's monsters come: `spawnsOf`, `spawnsTable`; its character in numbers: `chara
   animation's: `smdOf`'s input. `boneNameOf(name)` (spaces as underscores, as s&box keeps them),
   `quaternionOf([rx, ry, rz])`.
 - `vmdlOf({ meshes, materials, skins, bodygroups, sequences, attachments, hitboxes, physics, graph })` → a `.vmdl`'s text;
-  `vmatOf({ color, mask, flags })` → a `.vmat`'s; `kv3(value)` with `KV3_FLOAT(v)`, `KV3_INT(v)`.
+  `vmatOf({ color, mask, flags, surface })` → a `.vmat`'s (`surface`: its physics surface's name); `kv3(value)` with `KV3_FLOAT(v)`, `KV3_INT(v)`.
 - `graphOf({ sequences, poses, fade, preview })` → a `.vanmgrph`'s text: a selector on the enum `GRAPH_SEQUENCE`
   ("sequence"), an option each of `sequences` (`[{ name, loops, blends: [{ pose, start, end }], files }]`, `files`
   the animation of each blend), a blend node an animation that blends on one axis, a 2D blend one on two, a float
@@ -877,7 +877,7 @@ map's monsters come: `spawnsOf`, `spawnsTable`; its character in numbers: `chara
 - `portMapToSbox(file, { name, folder, folders, starts })` → a GoldSrc map as an s&box scene: `{ name, scene, files, meshes,
   spawns, lights, sky, warnings, facts }` (its faces as MeshComponents, its clip brushes, each brush entity solid
   with every brush, textures, sky, starts (`starts`: a mod's start classes), light: `lighting` "lightmaps" (the default: the
-  map's own, in an atlas SMAK's shader reads) or "lights" (s&box's, with texture lights and an indirect light volume)); `writeSboxMap(port, out)`; `portMapToSboxFile(file, { out, ... })`. `meshBlob(polygons)` → a
+  map's own, in an atlas SMAK's shader reads) or "lights" (s&box's, with texture lights and an indirect light volume)); `writeSboxMap(port, out)`; `portMapToSboxFile(file, { out, ... })`. `surfaceOfType(type)` → `{ name, path, data }`, a GoldSrc texture type's surface (`goldsrc_<type>`; `SURFACE_OF_TYPE`), which each of a ported map's materials names. `sboxDecal(texture, { picture })` → `{ decal, png, width, height, gradient }`, a decals.wad texture as an s&box decal definition and its picture (`maps.decalRgba(texture)` → `{ width, height, rgba, gradient }`, as the engine reads a decal). `meshBlob(polygons)` → a
   PolygonMesh's saved blob (base64) of `[{ corners, uvs, material }]`, each polygon its own corners, anticlockwise;
   `rotationOf([pitch, yaw, roll])` → Source's angles as s&box's quaternion text. `WORLD_TAG`, `CLIP_TAG`, `BRUSH_TAG`,
   `INDIRECT_LIGHT`, `SUN_SCALE`, `SKY_LIGHT_SHARE`, `LIGHT_REACH`, `TEXLIGHT_SCALE`, `TEXLIGHT_POWER`, `TEXLIGHT_REACH`.

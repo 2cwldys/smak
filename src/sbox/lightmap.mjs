@@ -141,6 +141,10 @@ PS
 		Material m = Material::Init( i );
 		float4 color = g_tColor.Sample( TextureFiltering, i.vTextureCoords.xy );
 		m.Opacity = color.a;
+		// the decals laid on it (a bullet's hole: s&box's Decal), on the texture before its light, as GoldSrc lights a
+		// decal by its face's lightmap; as ShadingModelStandard::Shade lays them, on the material
+		m.Albedo = color.rgb;
+		Decals::Apply( m.WorldPosition, m );
 		#if S_FULL_LIGHT
 			// no lightmap: full light (its scale 1.55: a liquid's), or dark (0: a face left unlit)
 			float3 light = saturate( g_flLightScale );
@@ -161,7 +165,7 @@ PS
 		light *= g_flLightScale;
 		#endif
 		// GoldSrc's texture x light, cut off at white, on the colours as the screen shows them; s&box's light is linear
-		m.Emission = Linear( min( Shown( color.rgb ) * light, 1.0 ) );
+		m.Emission = Linear( min( Shown( m.Albedo ) * light, 1.0 ) );
 		m.Albedo = 0.0;
 		m.Metalness = 0.0;
 		m.Roughness = 1.0;

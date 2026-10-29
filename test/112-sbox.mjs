@@ -1541,3 +1541,40 @@ test("lookViewsOf, lookProbeCode: four eyes round the model at the distance that
   sure(/new Scene\(\)/.test(code) && /GameTick/.test(code) && /AmbientLight>\(\)\.Color = Color\.White/.test(code) && /RenderToBitmap/.test(code), code); // prettier-ignore
   sure((code.match(/new float\[\] \{/g) ?? []).length === 4, "four views");
 });
+
+test("sbox map: each texture's type from the game's sound/materials.txt as its material's surface, one of SMAK's own a type", () => {
+  const game = join(tmp, "sbox-typed-game");
+  mkdirSync(join(game, "sound"), { recursive: true });
+  writeFileSync(join(game, "sound", "materials.txt"), "M SMAKFLOOR\nV SMAKGRATE\n");
+  for (const lighting of ["lights", "lightmaps"]) {
+    const port = sbox.portMapToSbox(twoRooms, { folders: [game], lighting });
+    const vmats = port.files.filter((f) => f.path.endsWith(".vmat") && !/playerclip|sky\//.test(f.path));
+    const surfaceIn = (name) => vmats.filter((f) => f.path.includes(name)).map((f) => f.data.match(/PhysicsSurfaceProperties "([^"]+)"/)?.[1]); // prettier-ignore
+    sure(surfaceIn("smakfloor").length && surfaceIn("smakfloor").every((s) => s === "goldsrc_metal"), `${lighting}: the floor's: ${surfaceIn("smakfloor")}`); // prettier-ignore
+    sure(surfaceIn("smakwall").every((s) => s === "goldsrc_concrete"), `${lighting}: a texture listed nowhere is concrete: ${surfaceIn("smakwall")}`); // prettier-ignore
+    sure(surfaceIn("smakgrate").length && surfaceIn("smakgrate").every((s) => s === "goldsrc_vent"), `${lighting}: {smakgrate as SMAKGRATE, its { stripped as the engine does: ${surfaceIn("smakgrate")}`); // prettier-ignore
+    const surfaces = port.files.filter((f) => f.path.startsWith("surfaces/")).map((f) => f.path).sort();
+    sure(surfaces.join() === "surfaces/goldsrc_concrete.surface,surfaces/goldsrc_metal.surface,surfaces/goldsrc_vent.surface", `${lighting}: each surface once: ${surfaces}`); // prettier-ignore
+  }
+  const vent = sbox.surfaceOfType("V");
+  sure(vent.name === "goldsrc_vent" && JSON.parse(vent.data).BaseSurface === "surfaces/metal.sheet.surface", "a vent on s&box's thin metal");
+  sure(sbox.surfaceOfType("?").name === "goldsrc_concrete", "an unknown type is concrete");
+  sure(!/SystemAttributes/.test(sbox.vmatOf({ color: "a.png" })), "a model's material has no surface unless given one");
+});
+
+test("sboxDecal: a decals.wad texture as the engine reads it, masked by a blue last colour or a gradient, at its size", () => {
+  const palette = new Uint8Array(768);
+  palette.set([200, 10, 10], 3); // colour 1
+  palette.set([0, 0, 255], 765);
+  const pixels = Uint8Array.from({ length: 16 }, (_, i) => (i === 5 ? 1 : 255));
+  const masked = smak.maps.decalRgba({ width: 4, height: 4, pixels, palette });
+  sure(!masked.gradient && masked.rgba[5 * 4 + 3] === 255 && masked.rgba[3] === 0 && masked.rgba[5 * 4] === 200, "a hole where 255, the colour elsewhere"); // prettier-ignore
+  const red = palette.slice();
+  red.set([90, 0, 0], 765);
+  const blood = smak.maps.decalRgba({ width: 4, height: 4, pixels: Uint8Array.from({ length: 16 }, (_, i) => i * 16), palette: red }); // prettier-ignore
+  sure(blood.gradient && blood.rgba[0] === 90 && blood.rgba[3] === 0 && blood.rgba[15 * 4 + 3] === 240, "a gradient: the last colour, the index as the alpha"); // prettier-ignore
+  const made = sbox.sboxDecal({ width: 4, height: 4, pixels, palette }, { picture: "materials/x/shot.png" });
+  const decal = JSON.parse(made.decal);
+  sure(decal.Width === 4 && decal.Height === 4 && decal.ColorTexture.data.FilePath === "materials/x/shot.png", "its definition: the texture's size in units, its picture"); // prettier-ignore
+  sure(made.png.subarray(1, 4).toString() === "PNG", "its picture");
+});
