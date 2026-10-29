@@ -79,6 +79,41 @@ animation's fps, looping and activity, a loop's travel, chrome worked out once),
   compiler makes no mipmaps of a mask whose sides are not, and the material fails while the model compiles
   (Counter-Strike's four trees, Master Sword's two; none of Half-Life's has holes).
 
+## Lit as GoldSrc lights a model (`--lighting goldsrc`)
+
+GoldSrc lights a model with no light entity at all (Xash3D's `R_EntityDynamicLight`, `R_StudioLighting`;
+`src/maps/model-light.mjs`). Once a frame it takes one light at the model's origin:
+
+- **the sky's** (`sv_skycolor`, which TS's game sets from the map's light_environment: (c x brightness / 255 / 114)^0.6
+  x 264), shining along the sun's way, when a line from 8 units above the origin toward the sun comes to sky first;
+- **else the floor's**: the baked light of the first lit face straight under that point (2048 units down, each style
+  at its level), shining down, leant by how the floor's light changes 16 units off on the four diagonals.
+
+Of the light's brightest channel, `v_direct` (0.9) shades by facing and the rest is ambient (128 at most, the two 255
+at most); each point gets the ambient, plus the shade by how it faces (`SHADE_LAMBERT` 1.495's modified hemisphere:
+all facing the light, about 0.67 side-on, none facing away), times the light's colour.
+
+`--lighting goldsrc` (`lighting: "goldsrc"`) puts a model's textures on SMAK's shader for it
+(`shaders/smak_studio.shader`, written into the project; `src/sbox/studio.mjs`). The game hands each renderer its
+light as render attributes (`Renderer.Attributes`): `SmakModelLight` (0 to 255 a channel), `SmakModelLightWay`, and
+`SmakModelLit` 1. A renderer not handed one is drawn as GoldSrc draws a model out of any world: ambient 192, no
+shade. The colour is the engine's (engine/client/gamma.c, gl_studio.c): the texture as the screen shows it through
+texgamma (each colour to the power texgamma / gamma, 2.0 / 2.5, `g_flTexGamma`: dark colours lifted most), times the
+light's colour times illum / 255 (lightgamma's table, a straight line at gamma and lightgamma 2.5 and brightness 0),
+times `g_flLightScale`, 1.5. That last is measured, not the engine's code: TS on Steam (2026-10-28, ts_lobby's
+hallway, TS's agent seen from the camera a demo of it recorded, beside s&box drawn from the same camera; the world
+there 1.07 times as bright as TS draws it) drew agent's suit 1.5 times what the formula gives, 1.51, 1.49 and 1.49
+by channel; at 1.5 the suit is within 0.2 of TS's in each. One measurement: whether it is a constant of Steam's
+engine or its shading by facing differs is not told apart yet. Two guesses before it were too dark: half the map's
+scale (an overbright TS does not use: `gl_overbright 0` in TS's config.cfg and Half-Life's), and the map's scale
+with no texgamma (a near-black suit two thirds as bright as TS's). Fullbright (4) is the texture as it is, flat shade (1) the ambient and 0.8 of the shade, masked (64) its
+holes; an additive texture (32) stays `complex.shader`'s, which needs a pass of its own. s&box's lights put nothing
+on it.
+
+Where the light comes from is the game's to work out: a map ported with lightmaps carries what GoldSrc reads
+(`lighttree.bin`, below), and the walks to port are `lightAt`, `lightAlong` and `meetsSky`. Momentum Break's C#
+port of them agrees with SMAK's at every one of ts_lobby's 17 starts and 300 spots round them, to the sample.
+
 ## Blends, in an animation graph
 
 GoldSrc's game code chose an animation by its number (`pev->sequence`) and said how far along its blends it was
@@ -328,6 +363,7 @@ What it makes, under `-o`:
 | `materials/smak/maps/<map>/<texture>.png`, `.vmat` | a texture the map carries inside itself |
 | `materials/smak/sky/<skyname>.png`, `.vmat` | its sky: the six sides one picture round the world (s&box's `sky.shader` reads it so) |
 | `materials/smak/tools/` | the clip brushes' material; a white picture, a self-lit texture's mask |
+| `materials/smak/maps/<map>/lighttree.bin` | with lightmaps: what a game lights a model by as GoldSrc does (below) |
 
 - **Its faces** as the scene editor's own meshes (`MeshComponent`): drawn, collided with, and editable as a mapper
   edits s&box's meshes. Each face of the BSP, as compiled, is a polygon of its own: the world's in one mesh, each
@@ -383,6 +419,12 @@ What it makes, under `-o`:
   light can be patchy (`sbox-map-check` pictures each start twice for it). ts_lobby (2026-10-28): a 1024 by 512 picture, 340 KB, its 17 starts 1.00 to
   1.04 times as bright as GoldSrc draws them, correlated 1.00; s&box's lights and a baked indirect light had it 0.12
   times as bright (TS's own lamps are in no lights.rad) after a bake of one to three hours.
+  **Its models' light**: with lightmaps the port writes `lighttree.bin` (`lightTree`, `lightTreeBytes`), what GoldSrc
+  reads to light a model ("Lit as GoldSrc lights a model"): the world's planes, nodes and leaves' contents, its faces'
+  places and lightmaps (each face's styles added up at their levels as the map starts, so a model under a flicker
+  does not flicker), the sky's light and way. A game walks it as the engine does: ts_lobby's is 1.25 MB, ts_parking's
+  2 MB. A grid of floors was tried first and was off by up to 86 of 255 at a ledge, where a column's middle stood over
+  another floor than the model.
 - **Or s&box's lights** (`lighting: "lights"`, `--lighting lights`): `light`
   a `PointLight`, `light_spot` a `SpotLight` (`_cone` and `_cone2` its inner and outer half angles), `light_environment`
   a `DirectionalLight`, its colour also the sky's light (`SkyColor`). A light's colour is its `_light` in linear light

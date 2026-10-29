@@ -25,3 +25,4 @@ export * from "./check.mjs";
 export * from "./map.mjs";
 export * from "./lightmap.mjs";
 export * from "./mapcheck.mjs";
+export * from "./studio.mjs";

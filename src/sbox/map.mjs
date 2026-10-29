@@ -12,6 +12,8 @@
 //                                                        holed one's holes in <texture>_mask.png)
 //   materials/<folder>/maps/<map>/<texture>.png .vmat    a texture the map carries inside itself
 //   materials/<folder>/sky/<skyname>.png .vmat           its sky, the six sides made one picture round the world
+//   materials/<folder>/maps/<map>/lighttree.bin          with lightmaps: what a game lights models by as GoldSrc does
+//                                                        (maps/model-light.mjs lightTreeBytes)
 //
 // THE FACES. Each face of the BSP is a polygon of a MeshComponent's PolygonMesh, as compiled (split by the
 // compiler where the tree cut it): the world's in one, each brush entity's (`model` "*N") in its own, at its
@@ -51,6 +53,7 @@ import { PORT_FOLDER } from "../source/port.mjs";
 import { clipBrushesOf, entityBrushesOf, regionOf } from "../source/mapbrushes.mjs";
 import { vmatOf, WHITE_PNG } from "./vmdl.mjs";
 import { lightmapAtlas, lightmapShader, LIGHTMAP_SHADER } from "./lightmap.mjs";
+import { lightTree, lightTreeBytes } from "../maps/model-light.mjs";
 import { guidOf } from "./sound.mjs";
 
 /** GoldSrc's player origin is the middle of its 72-high box; s&box's spawn point is where the feet go. */
@@ -412,12 +415,15 @@ export function portMapToSbox(file, { name, folder = PORT_FOLDER, folders = [], 
   // the map's own to read it ──
   const atlasPath = `materials/${folder}/maps/${mapName}/lightmap.png`;
   const stylesPath = `materials/${folder}/maps/${mapName}/lightstyles.png`;
+  // and what a game lights models by as GoldSrc does (model-light.mjs): the world's tree and its light, the sky's
+  const treePath = `materials/${folder}/maps/${mapName}/lighttree.bin`;
   let atlas = null;
   if (lighting === "lightmaps") {
     atlas = lightmapAtlas(bsp, bsp.models.flatMap((_, m) => modelFaces(bsp, m)));
     put(atlasPath, png(atlas.width, atlas.height, atlas.rgba));
     if (atlas.styles) put(stylesPath, png(atlas.styles.width, atlas.styles.height, atlas.styles.rgba));
     put(LIGHTMAP_SHADER, lightmapShader());
+    put(treePath, lightTreeBytes(lightTree(bsp)));
   }
   // the texture as a lightmapped face wears it: `light` "lit" (its lightmap's), "full" (a liquid's: no lightmap, full
   // light) or "dark" (a face the compiler left unlit, which GoldSrc draws black); its holes open or filled; `size`
@@ -651,7 +657,8 @@ export function portMapToSbox(file, { name, folder = PORT_FOLDER, folders = [], 
     lights: lights.length,
     sky: skyMaterial ? skyName : null,
   };
-  return { name: mapName, scene, files, meshes, spawns, lights, sky: skyMaterial, lighting, warnings, facts };
+  const modelLight = lighting === "lightmaps" ? treePath : null;
+  return { name: mapName, scene, files, meshes, spawns, lights, sky: skyMaterial, lighting, modelLight, warnings, facts };
 }
 
 /** The port's files written under `out` (a project's Assets folder). Returns their paths. The bake of the scene's

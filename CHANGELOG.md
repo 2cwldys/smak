@@ -47,6 +47,28 @@ s&box, a map's light (`docs/SBOX.md`, "A map, as a scene"):
   (`--request-timeout`). It pictures each start twice, the first to stream the textures in: with one, coarse
   mipmaps of ts_parking's atlas had put three starts at 1.14 to 1.18.
 
+s&box, a model lit as GoldSrc lights one (`docs/SBOX.md`, "Lit as GoldSrc lights a model"):
+- `src/maps/model-light.mjs`: Xash3D's R_EntityDynamicLight, R_RecursiveLightPoint and R_StudioLighting ported.
+  `lightAt` (the sky's light when a line toward the sun comes to sky, else the floor's under the model, leant by
+  its gradient), `lightAlong`, `floorLight`, `meetsSky`, `modelShade` (v_direct 0.9, ambient 128 at most),
+  `vertexLight` (SHADE_LAMBERT 1.495), `skyLight` (TS's sv_skycolor and sv_skyvec, after stevenlafl's), `styleLevels`.
+- A map ported with lightmaps writes its light tree (`materials/<folder>/maps/<map>/lighttree.bin`; `lightTree`,
+  `lightTreeBytes`, the port's `modelLight`): what those walks read, so a game lights a model to the sample.
+- `sbox-port --lighting goldsrc` (`lighting: "goldsrc"`): a model's textures on SMAK's studio shader
+  (`shaders/smak_studio.shader`; `src/sbox/studio.mjs`: `studioShader`, `studioVmatOf`, `STUDIO_SHADER`,
+  `STUDIO_SCALE`), lit by the light the game hands its renderer (`SmakModelLight`, `SmakModelLightWay`,
+  `SmakModelLit`); an additive texture stays complex.shader's.
+  Its colour is the engine's (texgamma's texture, `STUDIO_TEXGAMMA` 0.8, times illum / 255) times 1.5
+  (`STUDIO_SCALE`), measured against TS on Steam from a demo's own camera (ts_lobby's hallway: TS's agent's suit
+  within 0.2 of TS's by channel, the world there 1.07).
+- Momentum Break's C# port of the walks agrees with SMAK's at ts_lobby's 17 starts and 300 spots round them, to the
+  sample; TS's gordon drawn at the starts in s&box's editor.
+- The self-test runs `113-demo` (it had been left out of the list) and `114-model-light`.
+- A light_environment's `pitch` followed by `angles` takes the later one's, as CLight::KeyValue does (ts_lobby's sun
+  is level in the game, though its lightmaps were baked 30 degrees down).
+- `sbox-port` no longer passes on the GMod port's own warnings (a weapon script's activities, the Lua for a view
+  model's sounds).
+
 ## 0.36.0 (2026-10-27)
 
 s&box, a map's light (`docs/SBOX.md`, "A map, as a scene"):

@@ -120,6 +120,8 @@ const areas = [
   "110-source-map", // Source's maps: the BSP written lump by lump and read back, its light, visibility and PAKFILE
   "111-source-game", // GMod while it runs: RCON against a server speaking it, a probe run end to end
   "112-sbox", // s&box: DMX of a mesh and an animation, ModelDoc's document, a material, a port compiled where s&box is
+  "113-demo", // a GoldSrc demo read: each frame's view of the player, its command, the server's movement settings
+  "114-model-light", // a model lit as GoldSrc lights one: the sky's or the floor's light, its shade, the map's light tree, the studio shader
   "107-broken-cases", // every checker failing an input broken in one way, by the sentence it must give, and passing its twin whole
 ];
 

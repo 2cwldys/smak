@@ -1,9 +1,9 @@
 // A GoldSrc model (.mdl, version 10) made the files s&box's compiler builds a model from: a DMX for each submodel
 // and each animation, a .vmdl that says how they go together, and a PNG and a .vmat for each texture.
 //
-//   portToSbox(src, { name, folder, groups, kind, collision, surfaceprop, mass, sounds })   -> { name, vmdl, files, warnings, facts }
+//   portToSbox(src, { name, folder, groups, kind, collision, surfaceprop, mass, sounds, lighting })   -> { name, vmdl, files, warnings, facts }
 //   writeSboxPort(port, out)                         the files written under `out` (a project's Assets folder)
-//   portToSboxFile(file, { out, name, folder, kind, collision, surfaceprop, mass, sounds, compile, sbox })   the whole port
+//   portToSboxFile(file, { out, name, folder, kind, collision, surfaceprop, mass, sounds, lighting, compile, sbox })   the whole port
 //
 // WHAT GOES WHERE (under `out`, laid out as an s&box project's Assets):
 //   models/<folder>/<name>.vmdl                          the model's document; compiled beside it (.vmdl_c)
@@ -43,6 +43,7 @@ import { soundFoldersOf } from "../source/gmod.mjs";
 import { sboxSound, distanceOf, ATTENUATION, SOUND_FOLDER } from "./sound.mjs";
 import { dmxOf, boneNameOf } from "./dmx.mjs";
 import { vmdlOf, vmatOf, WHITE_PNG } from "./vmdl.mjs";
+import { studioShader, studioVmatOf, STUDIO_SHADER } from "./studio.mjs";
 import { compileVmdl, compileSounds } from "./compile.mjs";
 import { physicsOf } from "./physics.mjs";
 import { graphOf, GRAPH_SEQUENCE } from "./graph.mjs";
@@ -51,6 +52,8 @@ import { graphOf, GRAPH_SEQUENCE } from "./graph.mjs";
 const MASKED = 64;
 /** And its fullbright one (STUDIO_NF_FULLBRIGHT): drawn lit by itself. */
 const FULLBRIGHT = 4;
+/** And its additive one (STUDIO_NF_ADDITIVE). */
+const ADDITIVE = 32;
 /** A node's name as ModelDoc takes it: a hyphen in a mesh's name fails its compile, unsaid why. */
 const nodeName = (name) => String(name).replace(/[^A-Za-z0-9_]/g, "_");
 
@@ -74,8 +77,9 @@ const CLIENT_SOUND = 5004;
  */
 export function portToSbox(
   src,
-  { name, folder = PORT_FOLDER, groups, kind, collision = "auto", surfaceprop, mass, sounds = [] } = {},
+  { name, folder = PORT_FOLDER, groups, kind, collision = "auto", surfaceprop, mass, sounds = [], lighting = "sbox" } = {},
 ) {
+  if (!["sbox", "goldsrc"].includes(lighting)) throw new Error(`portToSbox: lighting is "sbox" or "goldsrc", not ${lighting}`);
   if (!name) throw new Error("portToSbox: the model's name in s&box (name)");
   // a v_ model is a view model, as for GMod; a p_ one is not made a held one unless told: GMod's port gives it
   // Valve's biped's bone names (ValveBiped.Bip01_R_Hand) so GMod finds its hand, which s&box does not look for, and
@@ -96,7 +100,11 @@ export function portToSbox(
   const where = sourceName(folder);
   const base = `models/${where}/${port.name}`;
   const files = [];
-  const warnings = [...port.warnings];
+  // the Source port's warnings but GMod's own: a weapon script's activities and the Lua that plays a view model's
+  // sounds (s&box plays them from the model), and its muzzle said as s&box's
+  const warnings = port.warnings
+    .filter((w) => !/SendWeaponAnim|played by Lua/.test(w))
+    .map((w) => w.replace("where GMod puts its muzzle flash", "where a game looks for its muzzle"));
   const view = port.facts.view;
   // the bones named as s&box keeps them, two that would come out one (Bip01 L and Bip01_L) kept apart as _2
   const boneNames = [];
@@ -135,7 +143,10 @@ export function portToSbox(
       if (!files.some((f) => f.path === illum)) files.push({ path: illum, data: WHITE_PNG });
     }
     const path = `materials/${base}/${t.name}.vmat`;
-    files.push({ path, data: vmatOf({ color, mask, illum, flags: t.flags }) });
+    // lit as GoldSrc lights a model (studio.mjs), but for an additive texture, which needs a pass of its own
+    const goldsrc = lighting === "goldsrc" && !(t.flags & ADDITIVE);
+    if (goldsrc && !files.some((f) => f.path === STUDIO_SHADER)) files.push({ path: STUDIO_SHADER, data: studioShader() });
+    files.push({ path, data: goldsrc ? studioVmatOf({ color, mask, flags: t.flags }) : vmatOf({ color, mask, illum, flags: t.flags }) }); // prettier-ignore
     return { name: t.name, path };
   });
   const pathOf = (material) => `materials/${base}/${material}.vmat`;
@@ -383,7 +394,7 @@ export function writeSboxPort(port, out) {
  */
 export function portToSboxFile(
   file,
-  { out, name, folder, kind, collision, surfaceprop, mass, sounds, compile = true, sbox } = {},
+  { out, name, folder, kind, collision, surfaceprop, mass, sounds, lighting, compile = true, sbox } = {},
 ) {
   if (!out) throw new Error("portToSboxFile: the folder the port goes to (out: a project's Assets)");
   const { src } = readStudio(file);
@@ -398,6 +409,7 @@ export function portToSboxFile(
     surfaceprop,
     mass,
     sounds: sounds ?? soundFoldersOf(file),
+    lighting,
   });
   const written = writeSboxPort(port, resolve(out));
   const materials = port.files.map((f) => f.path).filter((path) => path.endsWith(".vmat"));

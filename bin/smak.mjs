@@ -3648,7 +3648,9 @@ function sboxPortOptions(command, flags) {
     fail(`${command}: --collision ${smak.source.COLLISIONS.join(", ")}, not ${flags.collision}`);
   const mass = numberOf(flags, "mass");
   if (mass !== undefined && !(mass > 0)) fail(`${command}: --mass is kilograms, more than 0, not ${flags.mass}`);
-  return { name: flags.name, folder: flags.folder, kind: flags.kind, collision: flags.collision, surfaceprop: flags.surfaceprop, mass, sbox: flags.sbox }; // prettier-ignore
+  if (flags.lighting !== undefined && !["sbox", "goldsrc"].includes(flags.lighting))
+    fail(`${command}: --lighting sbox or goldsrc, not ${flags.lighting}`);
+  return { name: flags.name, folder: flags.folder, kind: flags.kind, collision: flags.collision, surfaceprop: flags.surfaceprop, mass, lighting: flags.lighting, sbox: flags.sbox }; // prettier-ignore
 }
 
 function sboxPort({ command, file, flags }) {
@@ -4862,7 +4864,7 @@ const COMMANDS = {
     run: sboxPort,
     own: true,
     help: `  sbox-port <mdl> -o <Assets folder> [--name n] [--folder smak] [--kind thing|view|held|player] [--collision auto|hull|box|ragdoll|none]
-                              [--surfaceprop wood] [--mass kg] [--sbox <folder>] [--no-compile]
+                              [--surfaceprop wood] [--mass kg] [--lighting sbox|goldsrc] [--sbox <folder>] [--no-compile]
                                             a GoldSrc model ported to s&box: its meshes and animations (those in <name>01.mdl
                                             too) as DMX, its bodygroups, skins, attachments, hit boxes, animations' activities,
                                             events and travel in a .vmdl (models/<folder>/<name>.vmdl), its textures as PNG and
@@ -4879,7 +4881,9 @@ const COMMANDS = {
                                             shared by volume; pieces that meet at rest and are not joined are trimmed apart. An
                                             animation's blends (Half-Life's aiming) go in an animation graph (<name>.vanmgrph):
                                             an animation chosen by its "sequence", blended by blend_xr and the like, as GoldSrc's
-                                            game code did; each blend is an animation of its own too.`,
+                                            game code did; each blend is an animation of its own too.
+                                            --lighting goldsrc: lit as GoldSrc lights a model (shaders/smak_studio.shader: one
+                                            light, the sky's or the floor's, that the game hands its renderer; docs/SBOX.md).`,
   },
   "sbox-check": {
     run: sboxCheck,
