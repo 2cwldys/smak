@@ -111,7 +111,7 @@ FEATURES
 	#include "common/features.hlsl"
 	Feature( F_ALPHA_TEST, 0..1, "Rendering" );
 	Feature( F_FULL_LIGHT, 0..1, "Rendering" );
-	Feature( F_TRANSLUCENT, 0..2, "Rendering" );
+	Feature( F_TRANSLUCENT, 0..2(0="Opaque", 1="Blended", 2="Added"), "Rendering" );
 }
 
 MODES
@@ -168,7 +168,7 @@ PS
 		RenderState( DstBlend, ONE );
 		RenderState( DepthWriteEnable, false );
 	#endif
-	// g_flOpacityScale: common/pixel.hlsl's, as complex.shader's
+	// g_flOpacityScale: sbox_pixel.fxc's, declared only when S_TRANSLUCENT, as complex.shader's
 
 	// the texture and its holes, mixed by Box as complex.shader's are (AlphaWeighted fails on sides not a power of two)
 	CreateInputTexture2D( TextureColor, Srgb, 8, "", "_color", "Material,10/10", Default3( 1.0, 1.0, 1.0 ) );
@@ -252,8 +252,13 @@ ${dlightAttributes()}
 		float frame = fmod( floor( g_flTime * ${ANIMATION_RATE}.0 ), max( frames, 1.0 ) ) + ( other ? g_flFrames : 0.0 );
 		float2 picked = g_flFrames + g_flOtherFrames > 1.0 ? ( frac( uv ) + float2( frame, 0.0 ) ) * g_vFrameShare : uv;
 		float4 color = g_tColor.SampleGrad( TextureFiltering, picked, ddx( uv ) * g_vFrameShare, ddy( uv ) * g_vFrameShare );
-		// its render amount: its entity's, once changed, else the map's
-		float amount = state.a > 0.5 ? state.b : g_flOpacityScale;
+		// its render amount: its entity's, once changed, else the map's (g_flOpacityScale is declared only for a
+		// translucent combo: sbox_pixel.fxc)
+		#if S_TRANSLUCENT
+			float amount = state.a > 0.5 ? state.b : g_flOpacityScale;
+		#else
+			float amount = state.a > 0.5 ? state.b : 1.0;
+		#endif
 		m.Opacity = color.a;
 		#if S_TRANSLUCENT == 1
 			m.Opacity *= amount;

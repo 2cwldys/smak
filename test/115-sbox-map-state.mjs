@@ -12,6 +12,16 @@ const { sbox } = smak;
 test("lightmapShader: frames, scroll and slot read; F_TRANSLUCENT 1 blended, 2 added and unlit", () => {
   const text = sbox.lightmapShader();
   sure(/Feature\( F_TRANSLUCENT, 0\.\.2/.test(text), "F_TRANSLUCENT 0..2");
+  // s&box compiles neither a feature of more than two values without names, nor g_flOpacityScale outside a
+  // translucent combo (sbox_pixel.fxc declares it only then)
+  for (const shader of [text, sbox.studioShader()])
+    sure(/F_TRANSLUCENT, 0\.\.2\(0="[^"]+", 1="[^"]+", 2="[^"]+"\)/.test(shader), "F_TRANSLUCENT's values named");
+  const reads = text.split("\n").filter((l) => /g_flOpacityScale/.test(l) && !/^\s*\/\//.test(l));
+  sure(reads.length > 0, "the amount read");
+  for (const line of reads) {
+    const before = text.slice(0, text.indexOf(line));
+    sure(before.lastIndexOf("#if S_TRANSLUCENT") > before.lastIndexOf("#endif"), `read outside S_TRANSLUCENT: ${line.trim()}`); // prettier-ignore
+  }
   sure(/S_TRANSLUCENT == 2[\s\S]*SrcBlend, ONE \)[\s\S]*DstBlend, ONE \)[\s\S]*DepthWriteEnable, false/.test(text), "added: ONE, ONE, no depth"); // prettier-ignore
   for (const name of ["g_flFrames", "g_flOtherFrames", "g_vFrameShare", "g_flScroll", "g_flSlot", '"SmakEntities"', '"SmakEntitiesSet"']) sure(text.includes(name), name); // prettier-ignore
   sure(

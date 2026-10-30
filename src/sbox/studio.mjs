@@ -57,7 +57,7 @@ FEATURES
 	Feature( F_ALPHA_TEST, 0..1, "Rendering" );
 	Feature( F_FULLBRIGHT, 0..1, "Rendering" );
 	Feature( F_FLATSHADE, 0..1, "Rendering" );
-	Feature( F_TRANSLUCENT, 0..2, "Rendering" );
+	Feature( F_TRANSLUCENT, 0..2(0="Opaque", 1="Blended", 2="Added"), "Rendering" );
 }
 
 MODES

@@ -3,6 +3,15 @@
 The newest first. A version that changes what a model's file looks like, or that a model made before needs
 mending for, says so under **Mind**.
 
+## 0.37.1 (2026-10-30)
+
+s&box, the lightmapped and studio shaders (`lightmap.mjs`, `studio.mjs`), which 0.37.0's left uncompilable:
+- `F_TRANSLUCENT` names its three values (Opaque, Blended, Added): s&box refuses a feature of more than two values
+  without names, and the studio shader failed to compile.
+- The lightmapped shader reads `g_flOpacityScale` only in its see-through combos: s&box's sbox_pixel.fxc declares it
+  only when `S_TRANSLUCENT`, so every opaque face's material failed to compile. An opaque face's amount is 1, or its
+  entity's once changed.
+
 ## 0.37.0 (2026-10-30)
 
 s&box, a map's liquids and see-through faces (`map.mjs`, `lightmap.mjs`):
