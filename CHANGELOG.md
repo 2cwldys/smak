@@ -3,7 +3,73 @@
 The newest first. A version that changes what a model's file looks like, or that a model made before needs
 mending for, says so under **Mind**.
 
-## Unreleased
+## 0.37.0 (2026-10-30)
+
+s&box, a map's liquids and see-through faces (`map.mjs`, `lightmap.mjs`):
+- The world's liquid faces are drawn apart, in a `worldspawn liquid` object that blocks nothing (a liquid is swum in:
+  a game reads where it is from the map's contents); a func_water or func_door of special contents (a skin) and a
+  passable door (spawnflag 8) block nothing either (doors.cpp).
+- A brush entity's liquid shows its top only, as Xash3D's R_SortBrushModelSurfaces draws it: of its liquid faces, none
+  whose plane is not level (unless EF_WATERSIDES) and none at its bottom. The compiler gives a liquid every face both
+  ways, and those under the top showed through it as dark shapes that moved with the view (ts_casa's pool).
+- With lightmaps, a see-through brush entity (rendermode 1 to 3) is drawn by the lightmapped shader, `F_TRANSLUCENT 1`,
+  blended by its `renderamt` (`g_flOpacityScale`), in full light and with none of s&box's lighting: complex.shader's
+  translucent pass took the screen's ambient occlusion from what lies behind it.
+- TS's slow-motion zone (`ts_slowmotion`) is one of the classes never drawn.
+
+s&box, a map's dynamic lights (`lightmap.mjs`):
+- The lightmapped shader adds GoldSrc's dynamic lights (dlights: a flashlight) to a face's light as the engine does
+  (R_AddDynamicLights): a light's radius less its distance off the face's plane, (rad - d) x its colour at each of the
+  face's samples, d measured in texels the engine's way, on the lightmap's own scale (a sample x 264), mixed between
+  samples as the lightmap is. Up to `DLIGHTS` (8), handed to every material by the game (`SmakDlight0..`,
+  `SmakDlightColor0..`: Scene.RenderAttributes). Measured in Momentum Break: on a wall whose texture is scaled 2 across,
+  a light of 120 reaches 133 units up and past 150 across, as GoldSrc's does, and lifts the wall from 97 to 167 where
+  GoldSrc's sum gives 163..177.
+
+s&box, a map's faces that change (`lightmap.mjs`, `map.mjs`; Xash3D R_TextureAnimation, DrawGLPoly):
+- An animated texture plays: its frames (`+0`..`+9`, `+a`..`+j`) side by side in one picture, `g_flFrames` and
+  `g_flOtherFrames` of them, stepped at `ANIMATION_RATE` (20) a second from the face's own set, or from the other
+  while its entity's frame is on (a button pressed). Measured on The Specialists' maps: ts_lobby's screens, the
+  elevator buttons' lit and unlit sets.
+- A conveyor's texture (`scroll*`) moves along s by -speed / its width a second: a func_conveyor's `speed` as
+  CFuncConveyor::UpdateSpeed codes it, any other brush entity's `rendercolor` read the same way.
+- A brush entity whose state a game may change wears a slot, its model's number (`g_flSlot`): a texture with another
+  set of frames, a func_conveyor's, one an env_render names. A game hands every material a picture of the slots
+  (`SmakEntities`, with `SmakEntitiesSet` 1), 8 bits a channel: red full while its frame is on, green full while its
+  conveyor runs the other way, blue its render amount with alpha full (alpha 0: the map's). Until it does, each face is drawn as the map starts it.
+- A brush entity an env_render names is drawn though the map starts it unseen (render amount 0), so its amount can
+  rise.
+- With lightmaps, an added brush entity (rendermode 5) is drawn by the lightmapped shader, `F_TRANSLUCENT 2`: the
+  texture times its amount, unlit, added (ONE, ONE), writing no depth.
+
+s&box, a model's folder (`port.mjs`): a nested `folder` ("ts/props") is kept as folders, each part named as before;
+it was made one name (`ts_props`).
+
+s&box, a model's render mode (`studio.mjs`):
+- The model shader's `F_TRANSLUCENT` draws an entity's render mode as GoldSrc's studio renderer does (Xash
+  GL_StudioSetRenderMode): 1 blended by `SmakModelBlend` (the render amount over 255) and still writing depth, for
+  kRenderTransColor, TransTexture, Glow and TransAlpha; 2 kRenderTransAdd, the texture times the amount added (ONE, ONE),
+  unlit, unfogged, writing no depth. A game sets it on copies of a model's materials; added in linear light, not on the
+  screen's colours as GoldSrc adds.
+
+s&box, a model's dynamic lights (`studio.mjs`):
+- The model shader takes `SmakModelLightTotal` and `SmakModelLightReach`, set by a game when dynamic lights reach a
+  model as the engine's R_EntityDynamicLight adds them (each within its radius adds radius - distance to the total,
+  pulls the light's way toward itself by as much, and tints the light): the total, and the pulled way's length, of
+  which v_direct shades. Unset, a model is lit as before. Measured in Momentum Break: a white light of 120 40 in front
+  of a player model raised its total from 63 to 143 and its way to 102 long, the engine's numbers.
+
+s&box, GoldSrc's additive drawing:
+- `sbox.additiveShader()` and `ADDITIVE_SHADER`: a shader that adds a texture to the frame as GoldSrc adds
+  (kRenderTransAdd), on the screen's colours, from a copy of the frame behind it. s&box's own additive blend adds in
+  linear light, where a faint sprite (TS's gun smoke and laser beam, at most 27 of 255) adds about a tenth of what
+  GoldSrc adds on a lit wall. For quads drawn from code (Graphics.Draw); measured in Momentum Break: a quad of 27 adds
+  27 on every part of a wall, dark or lit.
+
+Sprites:
+- `maps.spriteFrameRgba(sprite, n)`: a sprite's frame as a picture, as the engine reads its format (additive and
+  normal opaque, alpha test's holes black and clear, index alpha the last colour with the index as alpha), for a game
+  that draws sprites itself (Momentum Break's TS impact particles).
 
 s&box, a map's surfaces (`docs/SBOX.md`, "A map, as a scene"):
 - Each material of a ported map names its texture's type (the game's `sound/materials.txt`) as a physics surface of

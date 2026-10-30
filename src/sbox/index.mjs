@@ -10,6 +10,7 @@
 //   editor.mjs   sboxCall runCsharp editorFor projectFolder    its editor driven through sbox-cli
 //   map.mjs      portMapToSbox writeSboxMap portMapToSboxFile meshBlob bakeKeyOf   a GoldSrc map as an s&box scene
 //   lightmap.mjs lightmapAtlas lightmapShader                a map drawn with its own lightmaps: their atlas, the shader
+//   additive.mjs additiveShader hudShader hudScreenShader hudMaskShader GoldSrc's additive drawing and HUD, on the screen's colours
 //   decal.mjs    sboxDecal                                  a GoldSrc decal (decals.wad) as an s&box decal definition
 //   mapcheck.mjs checkSboxMap compareSboxMap mapProbeCode recordBake  a map's port opened in the editor, held to its original
 //   check.mjs    checkSboxPort compareSbox expectedOf probeCode blendedPoseAt   a port read back and posed in the editor,
@@ -26,5 +27,6 @@ export * from "./check.mjs";
 export * from "./map.mjs";
 export * from "./decal.mjs";
 export * from "./lightmap.mjs";
+export * from "./additive.mjs";
 export * from "./mapcheck.mjs";
 export * from "./studio.mjs";

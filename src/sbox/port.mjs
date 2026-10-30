@@ -97,7 +97,8 @@ export function portToSbox(
     mass,
   });
   const { parts } = port;
-  const where = sourceName(folder);
+  // a folder may be nested ("ts/props"): each of its parts named as the rest are
+  const where = String(folder).split(/[\/]+/).filter(Boolean).map(sourceName).join("/");
   const base = `models/${where}/${port.name}`;
   const files = [];
   // the Source port's warnings but GMod's own: a weapon script's activities and the Lua that plays a view model's

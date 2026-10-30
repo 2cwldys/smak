@@ -145,14 +145,29 @@ const TEXLIGHT_CONE = [60, 89];
 const TOOL_TEXTURE_SPAN = 64;
 /** GoldSrc's render modes in which renderamt says how solid a brush entity looks (0: not drawn), and the added one;
  * and the brush entities the game never draws, whatever they wear (as draw.mjs has them). */
+/** `make` run the first time it is asked for, its answer kept. */
+const once = (make) => {
+  let done = false;
+  let value;
+  return () => {
+    if (!done) [done, value] = [true, make()];
+    return value;
+  };
+};
 const FADING_MODES = [1, 2, 3, 5];
 const ADDITIVE_MODE = 5;
 /** The render mode in which a `{` texture's holes are open (kRenderTransAlpha). */
 const HOLES_MODE = 4;
-const NEVER_DRAWN = /^(trigger_|func_ladder$|func_monsterclip$|func_buyzone$|func_bomb_target$|msarea_)/;
-/** The brush entities that do not block a player: func_illusionary, and those the game never draws (a trigger, a
- * ladder, a monster's clip, a zone); ts_lobby's trigger_hurts blocked 3.5 in a hundred spots when kept solid (2026-10-28). */
-const notSolid = (classname) => classname === "func_illusionary" || NEVER_DRAWN.test(classname);
+const NEVER_DRAWN = /^(trigger_|func_ladder$|func_monsterclip$|func_buyzone$|func_bomb_target$|msarea_|ts_slowmotion$)/;
+/** The brush entities that do not block a player: func_illusionary, those the game never draws (a trigger, a
+ * ladder, a monster's clip, a zone, TS's slow-motion zone; ts_lobby's trigger_hurts blocked 3.5 in a hundred spots when kept solid,
+ * 2026-10-28), a door or func_water of special contents (a skin: water, doors.cpp CBaseDoor::Spawn) and a passable
+ * door (spawnflag 8, CRotDoor::Spawn too): a liquid is swum in, not stood on. */
+const notSolid = (classname, keys) =>
+  classname === "func_illusionary" ||
+  NEVER_DRAWN.test(classname) ||
+  (/^func_(door|water)$/.test(classname) && (Number(keys?.get("skin") ?? 0) || 0) !== 0) ||
+  (/^func_(door|water|door_rotating)$/.test(classname) && ((Number(keys?.get("spawnflags") ?? 0) || 0) & 8) !== 0);
 /** Spawn points' classes. */
 const SPAWNS = new Set(["info_player_start", "info_player_deathmatch"]);
 
@@ -328,6 +343,26 @@ export function portMapToSbox(file, { name, folder = PORT_FOLDER, folders = [], 
     return surface.name;
   };
   const reflects = []; // each texture's reflectivity, as hlrad has it
+  // a texture's pixels by its place in the map's list: the map's own, else its wad's
+  const textureAt = (index) => embeddedTexture(bsp, index) ?? fromWads.textures.find((t) => t.name.toLowerCase() === bsp.textures[index].name.toLowerCase())?.texture; // prettier-ignore
+  // an animated texture's frames (Xash Mod_LoadTextures' chains): its own set (+0..+9, or +a..+j) from the first on, and
+  // the other set, each as far as its frames run unbroken
+  const framesOf = (name) => {
+    const lower = name.toLowerCase();
+    const digits = "0123456789";
+    const letters = "abcdefghij";
+    const own = digits.includes(lower[1]) ? digits : letters;
+    const run = (set) => {
+      const out = [];
+      for (const c of set) {
+        const at = bsp.textures.findIndex((t) => t.name.toLowerCase() === `+${c}${lower.slice(2)}`);
+        if (at < 0) break;
+        out.push(at);
+      }
+      return out;
+    };
+    return { own: run(own), other: run(own === digits ? letters : digits) };
+  };
   const materials = bsp.textures.map((entry, index) => {
     const kind = textureKind(entry.name);
     if (entry.absent || kind.sky || kind.tool) return null;
@@ -383,7 +418,28 @@ export function portMapToSbox(file, { name, folder = PORT_FOLDER, folders = [], 
       put(`${base}_pot.png`, png(picture.width, picture.height, picture.rgba));
       return `${base}_pot.png`;
     };
-    made.set(`${base}.vmat`, { base, mask, illum, flags, filled, even, surface });
+    // an animated one's frames side by side in one picture, each a power of two each way (and the picture's width), as
+    // the lightmapped shader plays them: its own set, then the other
+    const animation = () => {
+      if (!kind.animated || mask) return null;
+      const { own, other } = framesOf(entry.name);
+      if (own.length + other.length < 2) return null;
+      const pictures = [...own, ...other].map((at) => textureAt(at)).map((t) => (t ? powerOfTwo(textureRgba(t)) : null));
+      if (pictures.some((p) => !p || p.width !== pictures[0].width || p.height !== pictures[0].height)) {
+        warnings.push(`${entry.name}: its frames are not all found or not one size: drawn as its first`);
+        return null;
+      }
+      const { width, height } = pictures[0];
+      let stripWidth = 1;
+      while (stripWidth < width * pictures.length) stripWidth *= 2;
+      const strip = new Uint8Array(stripWidth * height * 4);
+      pictures.forEach((p, n) => {
+        for (let y = 0; y < height; y++) strip.set(p.rgba.subarray(y * width * 4, (y + 1) * width * 4), (y * stripWidth + n * width) * 4);
+      });
+      put(`${base}_frames.png`, png(stripWidth, height, strip));
+      return { picture: `${base}_frames.png`, frames: own.length, other: other.length, share: width / stripWidth };
+    };
+    made.set(`${base}.vmat`, { base, mask, illum, flags, filled, even, surface, animation: once(animation) });
     return `${base}.vmat`;
   });
   // a brush entity drawn added to what is behind it (rendermode 5, kRenderTransAdd), as bright as its renderamt
@@ -452,16 +508,27 @@ export function portMapToSbox(file, { name, folder = PORT_FOLDER, folders = [], 
   // the texture as a lightmapped face wears it: `light` "lit" (its lightmap's), "full" (a liquid's: no lightmap, full
   // light) or "dark" (a face the compiler left unlit, which GoldSrc draws black); its holes open or filled; `size`
   // the texture's in pixels, which its face's coordinates are fractions of
-  const litOf = (material, light, holesOpen, size) => {
-    const { base, mask, surface } = made.get(material);
+  // `see` a see-through one's renderamt (kRenderTransTexture, drawn in full light as GoldSrc draws it, blended by it),
+  // `add` an added one's (kRenderTransAdd: unlit, the texture times it); `slot` the brush model whose state the game
+  // may change (its frame, its conveyor's way, its amount: 0 for none), `scroll` a conveyor's texture widths a second;
+  // an animated texture wears its frames' picture
+  const litOf = (material, light, holesOpen, size, see = null, { add = null, slot = 0, scroll = 0 } = {}) => {
+    const { base, mask, surface, animation } = made.get(material);
     const open = Boolean(mask) && holesOpen;
+    const frames = animation();
     const own = base.slice(`materials/${folder}/`.length).replace(/\//g, "_");
-    const variant = `materials/${folder}/maps/${mapName}/lit/${own}${light === "lit" ? "" : `_${light}`}${open ? "_holes" : ""}.vmat`; // prettier-ignore
+    const scrolled = scroll ? `_scroll${Math.round(scroll * 10000)}` : "";
+    const variant = `materials/${folder}/maps/${mapName}/lit/${own}${light === "lit" ? "" : `_${light}`}${open ? "_holes" : ""}${see !== null ? `_see${see}` : ""}${add !== null ? `_add${add}` : ""}${slot ? `_slot${slot}` : ""}${scrolled}.vmat`; // prettier-ignore
     if (!files.some((f) => f.path === variant)) {
       const lines = ["// Made by SMAK (sbox-map): a GoldSrc texture lit by its map's lightmaps (lightmap.mjs).", "", "Layer0", "{", `\tshader "${LIGHTMAP_SHADER}"`]; // prettier-ignore
       if (open) lines.push("\tF_ALPHA_TEST 1");
       if (light !== "lit") lines.push("\tF_FULL_LIGHT 1");
-      lines.push(`\tTextureColor "${open ? `${base}.png` : pictureOf(material)}"`);
+      if (see !== null) lines.push("\tF_TRANSLUCENT 1", `\tg_flOpacityScale "${(see / 255).toFixed(3)}"`);
+      if (add !== null) lines.push("\tF_TRANSLUCENT 2", `\tg_flOpacityScale "${(add / 255).toFixed(3)}"`);
+      if (frames) lines.push(`\tg_flFrames "${frames.frames}.000"`, `\tg_flOtherFrames "${frames.other}.000"`, `\tg_vFrameShare "[${frames.share.toFixed(6)} 1.000000]"`); // prettier-ignore
+      if (slot) lines.push(`\tg_flSlot "${slot}.000"`);
+      if (scroll) lines.push(`\tg_flScroll "${scroll.toFixed(6)}"`);
+      lines.push(`\tTextureColor "${frames ? frames.picture : open ? `${base}.png` : see !== null || add !== null ? translucentPictureOf(material) : pictureOf(material)}"`); // prettier-ignore
       if (open) lines.push(`\tTextureTranslucency "${mask}"`, '\tg_flAlphaTestReference "0.500"');
       lines.push(`\tTextureLightmap "${atlasPath}"`, `\tg_vLightmapSize "[${atlas.width}.000000 ${atlas.height}.000000]"`, `\tg_vTextureSize "[${size[0]}.000000 ${size[1]}.000000]"`); // prettier-ignore
       if (light === "lit" && atlas.styles) lines.push(`\tg_flStyleLayers "${atlas.layers}.000"`, `\tg_flFirstLayer "${atlas.firstLayer}.000"`, `\tg_flLayerHeight "${atlas.layerHeight}.000"`, `\tTextureStyles "${stylesPath}"`); // prettier-ignore
@@ -502,6 +569,9 @@ export function portMapToSbox(file, { name, folder = PORT_FOLDER, folders = [], 
     if (model) brushModels.push({ model: Number(model[1]), keys });
   }
   const emitters = [];
+  // the brush entities an env_render changes (CRenderFxManager::Use): drawn even when the map starts them unseen, their
+  // amount read from their slot
+  const rendered = new Set(entities.filter((keys) => keys.get("classname") === "env_render").map((keys) => (keys.get("target") ?? "").toLowerCase()).filter(Boolean)); // prettier-ignore
   for (const { model, keys } of brushModels) {
     const classname = keys.get("classname") ?? "worldspawn";
     const at = numbersOf(keys.get("origin")).length === 3 ? numbersOf(keys.get("origin")) : [0, 0, 0];
@@ -510,30 +580,68 @@ export function portMapToSbox(file, { name, folder = PORT_FOLDER, folders = [], 
     const mode = model ? Number(keys.get("rendermode") ?? 0) || 0 : 0;
     const amount = Math.round(Number(keys.get("renderamt") ?? 0) || 0);
     const fades = FADING_MODES.includes(mode);
-    const hidden = model > 0 && (NEVER_DRAWN.test(classname) || (fades && amount <= 0));
+    const changed = model > 0 && rendered.has((keys.get("targetname") ?? "").toLowerCase());
+    const hidden = model > 0 && (NEVER_DRAWN.test(classname) || (fades && amount <= 0 && !changed));
     const additive = fades && mode === ADDITIVE_MODE ? amount : null;
     const seenThrough = fades && mode !== ADDITIVE_MODE && amount < 255 ? amount : null;
     const holesOpen = model > 0 && mode === HOLES_MODE;
     const used = [];
     const polygons = [];
+    // the world's liquid faces, drawn apart and solid to nothing (a liquid is swum in: the game reads where it is from
+    // the map's contents)
+    const liquidUsed = [];
+    const liquid = [];
+    // a brush entity's liquid shows its top only (Xash3D's R_SortBrushModelSurfaces, the GoldSrc renderer's): of its
+    // liquid faces, none whose plane is not level (but with EF_WATERSIDES, 1 << 26) and none at its bottom (the
+    // plane at or under its mins, which the engine spreads 1 down); the compiler gives a liquid every face both
+    // ways, and those under the top showed through it (ts_casa's pool, 2026-10-30)
+    const watersides = ((Number(keys.get("effects") ?? 0) || 0) & (1 << 26)) !== 0;
+    const bottom = model > 0 ? at[2] + bsp.models[model].mins[2] : 0;
+    // a conveyor's speed (DrawGLPoly): a func_conveyor's `speed` (100 for none) as CFuncConveyor::UpdateSpeed codes it in
+    // its rendercolor, any other brush entity's rendercolor read the same way (green and blue the speed in sixteenths,
+    // red reversing it), the world's none; its texture moves along s by -speed / its width a second
+    const color = numbersOf(keys.get("rendercolor"));
+    const conveyorSpeed =
+      classname === "func_conveyor"
+        ? Math.sign(Number(keys.get("speed")) || 100) * Math.floor(Math.abs(Number(keys.get("speed")) || 100) * 16) / 16
+        : model > 0 && color.length === 3
+          ? ((((color[1] & 255) << 8) | (color[2] & 255)) / 16) * (color[0] ? -1 : 1)
+          : 0;
     for (const face of hidden ? [] : modelFaces(bsp, model)) {
       const texture = faceTexture(bsp, face);
+      if (model > 0 && textureKind(texture.name).water) {
+        const plane = bsp.planes[(typeof face === "number" ? bsp.faces[face] : face).plane];
+        if ((plane.type !== 2 && !watersides) || bottom >= plane.dist) continue;
+      }
       const base = materials[texture.index];
       // drawn with its lightmap, as the game draws it unless faded or added (lighting "lightmaps")
       const place = atlas && additive === null && seenThrough === null ? atlas.offsetOf(face) : null;
       const lit = atlas && additive === null && seenThrough === null;
-      const material = !base ? base : additive !== null ? additiveOf(base, additive) : seenThrough !== null ? seenThroughOf(base, seenThrough) : lit ? litOf(base, place ? "lit" : atlas.fullOf(face) ? "full" : "dark", holesOpen, [texture.width, texture.height]) : made.get(base).mask && !holesOpen ? filledOf(base) : base; // prettier-ignore
+      // see-through: with the lightmaps, the lightmapped shader's translucent full light (no s&box lighting on it)
+      // what the game may change of it at run time: a texture with another set of frames (a button's), a conveyor's way,
+      // the amount of an entity an env_render names; its scroll as the map starts it
+      const kind = textureKind(texture.name);
+      const conveyor = /^\{?scroll/i.test(texture.name);
+      const scroll = conveyor && conveyorSpeed ? -conveyorSpeed / texture.width : 0;
+      const slot = model > 0 && ((kind.animated && base && made.get(base).animation()?.other) || (conveyor && classname === "func_conveyor") || changed) ? model : 0; // prettier-ignore
+      const state = { slot, scroll };
+      const material = !base ? base : additive !== null ? (atlas ? litOf(base, "full", false, [texture.width, texture.height], null, { ...state, add: additive }) : additiveOf(base, additive)) : seenThrough !== null ? (atlas ? litOf(base, "full", false, [texture.width, texture.height], seenThrough, state) : seenThroughOf(base, seenThrough)) : lit ? litOf(base, place ? "lit" : atlas.fullOf(face) ? "full" : "dark", holesOpen, [texture.width, texture.height], null, state) : made.get(base).mask && !holesOpen ? filledOf(base) : base; // prettier-ignore
       if (!material) continue;
-      if (!used.includes(material)) used.push(material);
       const corners = facePolygon(bsp, face);
-      polygons.push({ corners: [...corners].reverse(), uvs: faceUvs(bsp, face).reverse(), material: used.indexOf(material), ...(place ? { color: place } : {}) }); // prettier-ignore
+      const [into, list] = model === 0 && textureKind(texture.name).water ? [liquidUsed, liquid] : [used, polygons];
+      if (!into.includes(material)) into.push(material);
+      list.push({ corners: [...corners].reverse(), uvs: faceUvs(bsp, face).reverse(), material: into.indexOf(material), ...(place ? { color: place } : {}) }); // prettier-ignore
       // the faces that shine, lights of s&box's before them (lighting "lights")
       const light = !atlas && shining.get(texture.name.toLowerCase());
       if (light) emitters.push({ texture: texture.name, light, reflect: reflects[texture.index], corners: corners.map((p) => p.map((v, k) => v + at[k])), normal: faceNormal(bsp, face) }); // prettier-ignore
     }
-    if (!polygons.length && !(hidden && !notSolid(classname))) continue;
+    if (liquid.length) {
+      meshes.push({ name: "worldspawn liquid", model, at, faces: liquid.length, materials: liquidUsed, collision: "None" }); // prettier-ignore
+      objects.push(gameObject(`${mapName} worldspawn liquid`, "worldspawn liquid", { components: [{ __type: "Sandbox.MeshComponent", Collision: "None", Static: true, SmoothingAngle: 0, Mesh: { Data: meshBlob(liquid), Materials: liquidUsed } }] })); // prettier-ignore
+    }
+    if (!polygons.length && !(hidden && !notSolid(classname, keys))) continue;
     const objectName = model ? `${classname} *${model}` : "worldspawn";
-    const collision = notSolid(classname) ? "None" : "Mesh";
+    const collision = notSolid(classname, keys) ? "None" : "Mesh";
     if (polygons.length) meshes.push({ name: objectName, model, at, faces: polygons.length, materials: used, collision }); // prettier-ignore
     // a solid brush entity blocks with its every brush, as GoldSrc's hull has them: the drawn faces miss a side
     // the mapper textured NULL (test_scripts' shield, a cage whose lid is never drawn)

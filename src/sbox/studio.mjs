@@ -7,6 +7,17 @@
 //   SmakModelLightWay  float3  the way it shines, in the world (down is 0 0 -1)
 //   SmakModelLit       float   1 once the game has set them; until then the model is drawn as GoldSrc draws one
 //                              out of any world (r_fullbright, a menu's model): ambient 192, no shade
+//   SmakModelLightTotal, SmakModelLightReach  float  set when dynamic lights reach the model (R_EntityDynamicLight:
+//                              each within its radius adds radius - distance to the total, pulls the way toward
+//                              itself by as much, and tints the light by its colour x that / 256): the total, and how
+//                              long the way is once pulled, of which v_direct shades; 0 for none (the brightest
+//                              channel both)
+//   SmakModelBlend     float   an entity's render amount over 255 (tr.blend) for a material copied with F_TRANSLUCENT
+//                              set: 1 blends by it (kRenderTransColor, TransTexture, Glow, TransAlpha: SRC_ALPHA,
+//                              ONE_MINUS_SRC_ALPHA, still writing depth), 2 adds the texture times it, unlit, writing no
+//                              depth and unfogged (kRenderTransAdd: ONE, ONE; Xash gl_studio.c GL_StudioSetRenderMode,
+//                              R_StudioSetupRenderer, the light values set to tr.blend); added in linear light here, not
+//                              on the screen's colours as GoldSrc adds
 //
 // THE COLOUR, as the engine makes it (engine/client/gamma.c, gl_studio.c): the texture through texgamma (each colour
 // to the power texgamma / gamma, 2.0 / 2.5: dark colours lifted most) times the vertex colour, the light's colour
@@ -29,7 +40,8 @@ export const STUDIO_TEXGAMMA = 2.0 / 2.5;
 const UNLIT_AMBIENT = 192;
 
 /** The shader's text: a texture (TextureColor) and its holes (TextureTranslucency, F_ALPHA_TEST), F_FULLBRIGHT and
- * F_FLATSHADE as GoldSrc's texture flags, and the light in the render attributes above. */
+ * F_FLATSHADE as GoldSrc's texture flags, the light in the render attributes above, and F_TRANSLUCENT an entity's
+ * render mode (1 blended, 2 added: the game sets it on a copy of the material). */
 export const studioShader =
   () => `// Made by SMAK (src/sbox/studio.mjs): a GoldSrc model lit as GoldSrc lights one.
 HEADER
@@ -45,6 +57,7 @@ FEATURES
 	Feature( F_ALPHA_TEST, 0..1, "Rendering" );
 	Feature( F_FULLBRIGHT, 0..1, "Rendering" );
 	Feature( F_FLATSHADE, 0..1, "Rendering" );
+	Feature( F_TRANSLUCENT, 0..2, "Rendering" );
 }
 
 MODES
@@ -87,6 +100,18 @@ PS
 	StaticCombo( S_ALPHA_TEST, F_ALPHA_TEST, Sys( ALL ) );
 	StaticCombo( S_FULLBRIGHT, F_FULLBRIGHT, Sys( ALL ) );
 	StaticCombo( S_FLATSHADE, F_FLATSHADE, Sys( ALL ) );
+	StaticCombo( S_TRANSLUCENT, F_TRANSLUCENT, Sys( ALL ) );
+
+	#if S_TRANSLUCENT == 1
+		RenderState( BlendEnable, true );
+		RenderState( SrcBlend, SRC_ALPHA );
+		RenderState( DstBlend, INV_SRC_ALPHA );
+	#elif S_TRANSLUCENT == 2
+		RenderState( BlendEnable, true );
+		RenderState( SrcBlend, ONE );
+		RenderState( DstBlend, ONE );
+		RenderState( DepthWriteEnable, false );
+	#endif
 
 	CreateInputTexture2D( TextureColor, Srgb, 8, "", "_color", "Material,10/10", Default3( 1.0, 1.0, 1.0 ) );
 	CreateInputTexture2D( TextureTranslucency, Linear, 8, "", "_trans", "Material,10/20", Default( 1.0 ) );
@@ -101,6 +126,9 @@ PS
 	float3 g_vModelLight < Attribute( "SmakModelLight" ); Default3( 0.0, 0.0, 0.0 ); >;
 	float3 g_vModelLightWay < Attribute( "SmakModelLightWay" ); Default3( 0.0, 0.0, -1.0 ); >;
 	float g_flModelLit < Attribute( "SmakModelLit" ); Default( 0.0 ); >;
+	float g_flModelLightTotal < Attribute( "SmakModelLightTotal" ); Default( 0.0 ); >;
+	float g_flModelLightReach < Attribute( "SmakModelLightReach" ); Default( 0.0 ); >;
+	float g_flModelBlend < Attribute( "SmakModelBlend" ); Default( 1.0 ); >;
 
 	// the sRGB curve each way: the screen's colour of a linear one, and back
 	float3 Shown( float3 c ) { c = max( c, 0.0 ); return lerp( 1.055 * pow( c, 1.0 / 2.4 ) - 0.055, c * 12.92, step( c, 0.0031308 ) ); }
@@ -111,14 +139,20 @@ PS
 		Material m = Material::Init( i );
 		float4 color = g_tColor.Sample( TextureFiltering, i.vTextureCoords.xy );
 		m.Opacity = color.a;
-		#if S_FULLBRIGHT
+		#if S_TRANSLUCENT == 2
+			// kRenderTransAdd: the light values tr.blend, whatever the light
+			float3 light = g_flModelBlend;
+		#elif S_FULLBRIGHT
 			float3 light = 1.0;
 		#else
 			// R_EntityDynamicLight's end: of the brightest channel v_direct shades, the rest ambient (128 at most)
 			float total = max( max( g_vModelLight.r, g_vModelLight.g ), g_vModelLight.b );
 			float3 tint = total > 0.0 ? g_vModelLight / total : 1.0;
 			total = max( total, 1.0 );
-			float shade = total * g_flDirect;
+			// the dynamic lights' share, when any reach the model: the total they raise, the way's length they make
+			float reach = total;
+			if ( g_flModelLightTotal > 0.0 ) { total = g_flModelLightTotal; reach = g_flModelLightReach; }
+			float shade = reach * g_flDirect;
 			float ambient = min( total - shade, 128.0 );
 			if ( ambient + shade > 255.0 ) shade = 255.0 - ambient;
 			if ( g_flModelLit < 0.5 ) { ambient = ${UNLIT_AMBIENT}.0; shade = 0.0; tint = 1.0; }
@@ -136,6 +170,9 @@ PS
 		#endif
 		// texgamma's texture x light, cut off at white, on the colours as the screen shows them; s&box's light is linear
 		m.Emission = Linear( min( pow( Shown( color.rgb ), g_flTexGamma ) * light, 1.0 ) );
+		#if S_TRANSLUCENT == 1
+			m.Opacity *= g_flModelBlend;
+		#endif
 		m.Albedo = 0.0;
 		m.Metalness = 0.0;
 		m.Roughness = 1.0;
@@ -146,6 +183,9 @@ PS
 		if ( g_bWireframeMode )
 			return g_vWireframeColor;
 		float4 shown = float4( m.Emission, m.Opacity );
+		#if S_TRANSLUCENT == 2
+			return float4( shown.rgb, 1.0 );
+		#endif
 		if ( g_bFogEnabled )
 			shown.rgb = Fog::Apply( m.WorldPosition, m.ScreenPosition.xy, shown.rgb );
 		return shown;

@@ -28,6 +28,27 @@
 // style: its letters in red, (letter - "a") x 10, its length in green), which the shader plays by its clock
 // (g_flTime), as the game plays them. A light switched by a name stays as the map starts it: no stock TS map
 // switches one, and a switch needs code of the game's.
+//
+// ITS DYNAMIC LIGHTS (the engine's dlights: a flashlight, a muzzle's flash), as GoldSrc adds them to a face's lightmap
+// (R_AddDynamicLights): a light reaches a face its radius off its plane, on either side (rad = radius - |distance|);
+// at each of the face's samples, 16 texels apart, it adds (rad - d) x its colour, d the distance in the face's texture
+// plane from the point under the light, as the engine measures it (the longer of the two axes' plus half the shorter,
+// in whole texels), where d is under rad less its minlight. That is on the lightmap's own scale (a sample x its
+// style's value, 264 for "m"): so here light += (rad - d) x colour / 264, at the samples and mixed between them as the
+// atlas is, before the light's scale. The face's texture grid is found where the point is, from how its world place
+// and its texels change across the screen. The game hands them to every material of the scene (Scene.RenderAttributes):
+// SmakDlight0..7 (its place, its radius; 0 for none) and SmakDlightColor0.. (its colour, 0..1, and its
+// minlight). Not on a face drawn at full light (a liquid's, the sky's), as in the game.
+//
+// ITS TEXTURE'S ANIMATION, SCROLL AND ENTITY (Xash3D gl_rsurf.c R_TextureAnimation, DrawGLPoly; the SDK's
+// CFuncConveyor::UpdateSpeed): an animated texture's frames side by side in one picture (its own set, +0..+9 or
+// +a..+j, then the other), g_flFrames and g_flOtherFrames of them, each g_vFrameShare of the picture; the frame of
+// the moment at ANIMATION_RATE a second (Xash's rate for a texture not of Quake's palette), from its own set, or the
+// other while its entity's frame is on (a button pressed). A conveyor's texture (scroll*) moves along s by
+// g_flScroll of its width a second. A face whose entity's state the game changes names its slot (g_flSlot, the brush
+// model's number) in a picture the game hands every material (SmakEntities, with SmakEntitiesSet 1 once it does):
+// an 8-bit texel each: red full while the entity's frame is on, green full while its conveyor runs the other way, blue
+// its render amount (of 255) with alpha full, else (alpha 0) the map's amount. F_TRANSLUCENT 2 adds a face (kRenderTransAdd), unlit: the texture times its amount.
 import { faceLightmap, LUXEL } from "../maps/bsp.mjs";
 import { stylePatterns } from "../maps/light.mjs";
 
@@ -35,6 +56,13 @@ import { stylePatterns } from "../maps/light.mjs";
 export const LIGHTMAP_SHADER = "shaders/smak_lightmapped.shader";
 /** What a light sample (a share of 255) is multiplied by before it meets the texture (draw.mjs BRIGHTNESS). */
 export const LIGHTMAP_SCALE = 1.55;
+/** How many dynamic lights the shader reads (SmakDlight0..), the most a scene lights faces with at once. */
+export const DLIGHTS = 8;
+/** How many frames a second an animated texture plays (R_TextureAnimation: 20, but 10 for Quake's palette). */
+export const ANIMATION_RATE = 20;
+/** A light style's value for "m", the light as baked (g_lightstylevalue): a dynamic light's (rad - d) x colour is on
+ * the scale of a sample times it. */
+const STYLE_VALUE = 264;
 /** Added to a face's offset so that it is never below 0 in its 16 bits. */
 export const OFFSET_BIAS = 32768;
 /** The atlas's width, in samples; its height what the faces need, a power of two. */
@@ -48,9 +76,27 @@ const LETTER_STEP = 10;
 const AS_BAKED = 12;
 const letterOf = (pattern, nth) => pattern.charCodeAt(nth) - 97;
 
+const dlightAttributes = () =>
+  [
+    "\t// the dynamic lights (the module's head): each its place and radius, and its colour and minlight",
+    ...Array.from({ length: DLIGHTS }, (_, n) => [
+      `\tfloat4 g_vDlight${n} < Attribute( "SmakDlight${n}" ); Default4( 0.0, 0.0, 0.0, 0.0 ); >;`,
+      `\tfloat4 g_vDlightColor${n} < Attribute( "SmakDlightColor${n}" ); Default4( 0.0, 0.0, 0.0, 0.0 ); >;`,
+    ]).flat(),
+  ].join("\n");
+const dlightCalls = () =>
+  Array.from(
+    { length: DLIGHTS },
+    (_, n) =>
+      `\t\t\tlight += DynamicLight( g_vDlight${n}, g_vDlightColor${n}, world, normal, texel, alongS, alongT );`,
+  ).join("\n");
+
 /** The shader's text: s&box's standard material inputs (TextureColor, TextureTranslucency, F_ALPHA_TEST), the
  * map's atlas (TextureLightmap) and its size, the texture's size in pixels, and the face's offset in its vertex
- * colour (PolygonMesh's, the vertex paint's tint). */
+ * colour (PolygonMesh's, the vertex paint's tint). F_TRANSLUCENT blends it over what is behind by its alpha times
+ * g_flOpacityScale (a brush entity GoldSrc draws see-through, kRenderTransTexture: its renderamt), as s&box's own
+ * surface shader blends: none of s&box's lighting on it (complex.shader's translucent pass took the screen's ambient
+ * occlusion from what lies behind, ts_casa's pool, 2026-10-30). */
 export const lightmapShader =
   () => `// Made by SMAK (src/sbox/lightmap.mjs): a GoldSrc surface lit by its own lightmap.
 HEADER
@@ -65,6 +111,7 @@ FEATURES
 	#include "common/features.hlsl"
 	Feature( F_ALPHA_TEST, 0..1, "Rendering" );
 	Feature( F_FULL_LIGHT, 0..1, "Rendering" );
+	Feature( F_TRANSLUCENT, 0..2, "Rendering" );
 }
 
 MODES
@@ -109,6 +156,19 @@ PS
 
 	StaticCombo( S_ALPHA_TEST, F_ALPHA_TEST, Sys( ALL ) );
 	StaticCombo( S_FULL_LIGHT, F_FULL_LIGHT, Sys( ALL ) );
+	StaticCombo( S_TRANSLUCENT, F_TRANSLUCENT, Sys( ALL ) );
+
+	#if S_TRANSLUCENT == 1
+		RenderState( BlendEnable, true );
+		RenderState( SrcBlend, SRC_ALPHA );
+		RenderState( DstBlend, INV_SRC_ALPHA );
+	#elif S_TRANSLUCENT == 2
+		RenderState( BlendEnable, true );
+		RenderState( SrcBlend, ONE );
+		RenderState( DstBlend, ONE );
+		RenderState( DepthWriteEnable, false );
+	#endif
+	// g_flOpacityScale: common/pixel.hlsl's, as complex.shader's
 
 	// the texture and its holes, mixed by Box as complex.shader's are (AlphaWeighted fails on sides not a power of two)
 	CreateInputTexture2D( TextureColor, Srgb, 8, "", "_color", "Material,10/10", Default3( 1.0, 1.0, 1.0 ) );
@@ -132,15 +192,72 @@ PS
 	CreateInputTexture2D( TextureStyles, Linear, 8, "", "_styles", "Light,20/70", Default3( 0.0, 0.0, 0.0 ) );
 	Texture2D g_tStyles < Channel( RGBA, Box( TextureStyles ), Linear ); OutputFormat( RGBA8888 ); SrgbRead( false ); >;
 
+	// its animation, its scroll and its entity's slot (the module's head)
+	float g_flFrames < Default( 1.0 ); UiGroup( "Animation,30/10" ); >;
+	float g_flOtherFrames < Default( 0.0 ); UiGroup( "Animation,30/20" ); >;
+	float2 g_vFrameShare < Default2( 1.0, 1.0 ); UiGroup( "Animation,30/30" ); >;
+	float g_flScroll < Default( 0.0 ); UiGroup( "Animation,30/40" ); >;
+	float g_flSlot < Default( 0.0 ); UiGroup( "Animation,30/50" ); >;
+	Texture2D g_tEntities < Attribute( "SmakEntities" ); SrgbRead( false ); >;
+	float g_flEntitiesSet < Attribute( "SmakEntitiesSet" ); Default( 0.0 ); >;
+
 	// the sRGB curve each way: the screen's colour of a linear one, and back
 	float3 Shown( float3 c ) { c = max( c, 0.0 ); return lerp( 1.055 * pow( c, 1.0 / 2.4 ) - 0.055, c * 12.92, step( c, 0.0031308 ) ); }
 	float3 Linear( float3 s ) { s = max( s, 0.0 ); return lerp( pow( ( s + 0.055 ) / 1.055, 2.4 ), s / 12.92, step( s, 0.04045 ) ); }
 
+${dlightAttributes()}
+
+	// one dynamic light's share at a point (R_AddDynamicLights): at the four samples round it, mixed as the atlas is;
+	// \`texel\` the point's texel, \`along\` its texels for a move along the face (a 2 x 3: its rows s and t)
+	float3 DynamicLight( float4 light, float4 color, float3 world, float3 normal, float2 texel, float3 alongS, float3 alongT )
+	{
+		if ( light.w <= 0.0 )
+			return 0.0;
+		float dist = dot( light.xyz - world, normal );
+		float rad = light.w - abs( dist );
+		if ( rad < color.w )
+			return 0.0;
+		float reach = rad - color.w;
+		float3 toImpact = light.xyz - normal * dist - world;
+		float2 at = texel + float2( dot( toImpact, alongS ), dot( toImpact, alongT ) );
+		float2 cell = floor( texel / ${LUXEL}.0 );
+		float2 mix = texel / ${LUXEL}.0 - cell;
+		float shares[4];
+		for ( int corner = 0; corner < 4; corner++ )
+		{
+			float2 grid = ( cell + float2( corner & 1, corner >> 1 ) ) * ${LUXEL}.0;
+			int sd = (int)abs( at.x - grid.x );
+			int td = (int)abs( at.y - grid.y );
+			float d = sd > td ? sd + ( td >> 1 ) : td + ( sd >> 1 );
+			shares[corner] = d < reach ? rad - d : 0.0;
+		}
+		float share = lerp( lerp( shares[0], shares[1], mix.x ), lerp( shares[2], shares[3], mix.x ), mix.y );
+		return share * color.rgb / ${STYLE_VALUE}.0;
+	}
+
 	float4 MainPs( PixelInput i ) : SV_Target0
 	{
 		Material m = Material::Init( i );
-		float4 color = g_tColor.Sample( TextureFiltering, i.vTextureCoords.xy );
+		// its entity's state, when it has a slot and the game has handed the slots over
+		float4 state = 0.0;
+		if ( g_flSlot > 0.0 && g_flEntitiesSet > 0.5 )
+			state = g_tEntities.Load( int3( (int)g_flSlot, 0, 0 ) );
+		// the conveyor's move along s, kept within one width (DrawGLPoly's sOffset), the other way while reversed
+		float2 uv = i.vTextureCoords.xy;
+		float scroll = g_flScroll * ( state.g > 0.5 ? -1.0 : 1.0 );
+		uv.x += frac( g_flTime * scroll );
+		// the frame of the moment: of its own set, or of the other while its entity's frame is on
+		bool other = state.r > 0.5 && g_flOtherFrames > 0.0;
+		float frames = other ? g_flOtherFrames : g_flFrames;
+		float frame = fmod( floor( g_flTime * ${ANIMATION_RATE}.0 ), max( frames, 1.0 ) ) + ( other ? g_flFrames : 0.0 );
+		float2 picked = g_flFrames + g_flOtherFrames > 1.0 ? ( frac( uv ) + float2( frame, 0.0 ) ) * g_vFrameShare : uv;
+		float4 color = g_tColor.SampleGrad( TextureFiltering, picked, ddx( uv ) * g_vFrameShare, ddy( uv ) * g_vFrameShare );
+		// its render amount: its entity's, once changed, else the map's
+		float amount = state.a > 0.5 ? state.b : g_flOpacityScale;
 		m.Opacity = color.a;
+		#if S_TRANSLUCENT == 1
+			m.Opacity *= amount;
+		#endif
 		// the decals laid on it (a bullet's hole: s&box's Decal), on the texture before its light, as GoldSrc lights a
 		// decal by its face's lightmap; as ShadingModelStandard::Shade lays them, on the material
 		m.Albedo = color.rgb;
@@ -162,7 +279,26 @@ PS
 			int letter = (int)fmod( floor( g_flTime * 10.0 ), letters );
 			light += styled.rgb * ( g_tStyles.Load( int3( letter, row, 0 ) ).r * 255.0 / ${LETTER_STEP * AS_BAKED}.0 );
 		}
+		// the dynamic lights: the face's texture grid at the point, from how its place and texels change on the screen
+		float3 world = m.WorldPosition;
+		float2 texel = i.vTextureCoords.xy * g_vTextureSize;
+		float3 dx = ddx( world ), dy = ddy( world );
+		float2 tx = ddx( texel ), ty = ddy( texel );
+		float a11 = dot( dx, dx ), a12 = dot( dx, dy ), a22 = dot( dy, dy );
+		float det = a11 * a22 - a12 * a12;
+		if ( det > 1e-12 )
+		{
+			// a move along the face, w = a dx + b dy, is a tx + b ty texels: a and b by w's dots with dx and dy
+			float3 alongS = ( ( a22 * tx.x - a12 * ty.x ) * dx + ( a11 * ty.x - a12 * tx.x ) * dy ) / det;
+			float3 alongT = ( ( a22 * tx.y - a12 * ty.y ) * dx + ( a11 * ty.y - a12 * tx.y ) * dy ) / det;
+			float3 normal = normalize( i.vNormalWs );
+${dlightCalls()}
+		}
 		light *= g_flLightScale;
+		#endif
+		#if S_TRANSLUCENT == 2
+			// added, unlit: the texture times its amount (GL_StudioSetRenderMode's brush twin, glColor4f( blend ))
+			light = amount;
 		#endif
 		// GoldSrc's texture x light, cut off at white, on the colours as the screen shows them; s&box's light is linear
 		m.Emission = Linear( min( Shown( m.Albedo ) * light, 1.0 ) );
@@ -176,6 +312,9 @@ PS
 		if ( g_bWireframeMode )
 			return g_vWireframeColor;
 		float4 shown = float4( m.Emission, m.Opacity );
+		#if S_TRANSLUCENT == 2
+			return float4( shown.rgb, 1.0 );
+		#endif
 		if ( g_bFogEnabled )
 			shown.rgb = Fog::Apply( m.WorldPosition, m.ScreenPosition.xy, shown.rgb );
 		return shown;

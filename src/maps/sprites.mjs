@@ -4,6 +4,7 @@
 // up and blended as the engine does by the sprite's own kind and the entity's render mode.
 //
 //   readSpr(bytes)                    the file: its kind, its palette, its frames
+//   spriteFrameRgba(sprite, n)        a frame as a picture, as the engine reads its format
 //   spritesOf(things, { folders })    for each entity that names a sprite: the sprite, and how it is shown
 //   boardOf(sprite, view)             its board for one view: a surface, and how it is painted
 //
@@ -131,6 +132,27 @@ const UPRIGHT_MOST = 0.999848;
 const FULL = 255;
 /** `env_sprite`'s flag for one that is on when the map starts. */
 const START_ON = 1;
+
+/**
+ * A frame of a sprite (`readSpr`'s) as a picture, `{ width, height, rgba }`, as the engine reads its format (Xash
+ * gl_sprite.c, img_utils.c): "normal" and "additive" every pixel its palette's colour, opaque (an additive one adds
+ * it, black adding nothing); "alpha test" with holes where its index is 255, black and clear (so a game that adds it,
+ * as TS does its wood chips, adds nothing there); "index alpha" all its last colour, each pixel as solid as its index
+ * is high.
+ */
+export function spriteFrameRgba(sprite, number = 0) {
+  const frame = sprite.frames[number];
+  if (!frame) throw new Error(`the sprite has no frame ${number} (it has ${sprite.frames.length})`);
+  const { width, height, pixels } = frame;
+  const rgba = new Uint8Array(width * height * 4);
+  const last = sprite.palette.subarray(HOLE_INDEX * 3, HOLE_INDEX * 3 + 3);
+  pixels.forEach((index, i) => {
+    if (sprite.format === "index alpha") rgba.set([last[0], last[1], last[2], index], i * 4);
+    else if (sprite.format === "alpha test" && index === HOLE_INDEX) rgba.set([0, 0, 0, 0], i * 4);
+    else rgba.set([...sprite.palette.subarray(index * 3, index * 3 + 3), FULL], i * 4);
+  });
+  return { width, height, rgba };
+}
 
 /** The sprites read so far, by their file: read again only when the file has changed. */
 const files = new Map();

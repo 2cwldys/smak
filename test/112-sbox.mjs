@@ -1578,3 +1578,14 @@ test("sboxDecal: a decals.wad texture as the engine reads it, masked by a blue l
   sure(decal.Width === 4 && decal.Height === 4 && decal.ColorTexture.data.FilePath === "materials/x/shot.png", "its definition: the texture's size in units, its picture"); // prettier-ignore
   sure(made.png.subarray(1, 4).toString() === "PNG", "its picture");
 });
+
+test("spriteFrameRgba: a sprite's frame by its format, as the engine reads it", () => {
+  const palette = new Uint8Array(768);
+  palette.set([10, 20, 30], 3);
+  palette.set([0, 0, 255], 765);
+  const sprite = (format) => ({ format, palette, frames: [{ width: 2, height: 1, pixels: Uint8Array.from([1, 255]) }] });
+  const [add, holes, cover] = ["additive", "alpha test", "index alpha"].map((f) => smak.maps.spriteFrameRgba(sprite(f), 0).rgba);
+  sure(add.join() === "10,20,30,255,0,0,255,255", `additive: every pixel its colour, opaque: ${add}`);
+  sure(holes.join() === "10,20,30,255,0,0,0,0", `alpha test: 255 a hole, black and clear: ${holes}`);
+  sure(cover.join() === "0,0,255,1,0,0,255,255", `index alpha: the last colour, the index as alpha: ${cover}`);
+});
